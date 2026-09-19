@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -34,6 +35,12 @@ class AuthController extends Controller
                 'message' => '아이디 또는 비밀번호가 올바르지 않습니다.',
             ], 401);
         }
+
+        // 인증된 사용자를 Laravel 로그인 세션에 저장
+        Auth::login($user);
+
+        // 세션 고정 공격 방지를 위해 세션 ID 재생성
+        $request->session()->regenerate();
 
         // 아이디와 비밀번호가 모두 일치하면 로그인 성공
         return response()->json([
