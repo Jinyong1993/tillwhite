@@ -19,13 +19,13 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         // 로그인 입력값 검증
-        $request->validate([
-            'id' => ['required', 'string'],
+        $validated = $request->validate([
+            'id' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
 
-        // 입력받은 로그인 아이디로 사용자 조회 해당 사용자가 존재하지 않으면 null 반환
-        $user = User::where('login_id', $request->id)->first();
+        // 검증이 완료된 아이디로 사용자 조회
+        $user = User::where('login_id', $validated['id'])->first();
 
         // 입력한 아이디와 일치하는 사용자가 없는 경우
         if (!$user) {
@@ -35,7 +35,7 @@ class AuthController extends Controller
         }
 
         // 입력한 비밀번호와 DB에 저장된 암호화된 비밀번호 비교
-        if (!Hash::check($request->password, $user->password)) {
+        if (!Hash::check($validated['password'], $user->password)) {
             return response()->json([
                 'message' => '아이디 또는 비밀번호가 올바르지 않습니다.',
             ], 401);
