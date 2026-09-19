@@ -1,5 +1,7 @@
 <template>
-    <v-container>
-        <h1>Tillwhite 로그인</h1>
-    </v-container>
+  <v-container>
+    <v-btn color="primary">
+      로그인
+    </v-btn>
+  </v-container>
 </template>
