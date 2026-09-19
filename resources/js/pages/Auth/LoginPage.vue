@@ -23,27 +23,29 @@
           ref="loginForm"
           @submit.prevent="login"
         >
-          <v-text-field
-            v-model="form.id"
-            :rules="rules.id"
-            label="아이디"
-            variant="outlined"
-          />
+          <div class="d-flex flex-column ga-2">
+            <v-text-field
+              v-model="form.id"
+              :rules="rules.id"
+              label="아이디"
+              variant="outlined"
+            />
 
-          <v-text-field
-            v-model="form.password"
-            :rules="rules.password"
-            label="비밀번호"
-            type="password"
-            variant="outlined"
-          />
+            <v-text-field
+              v-model="form.password"
+              :rules="rules.password"
+              label="비밀번호"
+              type="password"
+              variant="outlined"
+            />
 
-          <v-btn
-            type="submit"
-            block
-          >
-            로그인
-          </v-btn>
+            <v-btn
+              type="submit"
+              block
+            >
+              로그인
+            </v-btn>
+          </div>
         </v-form>
       </v-card-text>
     </v-card>
