@@ -3,14 +3,23 @@
     <v-card
       class="mx-auto"
       width="400"
-      subtitle="BAKERY - 생산 & 폐기 입력"
     >
-      <template v-slot:title>
-        <span class="font-weight-black">Till White </span>
-      </template>
+      <v-card-title 
+        class="font-weight-black"
+      >
+        Till White
+      </v-card-title>
 
-      <v-card-text class="bg-surface-light pt-4">
-        <v-btn color="primary">
+      <v-card-subtitle 
+        class="mb-3"
+      >
+        BAKERY - 생산 & 폐기 입력
+      </v-card-subtitle>
+
+      <v-card-text 
+        class="bg-surface-light"
+      >
+        <v-btn>
           로그인
         </v-btn>
       </v-card-text>
