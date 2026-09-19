@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import LoginPage from '../pages/Auth/LoginPage.vue';
+import MainPage from '../pages/MainPage.vue';
 
 const routes = [
   {
@@ -10,6 +11,11 @@ const routes = [
     path: '/tillwhite/login',
     name: 'login',
     component: LoginPage,
+  },
+  {
+    path: '/tillwhite/main',
+    name: 'main',
+    component: MainPage,
   },
 ];
 

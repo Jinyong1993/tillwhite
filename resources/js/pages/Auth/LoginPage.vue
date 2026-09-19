@@ -52,6 +52,9 @@
 
 <script setup>
   import { onMounted, ref } from 'vue';
+  import { useRouter } from 'vue-router';
+
+  const router = useRouter();
 
   // 로그인 Form
   const loginForm = ref(null);
@@ -122,7 +125,8 @@
     }
 
     // 로그인 성공
-    console.log(data.message);
-    console.log(data.user);
+    await router.push({
+      name: 'main',
+    });
   }
 </script>
