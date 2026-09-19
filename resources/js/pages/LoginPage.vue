@@ -19,7 +19,19 @@
       <v-card-text 
         class="bg-surface-light"
       >
-        <v-btn>
+        <v-text-field
+          label="아이디"
+          variant="outlined"
+        />
+
+        <v-text-field
+          label="비밀번호"
+          type="password"
+          variant="outlined"
+        />
+        <v-btn
+          block
+        >
           로그인
         </v-btn>
       </v-card-text>
