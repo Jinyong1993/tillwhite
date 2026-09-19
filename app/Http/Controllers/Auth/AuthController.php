@@ -35,6 +35,14 @@ class AuthController extends Controller
             ], 401);
         }
 
-        return;
+        // 아이디와 비밀번호가 모두 일치하면 로그인 성공
+        return response()->json([
+            'message' => '로그인에 성공했습니다.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'role' => $user->role,
+            ],
+        ], 200);
     }
 }
