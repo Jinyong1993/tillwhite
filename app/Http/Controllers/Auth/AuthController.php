@@ -18,8 +18,13 @@ class AuthController extends Controller
      */
     public function login(Request $request)
     {
-        // 입력받은 로그인 아이디로 사용자 조회
-        // 해당 사용자가 존재하지 않으면 null 반환
+        // 로그인 입력값 검증
+        $request->validate([
+            'id' => ['required', 'string'],
+            'password' => ['required', 'string'],
+        ]);
+
+        // 입력받은 로그인 아이디로 사용자 조회 해당 사용자가 존재하지 않으면 null 반환
         $user = User::where('login_id', $request->id)->first();
 
         // 입력한 아이디와 일치하는 사용자가 없는 경우
