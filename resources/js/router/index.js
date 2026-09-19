@@ -3,6 +3,10 @@ import LoginPage from '../pages/LoginPage.vue';
 
 const routes = [
     {
+        path: '/tillwhite',
+        redirect: '/tillwhite/login',
+    },
+    {
         path: '/tillwhite/login',
         name: 'login',
         component: LoginPage,
