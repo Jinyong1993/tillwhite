@@ -48,10 +48,25 @@
   // 로그인 관련
   const id = ref('');
   const password = ref('');
+  const csrfToken = document
+  .querySelector('meta[name="csrf-token"]')
+  .getAttribute('content');
 
   // 로그인 버튼 클릭시
-  function login() {
-    console.log(id.value);
-    console.log(password.value);
+  async function login() {
+    const response = await fetch('/tillwhite/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+      },
+      body: JSON.stringify({
+        id: id.value,
+        password: password.value,
+      }),
+    });
+
+    console.log(response);
   }
 </script>
