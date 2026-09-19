@@ -54,7 +54,7 @@
 
   // 로그인 버튼 클릭시
   async function login() {
-    const response = await fetch('/tillwhite/login', {
+    var response = await fetch('/tillwhite/login', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -67,6 +67,17 @@
       }),
     });
 
-    console.log(response);
+    // Laravel에서 전달받은 JSON 응답
+    var data = await response.json();
+
+    // 로그인 실패
+    if (!response.ok) {
+      console.log(data.message);
+      return;
+    }
+
+    // 로그인 성공
+    console.log(data.message);
+    console.log(data.user);
   }
 </script>
