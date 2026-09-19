@@ -20,6 +20,13 @@ class AuthController extends Controller
         // 해당 사용자가 존재하지 않으면 null 반환
         $user = User::where('login_id', $request->id)->first();
 
+        // 입력한 아이디와 일치하는 사용자가 없는 경우
+        if (!$user) {
+            return response()->json([
+                'message' => '아이디 또는 비밀번호가 올바르지 않습니다.',
+            ], 401);
+        }
+
         return;
     }
 }
