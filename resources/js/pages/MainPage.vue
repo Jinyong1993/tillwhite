@@ -1,27 +1,38 @@
 <template>
   <AppPageContainer>
+    <!--
+      사이드 메뉴
+      AppHeader의 햄버거 버튼으로 열고 닫는다.
+    -->
+    <AppNavigationDrawer
+      v-model="drawer"
+    />
+
     <v-card
       width="100%"
     >
-      <v-card-title
-        class="font-weight-black"
-      >
-        Till White
-      </v-card-title>
-
-      <v-card-subtitle
-        class="mb-3"
-      >
-        베이커리 관리 시스템
-      </v-card-subtitle>
+      <!--
+        공통 헤더
+        햄버거 메뉴 클릭 시 부모의 drawer 상태를 변경한다.
+      -->
+      <AppHeader
+        @menu="drawer = true"
+      />
 
       <v-card-text
         class="bg-surface-light"
       >
+        <!--
+          공통 오류 알림
+          사용자 정보 조회 등의 오류 메시지를 표시한다.
+        -->
         <AppAlert
           v-model="errorMessage"
         />
 
+        <!--
+          현재 로그인 사용자 정보
+        -->
         <div
           v-if="user"
           class="mb-4"
@@ -42,16 +53,6 @@
             역할: {{ user.role.name }}
           </div>
         </div>
-
-        <v-btn
-          :loading="isLoggingOut"
-          :disabled="isLoggingOut"
-          size="large"
-          block
-          @click="logout"
-        >
-          로그아웃
-        </v-btn>
       </v-card-text>
     </v-card>
   </AppPageContainer>
@@ -60,7 +61,19 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import AppAlert from '../components/common/AppAlert.vue';
+import AppHeader from '../components/layout/AppHeader.vue';
+import AppNavigationDrawer from '../components/layout/AppNavigationDrawer.vue';
 import AppPageContainer from '../components/layout/AppPageContainer.vue';
+
+/**
+ * 사이드 메뉴 표시 상태
+ *
+ * true이면 화면 왼쪽에서 사이드 메뉴가 열리고,
+ * false이면 사이드 메뉴가 닫힌다.
+ *
+ * AppHeader의 햄버거 버튼을 통해 상태가 변경된다.
+ */
+const drawer = ref(false);
 
 /**
  * 현재 로그인 사용자 정보
@@ -76,20 +89,12 @@ const user = ref(null);
 /**
  * 메인 페이지 오류 메시지
  *
- * 사용자 정보 조회 또는 로그아웃 과정에서
- * 오류가 발생했을 때 화면에 표시할 메시지를 저장한다.
+ * 사용자 정보 조회 과정에서 오류가 발생했을 때
+ * 화면에 표시할 메시지를 저장한다.
  *
  * 빈 문자열인 경우 AppAlert는 화면에 표시되지 않는다.
  */
 const errorMessage = ref('');
-
-/**
- * 로그아웃 요청 진행 상태
- *
- * 로그아웃 요청이 진행되는 동안 버튼에 로딩 상태를 표시하고
- * 중복 로그아웃 요청이 발생하지 않도록 사용한다.
- */
-const isLoggingOut = ref(false);
 
 /**
  * 부서 코드별 화면 표시 이름
@@ -147,52 +152,4 @@ async function loadUser() {
 onMounted(() => {
   loadUser();
 });
-
-/**
- * 사용자 로그아웃
- *
- * Laravel의 로그아웃 API를 호출하여
- * 서버에 저장된 인증 세션을 종료한다.
- *
- * Axios가 Laravel의 XSRF-TOKEN 쿠키를 사용하여
- * 현재 CSRF 토큰을 요청에 자동으로 포함한다.
- */
-async function logout() {
-  // 이전 오류 메시지를 초기화한다.
-  errorMessage.value = '';
-
-  try {
-    // 로그아웃 요청 진행 상태를 활성화한다.
-    isLoggingOut.value = true;
-
-    /**
-     * Laravel 로그아웃 API 호출
-     *
-     * 로그아웃 요청은 서버 상태를 변경하므로
-     * POST 방식으로 전송한다.
-     */
-    await window.axios.post('/tillwhite/logout');
-
-    /**
-     * 로그인 화면으로 이동
-     *
-     * 로그아웃 과정에서 Laravel이 세션과 CSRF 토큰을
-     * 새로 생성하므로 로그인 페이지를 전체 새로고침한다.
-     */
-    window.location.href = '/tillwhite/login';
-  } catch (error) {
-    /**
-     * 로그아웃 실패 메시지 저장
-     *
-     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 사용하고,
-     * 예상하지 못한 오류라면 기본 오류 메시지를 표시한다.
-     */
-    errorMessage.value =
-      error.response?.data?.message ??
-      '로그아웃 중 오류가 발생했습니다.';
-  } finally {
-    // 로그아웃 요청이 완료되면 로딩 상태를 해제한다.
-    isLoggingOut.value = false;
-  }
-}
 </script>
