@@ -2,6 +2,7 @@
   <v-navigation-drawer
     v-model="drawer"
     location="left"
+    width="300"
     temporary
   >
     <v-list>
@@ -15,45 +16,200 @@
       </v-list-subheader>
 
       <!--
-        메인 페이지
+        메인
 
-        현재 시스템의 기본 화면으로 이동한다.
+        현재 로그인 사용자의 기본 정보를 확인하는
+        메인 페이지로 이동한다.
+
+        현재 사용자의 이름, 점포, 부서, 역할 등의
+        기본 정보를 확인할 수 있다.
       -->
       <v-list-item
         prepend-icon="mdi-home-outline"
         title="메인"
+        to="/tillwhite/main"
       />
 
       <!--
-        생산 관리
+        생산·폐기 관리
 
-        베이커리 생산 데이터를 관리하는 화면으로 이동한다.
+        생산 및 폐기와 관련된 기능을
+        하나의 메뉴 그룹으로 관리한다.
+
+        메뉴를 선택하면 입력, 조회, 통계
+        하위 메뉴가 펼쳐진다.
       -->
-      <v-list-item
-        prepend-icon="mdi-bread-slice-outline"
-        title="생산 관리"
-      />
+      <v-list-group
+        value="production-waste"
+      >
+        <template #activator="{ props }">
+          <v-list-item
+            v-bind="props"
+            prepend-icon="mdi-chart-box-outline"
+          >
+            <v-list-item-title
+              class="nav-menu-title"
+            >
+              생산·폐기 관리
+            </v-list-item-title>
+          </v-list-item>
+        </template>
+
+        <!--
+          입력
+
+          로그인 사용자의 점포에서 취급하는 제품을 기준으로
+          생산량과 폐기량을 입력하기 위한 메뉴이다.
+        -->
+        <v-list-item
+          prepend-icon="mdi-pencil-outline"
+          title="입력"
+        />
+
+        <!--
+          조회
+
+          기존에 입력된 생산 및 폐기 기록을
+          날짜, 제품 등의 조건으로 조회하기 위한 메뉴이다.
+        -->
+        <v-list-item
+          prepend-icon="mdi-magnify"
+          title="조회"
+        />
+
+        <!--
+          통계
+
+          저장된 생산 및 폐기 기록을 기준으로
+          생산량, 폐기량, 폐기율 등의 통계를 확인하기 위한 메뉴이다.
+        -->
+        <v-list-item
+          prepend-icon="mdi-chart-line"
+          title="통계"
+        />
+      </v-list-group>
 
       <!--
-        폐기 관리
+        근무 관리
 
-        베이커리 폐기 데이터를 관리하는 화면으로 이동한다.
-      -->
-      <v-list-item
-        prepend-icon="mdi-trash-can-outline"
-        title="폐기 관리"
-      />
+        직원의 근무 일정 및 근무 현황 등을
+        관리하기 위한 메뉴이다.
 
-      <!--
-        근무 일정
-
-        직원 근무 일정을 관리하는 화면으로 이동한다.
+        현재는 기능을 개발하지 않았으므로
+        비활성화 상태로 표시한다.
       -->
       <v-list-item
         prepend-icon="mdi-calendar-outline"
-        title="근무 일정"
-      />
+        title="근무 관리"
+        disabled
+      >
+        <template #append>
+          <v-chip
+            size="x-small"
+            variant="tonal"
+          >
+            개발중
+          </v-chip>
+        </template>
+      </v-list-item>
 
+      <!--
+        제품 관리
+
+        Till White에서 사용하는 전체 제품 정보를 관리하고
+        향후 점포별 취급 제품을 설정하기 위한 메뉴이다.
+
+        현재는 기능을 개발하지 않았으므로
+        비활성화 상태로 표시한다.
+      -->
+      <v-list-item
+        prepend-icon="mdi-bread-slice-outline"
+        title="제품 관리"
+        disabled
+      >
+        <template #append>
+          <v-chip
+            size="x-small"
+            variant="tonal"
+          >
+            개발중
+          </v-chip>
+        </template>
+      </v-list-item>
+
+      <!--
+        매출 관리
+
+        향후 점포 및 제품별 매출 데이터를
+        입력하고 조회하기 위한 메뉴이다.
+
+        현재는 관련 데이터 구조와 기능을 개발하지 않았으므로
+        비활성화 상태로 표시한다.
+      -->
+      <v-list-item
+        prepend-icon="mdi-cash-register"
+        title="매출 관리"
+        disabled
+      >
+        <template #append>
+          <v-chip
+            size="x-small"
+            variant="tonal"
+          >
+            개발중
+          </v-chip>
+        </template>
+      </v-list-item>
+
+      <!--
+        직원 관리
+
+        점포에 소속된 직원 정보와
+        직원의 역할 및 권한을 관리하기 위한 메뉴이다.
+
+        현재는 기능을 개발하지 않았으므로
+        비활성화 상태로 표시한다.
+      -->
+      <v-list-item
+        prepend-icon="mdi-account-group-outline"
+        title="직원 관리"
+        disabled
+      >
+        <template #append>
+          <v-chip
+            size="x-small"
+            variant="tonal"
+          >
+            개발중
+          </v-chip>
+        </template>
+      </v-list-item>
+
+      <!--
+        시스템
+
+        향후 변경 이력 등의 시스템 관리 기능을
+        제공하기 위한 메뉴이다.
+
+        현재는 기능을 개발하지 않았으므로
+        비활성화 상태로 표시한다.
+      -->
+      <v-list-item
+        prepend-icon="mdi-cog-outline"
+        title="시스템"
+        disabled
+      >
+        <template #append>
+          <v-chip
+            size="x-small"
+            variant="tonal"
+          >
+            개발중
+          </v-chip>
+        </template>
+      </v-list-item>
+
+      <!-- 메뉴 영역과 로그아웃 영역을 구분한다. -->
       <v-divider
         class="my-2"
       />
@@ -61,8 +217,10 @@
       <!--
         로그아웃
 
-        로그아웃 요청이 진행되는 동안 버튼을 비활성화하여
-        중복 요청이 발생하지 않도록 한다.
+        현재 로그인된 사용자의 세션을 종료한다.
+
+        로그아웃 요청이 진행되는 동안 메뉴를 비활성화하여
+        중복 로그아웃 요청이 발생하지 않도록 한다.
       -->
       <v-list-item
         prepend-icon="mdi-logout"
@@ -79,10 +237,13 @@
 import { computed, ref } from 'vue';
 
 /**
- * 사이드 메뉴 표시 상태
+ * 사이드 메뉴 컴포넌트 속성
  *
- * 부모 컴포넌트에서 v-model을 통해
- * 메뉴의 열림/닫힘 상태를 관리한다.
+ * modelValue는 부모 컴포넌트가 관리하는
+ * 사이드 메뉴의 열림/닫힘 상태이다.
+ *
+ * true이면 사이드 메뉴가 열리고
+ * false이면 사이드 메뉴가 닫힌다.
  */
 const props = defineProps({
   modelValue: {
@@ -95,11 +256,15 @@ const props = defineProps({
  * 부모 컴포넌트로 전달할 이벤트
  *
  * update:modelValue:
- * 사이드 메뉴의 열림/닫힘 상태를 부모에게 전달한다.
+ * 사이드 메뉴의 열림/닫힘 상태가 변경되었을 때
+ * 변경된 값을 부모 컴포넌트에 전달한다.
  *
  * error:
- * 로그아웃 과정에서 발생한 오류 메시지를
- * 부모 페이지의 AppAlert로 전달한다.
+ * 로그아웃 과정에서 오류가 발생했을 때
+ * 오류 메시지를 부모 페이지에 전달한다.
+ *
+ * 부모 페이지에서는 전달받은 오류 메시지를
+ * 공통 AppAlert를 통해 화면에 표시할 수 있다.
  */
 const emit = defineEmits([
   'update:modelValue',
@@ -107,8 +272,13 @@ const emit = defineEmits([
 ]);
 
 /**
- * v-navigation-drawer에서 사용할
- * 양방향 바인딩 상태
+ * 사이드 메뉴 열림/닫힘 상태
+ *
+ * 부모 컴포넌트의 modelValue와
+ * v-navigation-drawer를 연결한다.
+ *
+ * 메뉴 상태가 변경되면 update:modelValue 이벤트를 발생시켜
+ * 부모 컴포넌트의 v-model 값도 함께 변경한다.
  */
 const drawer = computed({
   get: () => props.modelValue,
@@ -118,8 +288,10 @@ const drawer = computed({
 /**
  * 로그아웃 요청 진행 상태
  *
- * 로그아웃 요청 중에는 메뉴의 로그아웃 버튼을
- * 다시 클릭할 수 없도록 한다.
+ * true이면 현재 로그아웃 요청이 진행 중이다.
+ *
+ * 로그아웃 요청 중에는 로그아웃 메뉴를 비활성화하여
+ * 사용자가 여러 번 요청하는 것을 방지한다.
  */
 const isLoggingOut = ref(false);
 
@@ -127,7 +299,7 @@ const isLoggingOut = ref(false);
  * 사용자 로그아웃
  *
  * Laravel의 로그아웃 API를 호출하여
- * 현재 사용자의 인증 세션을 종료한다.
+ * 현재 로그인 사용자의 인증 세션을 종료한다.
  *
  * Axios가 XSRF-TOKEN 쿠키를 사용하여
  * 현재 CSRF 토큰을 요청에 자동으로 포함한다.
@@ -143,16 +315,18 @@ async function logout() {
     /**
      * 로그인 화면으로 이동
      *
-     * 로그아웃 과정에서 Laravel이 세션과 CSRF 토큰을
-     * 새로 생성하므로 로그인 페이지를 전체 새로고침한다.
+     * 로그아웃 과정에서 Laravel이 기존 세션을 종료하고
+     * CSRF 토큰도 새로 생성하므로 전체 페이지 이동을 사용한다.
      */
     window.location.href = '/tillwhite/login';
   } catch (error) {
     /**
-     * 로그아웃 실패 메시지 전달
+     * 로그아웃 실패 처리
      *
-     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 사용하고,
-     * 예상하지 못한 오류라면 기본 오류 메시지를 부모 페이지로 전달한다.
+     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 사용한다.
+     *
+     * 서버에서 별도의 메시지를 전달하지 않은 경우에는
+     * 기본 로그아웃 오류 메시지를 부모 페이지에 전달한다.
      */
     emit(
       'error',
@@ -160,8 +334,22 @@ async function logout() {
         '로그아웃 중 오류가 발생했습니다.'
     );
   } finally {
-    // 로그아웃 요청이 완료되면 로딩 상태를 해제한다.
+    // 로그아웃 요청이 끝나면 진행 상태를 해제한다.
     isLoggingOut.value = false;
   }
 }
 </script>
+
+<style scoped>
+/**
+ * 사이드 메뉴 제목
+ *
+ * 기본 v-list-item 제목은 공간이 부족하면 말줄임표(...)를 사용한다.
+ * 생산·폐기 관리 메뉴 이름이 잘리지 않고 전체 표시되도록 설정한다.
+ */
+.nav-menu-title {
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+}
+</style>
