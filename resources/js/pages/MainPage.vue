@@ -40,11 +40,15 @@
       <!--
         메인 페이지 공통 헤더
 
-        로그인 페이지와 동일한 제목 및 부제목 디자인을 유지하면서
+        현재 페이지 이름은 pageTitle에서 관리하여
+        화면마다 문자열을 중복 작성하지 않도록 한다.
+
+        로그인 페이지와 동일한 제목 디자인을 유지하면서
         로그인 이후 화면에서 필요한 햄버거 메뉴 버튼을 표시한다.
       -->
       <template #header>
         <AppHeader
+          :subtitle="pageTitle"
           @menu="drawer = true"
         />
       </template>
@@ -76,8 +80,8 @@
         데이터 조회에 실패하거나
         정상적인 데이터를 전달받지 못한 경우 표시한다.
 
-        오류 문구와 디자인은 AppErrorState에서
-        공통으로 관리한다.
+        사용자 정보 조회 화면에 맞는 오류 문구를 전달하며
+        실제 오류 상태 디자인은 AppErrorState에서 공통 관리한다.
 
         다시 시도 버튼을 누르면 전체 화면 로딩 대신
         버튼 자체에 로딩 상태를 표시하면서 재조회한다.
@@ -103,6 +107,9 @@ import AppNavigationDrawer from '../components/layout/AppNavigationDrawer.vue';
 import AppPageCard from '../components/layout/AppPageCard.vue';
 import AppPageContainer from '../components/layout/AppPageContainer.vue';
 import UserInfoCard from '../components/user/UserInfoCard.vue';
+
+// 현재 페이지 이름
+const pageTitle = '메인';
 
 /**
  * 전체 화면 로딩 상태
@@ -139,7 +146,7 @@ const user = ref(null);
  * true이면 사용자 정보 요청에 실패했거나
  * 정상적인 사용자 데이터를 전달받지 못한 상태임을 의미한다.
  *
- * 조회 실패 화면 자체의 문구와 디자인은
+ * 조회 실패 화면 자체의 디자인은
  * 공통 AppErrorState 컴포넌트에서 관리한다.
  */
 const hasLoadError = ref(false);
@@ -165,14 +172,7 @@ const errorMessage = ref('');
  * 중복 작성하지 않도록 공통 함수로 관리한다.
  */
 async function fetchUser() {
-  /**
-   * 현재 로그인 사용자 API 호출
-   *
-   * 현재는 공통 조회 실패 화면을 테스트하기 위해
-   * 존재하지 않는 테스트 주소를 임시로 사용한다.
-   *
-   * 테스트가 완료되면 /tillwhite/auth/me로 되돌린다.
-   */
+  // 현재 로그인 사용자 API를 호출한다.
   const response = await window.axios.get('/tillwhite/auth/me');
   // const response = await window.axios.get('/tillwhite/auth/me-test');
 
