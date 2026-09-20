@@ -219,8 +219,8 @@
 
         현재 로그인된 사용자의 세션을 종료한다.
 
-        로그아웃 요청이 진행되는 동안 메뉴를 비활성화하여
-        중복 로그아웃 요청이 발생하지 않도록 한다.
+        로그아웃 버튼을 누르면 사이드 메뉴를 즉시 닫고
+        전체 화면 로딩 상태를 표시한 뒤 로그아웃을 요청한다.
       -->
       <v-list-item
         prepend-icon="mdi-logout"
@@ -263,12 +263,17 @@ const props = defineProps({
  * 로그아웃 과정에서 오류가 발생했을 때
  * 오류 메시지를 부모 페이지에 전달한다.
  *
- * 부모 페이지에서는 전달받은 오류 메시지를
- * 공통 AppAlert를 통해 화면에 표시할 수 있다.
+ * loading:
+ * 로그아웃 요청의 시작과 종료 상태를
+ * 부모 페이지에 전달한다.
+ *
+ * 부모 페이지에서는 loading 상태를 사용하여
+ * 공통 전체 화면 로딩 오버레이를 표시할 수 있다.
  */
 const emit = defineEmits([
   'update:modelValue',
   'error',
+  'loading',
 ]);
 
 /**
@@ -298,33 +303,52 @@ const isLoggingOut = ref(false);
 /**
  * 사용자 로그아웃
  *
- * Laravel의 로그아웃 API를 호출하여
- * 현재 로그인 사용자의 인증 세션을 종료한다.
+ * 로그아웃 버튼을 누르면 먼저 사이드 메뉴를 닫고
+ * 전체 화면 로딩 상태를 활성화한다.
  *
- * Axios가 XSRF-TOKEN 쿠키를 사용하여
- * 현재 CSRF 토큰을 요청에 자동으로 포함한다.
+ * 로그아웃에 성공하면 로딩 상태를 유지한 채
+ * 로그인 페이지로 바로 이동한다.
+ *
+ * 로그아웃에 실패한 경우에만 로딩 상태를 해제하고
+ * 오류 메시지를 부모 페이지에 전달한다.
  */
 async function logout() {
-  try {
-    // 로그아웃 요청 진행 상태를 활성화한다.
-    isLoggingOut.value = true;
+  // 로그아웃 요청 진행 상태를 활성화한다.
+  isLoggingOut.value = true;
 
+  // 로그아웃 버튼을 누르면 사이드 메뉴를 즉시 닫는다.
+  drawer.value = false;
+
+  // 부모 페이지의 전체 화면 로딩을 활성화한다.
+  emit('loading', true);
+
+  try {
     // Laravel 로그아웃 API를 호출한다.
     await window.axios.post('/tillwhite/logout');
 
     /**
      * 로그인 화면으로 이동
      *
-     * 로그아웃 과정에서 Laravel이 기존 세션을 종료하고
-     * CSRF 토큰도 새로 생성하므로 전체 페이지 이동을 사용한다.
+     * 로그아웃 성공 후에는 로딩 상태를 해제하지 않는다.
+     *
+     * 현재 화면을 다시 노출하지 않고
+     * 로딩 화면을 유지한 상태에서 로그인 화면으로 이동한다.
      */
     window.location.href = '/tillwhite/login';
   } catch (error) {
     /**
      * 로그아웃 실패 처리
      *
-     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 사용한다.
+     * 로그아웃에 실패한 경우에는 현재 페이지에 계속 머물러야 하므로
+     * 전체 화면 로딩 상태를 해제한다.
+     */
+    isLoggingOut.value = false;
+    emit('loading', false);
+
+    /**
+     * 로그아웃 오류 메시지 전달
      *
+     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 사용하고,
      * 서버에서 별도의 메시지를 전달하지 않은 경우에는
      * 기본 로그아웃 오류 메시지를 부모 페이지에 전달한다.
      */
@@ -333,9 +357,6 @@ async function logout() {
       error.response?.data?.message ??
         '로그아웃 중 오류가 발생했습니다.'
     );
-  } finally {
-    // 로그아웃 요청이 끝나면 진행 상태를 해제한다.
-    isLoggingOut.value = false;
   }
 }
 </script>

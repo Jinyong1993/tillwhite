@@ -1,6 +1,16 @@
 <template>
   <AppPageContainer>
     <!--
+      전체 화면 로딩 오버레이
+
+      현재 로그인 사용자 정보를 불러오는 동안
+      화면 전체를 덮고 중앙에 로딩 상태를 표시한다.
+    -->
+    <AppLoadingOverlay
+      :model-value="isLoadingUser"
+    />
+
+    <!--
       사이드 메뉴
 
       AppHeader의 햄버거 버튼으로 열고 닫는다.
@@ -8,18 +18,19 @@
     <AppNavigationDrawer
       v-model="drawer"
       @error="errorMessage = $event"
+      @loading="isLoadingUser = $event"
     />
 
     <!--
-      메인 페이지 공통 카드
+      메인 화면
 
-      Till White의 기준 디자인을 관리하는
-      AppPageCard 컴포넌트를 사용한다.
-
-      카드 너비, 정렬 및 본문 배경은
-      AppPageCard에서 공통으로 관리한다.
+      사용자 정보 조회가 완료된 이후에만 표시하여
+      헤더가 먼저 나타나고 사용자 정보가 나중에 나타나는
+      화면 깜빡임을 방지한다.
     -->
-    <AppPageCard>
+    <AppPageCard
+      v-if="!isLoadingUser"
+    >
       <!--
         메인 페이지 공통 헤더
 
@@ -75,19 +86,23 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import AppAlert from '../components/common/AppAlert.vue';
+import AppLoadingOverlay from '../components/common/AppLoadingOverlay.vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppNavigationDrawer from '../components/layout/AppNavigationDrawer.vue';
 import AppPageCard from '../components/layout/AppPageCard.vue';
 import AppPageContainer from '../components/layout/AppPageContainer.vue';
 
 /**
- * 사이드 메뉴 표시 상태
+ * 사용자 정보 로딩 상태
  *
- * true이면 화면 왼쪽에서 사이드 메뉴가 열리고,
- * false이면 사이드 메뉴가 닫힌다.
+ * 메인 페이지에 처음 진입하면 true 상태로 시작한다.
  *
- * AppHeader의 햄버거 버튼을 통해 상태가 변경된다.
+ * 현재 로그인 사용자 정보 조회가 완료될 때까지
+ * 전체 화면 로딩 오버레이를 표시한다.
  */
+const isLoadingUser = ref(true);
+
+// 사이드 메뉴 표시 상태
 const drawer = ref(false);
 
 /**
@@ -126,15 +141,18 @@ const departmentNames = {
 /**
  * 현재 로그인 사용자 조회
  *
- * Laravel 세션을 기준으로 현재 로그인되어 있는
- * 사용자의 점포, 부서, 역할 등의 정보를 가져온다.
+ * 메인 페이지가 표시될 때 Laravel 세션을 기준으로
+ * 현재 로그인 사용자의 정보를 조회한다.
  *
- * Axios를 사용하여 인증 관련 요청 방식을
- * 로그인 및 로그아웃 요청과 동일하게 유지한다.
+ * 사용자 정보 조회가 완료되기 전까지는
+ * 전체 화면 로딩 오버레이를 유지한다.
  */
 async function loadUser() {
   // 이전 오류 메시지를 초기화한다.
   errorMessage.value = '';
+
+  // 사용자 정보 로딩 상태를 활성화한다.
+  isLoadingUser.value = true;
 
   try {
     /**
@@ -157,12 +175,22 @@ async function loadUser() {
     errorMessage.value =
       error.response?.data?.message ??
       '사용자 정보를 불러오는 중 오류가 발생했습니다.';
+  } finally {
+    /**
+     * 사용자 정보 조회 완료
+     *
+     * 성공 또는 실패 여부와 관계없이
+     * 서버 요청이 끝나면 전체 화면 로딩을 종료한다.
+     */
+    isLoadingUser.value = false;
   }
 }
 
 /**
- * 메인 페이지가 처음 표시될 때
- * 현재 로그인 사용자 정보를 불러온다.
+ * 메인 페이지 마운트
+ *
+ * 페이지가 처음 마운트되면
+ * 현재 로그인 사용자 정보를 조회한다.
  */
 onMounted(() => {
   loadUser();
