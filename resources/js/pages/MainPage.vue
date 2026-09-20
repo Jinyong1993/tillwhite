@@ -1,8 +1,7 @@
 <template>
-  <v-container>
+  <AppPageContainer>
     <v-card
-      class="mx-auto"
-      width="400"
+      width="100%"
     >
       <v-card-title
         class="font-weight-black"
@@ -48,12 +47,13 @@
         </v-btn>
       </v-card-text>
     </v-card>
-  </v-container>
+  </AppPageContainer>
 </template>
 
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import AppPageContainer from '../components/layout/AppPageContainer.vue';
 
 /**
  * Vue Router 사용
