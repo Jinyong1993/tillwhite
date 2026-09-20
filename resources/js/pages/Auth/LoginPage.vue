@@ -14,7 +14,7 @@
       <v-card-subtitle
         class="mb-3"
       >
-        BAKERY - 생산 & 폐기 입력
+        베이커리 관리 시스템
       </v-card-subtitle>
 
       <v-card-text
@@ -39,15 +39,18 @@
             <v-text-field
               v-model="form.password"
               :rules="rules.password"
+              :type="showPassword ? 'text' : 'password'"
+              :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
               label="비밀번호"
-              type="password"
               variant="outlined"
+              @click:append-inner="showPassword = !showPassword"
             />
 
             <v-btn
               type="submit"
               :loading="isLoggingIn"
               :disabled="isLoggingIn"
+              size="large"
               block
             >
               로그인
@@ -77,6 +80,9 @@ const loginError = ref('');
 
 // 로그인 요청 진행 상태
 const isLoggingIn = ref(false);
+
+// 비밀번호 표시 여부
+const showPassword = ref(false);
 
 /**
  * Vue Router 사용
