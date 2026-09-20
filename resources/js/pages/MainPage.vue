@@ -2,59 +2,73 @@
   <AppPageContainer>
     <!--
       사이드 메뉴
+
       AppHeader의 햄버거 버튼으로 열고 닫는다.
     -->
     <AppNavigationDrawer
       v-model="drawer"
+      @error="errorMessage = $event"
     />
 
-    <v-card
-      width="100%"
-    >
+    <!--
+      메인 페이지 공통 카드
+
+      Till White의 기준 디자인을 관리하는
+      AppPageCard 컴포넌트를 사용한다.
+
+      카드 너비, 정렬 및 본문 배경은
+      AppPageCard에서 공통으로 관리한다.
+    -->
+    <AppPageCard>
       <!--
-        공통 헤더
-        햄버거 메뉴 클릭 시 부모의 drawer 상태를 변경한다.
+        메인 페이지 공통 헤더
+
+        로그인 페이지와 동일한 제목 및 부제목 디자인을 유지하면서
+        로그인 이후 화면에서 필요한 햄버거 메뉴 버튼을 표시한다.
       -->
-      <AppHeader
-        @menu="drawer = true"
+      <template #header>
+        <AppHeader
+          @menu="drawer = true"
+        />
+      </template>
+
+      <!--
+        공통 오류 알림
+
+        사용자 정보 조회 또는 사이드 메뉴에서
+        발생한 오류 메시지를 표시한다.
+      -->
+      <AppAlert
+        v-model="errorMessage"
       />
 
-      <v-card-text
-        class="bg-surface-light"
+      <!--
+        현재 로그인 사용자 정보
+
+        현재 로그인한 사용자의 이름, 점포,
+        부서 및 역할 정보를 표시한다.
+      -->
+      <div
+        v-if="user"
+        class="mb-4"
       >
-        <!--
-          공통 오류 알림
-          사용자 정보 조회 등의 오류 메시지를 표시한다.
-        -->
-        <AppAlert
-          v-model="errorMessage"
-        />
-
-        <!--
-          현재 로그인 사용자 정보
-        -->
-        <div
-          v-if="user"
-          class="mb-4"
-        >
-          <div>
-            이름: {{ user.name }}
-          </div>
-
-          <div>
-            점포: {{ user.store.name }}
-          </div>
-
-          <div>
-            부서: {{ departmentNames[user.department] ?? user.department }}
-          </div>
-
-          <div>
-            역할: {{ user.role.name }}
-          </div>
+        <div>
+          이름: {{ user.name }}
         </div>
-      </v-card-text>
-    </v-card>
+
+        <div>
+          점포: {{ user.store.name }}
+        </div>
+
+        <div>
+          부서: {{ departmentNames[user.department] ?? user.department }}
+        </div>
+
+        <div>
+          역할: {{ user.role.name }}
+        </div>
+      </div>
+    </AppPageCard>
   </AppPageContainer>
 </template>
 
@@ -63,6 +77,7 @@ import { onMounted, ref } from 'vue';
 import AppAlert from '../components/common/AppAlert.vue';
 import AppHeader from '../components/layout/AppHeader.vue';
 import AppNavigationDrawer from '../components/layout/AppNavigationDrawer.vue';
+import AppPageCard from '../components/layout/AppPageCard.vue';
 import AppPageContainer from '../components/layout/AppPageContainer.vue';
 
 /**
@@ -89,8 +104,8 @@ const user = ref(null);
 /**
  * 메인 페이지 오류 메시지
  *
- * 사용자 정보 조회 과정에서 오류가 발생했을 때
- * 화면에 표시할 메시지를 저장한다.
+ * 사용자 정보 조회 또는 사이드 메뉴에서
+ * 오류가 발생했을 때 화면에 표시할 메시지를 저장한다.
  *
  * 빈 문자열인 경우 AppAlert는 화면에 표시되지 않는다.
  */

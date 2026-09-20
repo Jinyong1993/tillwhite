@@ -1,64 +1,65 @@
 <template>
   <AppPageContainer>
-    <v-card
-      class="mx-auto"
-      width="100%"
-      max-width="400"
-    >
-      <v-card-title
-        class="font-weight-black"
+    <!--
+      로그인 페이지 공통 카드
+
+      Till White의 기준 디자인을 관리하는
+      AppPageCard 컴포넌트를 사용한다.
+
+      카드 너비, 정렬, 제목, 부제목 및 본문 배경은
+      AppPageCard에서 공통으로 관리한다.
+    -->
+    <AppPageCard>
+      <!--
+        로그인 오류 알림
+
+        로그인 요청이 실패했을 때
+        서버에서 전달받은 오류 메시지를 표시한다.
+      -->
+      <AppAlert
+        v-model="loginError"
+      />
+
+      <!--
+        로그인 입력 폼
+
+        아이디와 비밀번호를 입력받고
+        입력값 검증 후 로그인 요청을 실행한다.
+      -->
+      <v-form
+        ref="loginForm"
+        @submit.prevent="login"
       >
-        Till White
-      </v-card-title>
+        <div class="d-flex flex-column ga-2">
+          <v-text-field
+            v-model="form.id"
+            :rules="rules.id"
+            label="아이디"
+            variant="outlined"
+          />
 
-      <v-card-subtitle
-        class="mb-3"
-      >
-        베이커리 관리 시스템
-      </v-card-subtitle>
+          <v-text-field
+            v-model="form.password"
+            :rules="rules.password"
+            :type="showPassword ? 'text' : 'password'"
+            :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+            label="비밀번호"
+            variant="outlined"
+            @click:append-inner="showPassword = !showPassword"
+          />
 
-      <v-card-text
-        class="bg-surface-light"
-      >
-        <AppAlert
-          v-model="loginError"
-        />
-
-        <v-form
-          ref="loginForm"
-          @submit.prevent="login"
-        >
-          <div class="d-flex flex-column ga-2">
-            <v-text-field
-              v-model="form.id"
-              :rules="rules.id"
-              label="아이디"
-              variant="outlined"
-            />
-
-            <v-text-field
-              v-model="form.password"
-              :rules="rules.password"
-              :type="showPassword ? 'text' : 'password'"
-              :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-              label="비밀번호"
-              variant="outlined"
-              @click:append-inner="showPassword = !showPassword"
-            />
-
-            <v-btn
-              type="submit"
-              :loading="isLoggingIn"
-              :disabled="isLoggingIn"
-              size="large"
-              block
-            >
-              로그인
-            </v-btn>
-          </div>
-        </v-form>
-      </v-card-text>
-    </v-card>
+          <v-btn
+            type="submit"
+            :loading="isLoggingIn"
+            :disabled="isLoggingIn"
+            size="large"
+            block
+          >
+            로그인
+          </v-btn>
+        </div>
+      </v-form>
+    </AppPageCard>
   </AppPageContainer>
 </template>
 
@@ -66,6 +67,7 @@
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppAlert from '../../components/common/AppAlert.vue';
+import AppPageCard from '../../components/layout/AppPageCard.vue';
 import AppPageContainer from '../../components/layout/AppPageContainer.vue';
 
 /**
@@ -151,8 +153,9 @@ async function login() {
   }
 
   try {
+    // 로그인 요청 진행 상태를 활성화한다.
     isLoggingIn.value = true;
-    
+
     /**
      * Laravel 로그인 API 호출
      *
@@ -181,7 +184,8 @@ async function login() {
      * 예상하지 못한 오류라면 기본 오류 메시지를 표시한다.
      */
     loginError.value =
-      error.response?.data?.message ?? '로그인 중 오류가 발생했습니다.';
+      error.response?.data?.message ??
+      '로그인 중 오류가 발생했습니다.';
   } finally {
     // 로그인 요청이 완료되면 로딩 상태를 해제한다.
     isLoggingIn.value = false;
