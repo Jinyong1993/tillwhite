@@ -52,16 +52,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import AppPageContainer from '../components/layout/AppPageContainer.vue';
-
-/**
- * Vue Router 사용
- *
- * 로그아웃이 정상적으로 완료된 후
- * 로그인 화면으로 이동하기 위해 사용한다.
- */
-const router = useRouter();
 
 /**
  * 현재 로그인 사용자 정보
@@ -131,56 +122,36 @@ onMounted(() => {
  * Laravel의 로그아웃 API를 호출하여
  * 서버에 저장된 인증 세션을 종료한다.
  *
- * 로그아웃 요청은 서버 상태를 변경하는 요청이므로
- * GET이 아닌 POST 방식으로 전송한다.
+ * Axios가 Laravel의 XSRF-TOKEN 쿠키를 사용하여
+ * 현재 CSRF 토큰을 요청에 자동으로 포함한다.
  */
 async function logout() {
-  /**
-   * Blade에 저장된 CSRF 토큰 조회
-   *
-   * Laravel web.php의 POST 라우트는 CSRF 보호를 받으므로
-   * 현재 페이지의 meta 태그에서 토큰을 가져와 요청 헤더에 전달한다.
-   */
-  const csrfToken = document
-    .querySelector('meta[name="csrf-token"]')
-    .getAttribute('content');
+  try {
+    /**
+     * Laravel 로그아웃 API 호출
+     *
+     * 로그아웃 요청은 서버 상태를 변경하므로
+     * POST 방식으로 전송한다.
+     */
+    await window.axios.post('/tillwhite/logout');
 
-  /**
-   * Laravel 로그아웃 API 호출
-   *
-   * Accept 헤더를 application/json으로 지정하여
-   * 서버에서 JSON 응답을 받을 수 있도록 한다.
-   */
-  const response = await fetch('/tillwhite/logout', {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'X-CSRF-TOKEN': csrfToken,
-    },
-  });
-
-  /**
-   * 로그아웃 실패 처리
-   *
-   * 서버에서 정상적인 성공 응답을 반환하지 않은 경우
-   * 로그인 화면으로 이동하지 않고 오류 내용을 확인한다.
-   */
-  if (!response.ok) {
-    const data = await response.json();
-
-    console.log(data.message);
-
-    return;
+    /**
+     * 로그인 화면으로 이동
+     *
+     * 로그아웃 과정에서 Laravel이 세션과 CSRF 토큰을
+     * 새로 생성하므로 로그인 페이지를 전체 새로고침한다.
+     */
+    window.location.href = '/tillwhite/login';
+  } catch (error) {
+    /**
+     * 로그아웃 실패 처리
+     *
+     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 출력하고,
+     * 메시지가 없으면 기본 오류 메시지를 출력한다.
+     */
+    console.error(
+      error.response?.data?.message ?? '로그아웃 중 오류가 발생했습니다.'
+    );
   }
-
-  /**
-   * 로그인 화면으로 이동
-   *
-   * 서버의 인증 세션이 정상적으로 종료된 이후
-   * Vue Router를 사용하여 로그인 페이지로 이동한다.
-   */
-  router.push({
-    name: 'login',
-  });
 }
 </script>

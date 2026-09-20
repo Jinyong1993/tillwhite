@@ -54,22 +54,42 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppPageContainer from '../../components/layout/AppPageContainer.vue';
 
+/**
+ * Vue Router 사용
+ *
+ * 로그인이 정상적으로 완료된 이후
+ * 메인 페이지로 이동하기 위해 사용한다.
+ */
 const router = useRouter();
 
-// 로그인 Form
+/**
+ * 로그인 Form
+ *
+ * Vuetify의 입력값 검증을 실행하기 위해
+ * v-form 컴포넌트의 참조를 저장한다.
+ */
 const loginForm = ref(null);
 
-// 로그인 입력값
+/**
+ * 로그인 입력값
+ *
+ * 사용자가 입력한 아이디와 비밀번호를 저장한다.
+ */
 const form = ref({
   id: '',
   password: '',
 });
 
-// 로그인 입력값 검증 규칙
+/**
+ * 로그인 입력값 검증 규칙
+ *
+ * 아이디와 비밀번호가 입력되었는지
+ * Laravel 서버에 요청하기 전에 화면에서 먼저 검사한다.
+ */
 const rules = {
   id: [
     value => !!value?.trim() || '아이디를 입력해주세요.',
@@ -79,58 +99,54 @@ const rules = {
   ],
 };
 
-// CSRF 토큰
-const csrfToken = ref('');
-
 /**
- * 페이지 초기화
+ * 사용자 로그인
  *
- * Laravel에서 생성한 CSRF 토큰을 가져온다.
- */
-onMounted(() => {
-  csrfToken.value = document
-    .querySelector('meta[name="csrf-token"]')
-    .getAttribute('content');
-});
-
-/**
- * 로그인
+ * 입력값 검증이 완료되면 Laravel 로그인 API를 호출한다.
+ *
+ * Axios가 Laravel의 XSRF-TOKEN 쿠키를 사용하여
+ * 현재 CSRF 토큰을 요청에 자동으로 포함한다.
  */
 async function login() {
   // 로그인 입력값 검증
   const { valid } = await loginForm.value.validate();
 
-  // 입력값 검증 실패 시 로그인 중단
+  // 입력값 검증 실패 시 로그인 요청을 보내지 않는다.
   if (!valid) {
     return;
   }
 
-  // Laravel 로그인 요청
-  const response = await fetch('/tillwhite/login', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'X-CSRF-TOKEN': csrfToken.value,
-    },
-    body: JSON.stringify({
+  try {
+    /**
+     * Laravel 로그인 API 호출
+     *
+     * 아이디 앞뒤의 불필요한 공백은 제거한 뒤
+     * 비밀번호와 함께 서버로 전달한다.
+     */
+    await window.axios.post('/tillwhite/login', {
       ...form.value,
       id: form.value.id.trim(),
-    }),
-  });
+    });
 
-  // Laravel에서 전달받은 JSON 응답
-  const data = await response.json();
-
-  // 로그인 실패
-  if (!response.ok) {
-    console.log(data.message);
-    return;
+    /**
+     * 메인 페이지로 이동
+     *
+     * 로그인 성공 후에는 Vue Router를 사용하여
+     * 페이지 전체를 새로고침하지 않고 메인 화면으로 이동한다.
+     */
+    await router.push({
+      name: 'main',
+    });
+  } catch (error) {
+    /**
+     * 로그인 실패 처리
+     *
+     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 출력하고,
+     * 메시지가 없으면 기본 오류 메시지를 출력한다.
+     */
+    console.error(
+      error.response?.data?.message ?? '로그인 중 오류가 발생했습니다.'
+    );
   }
-
-  // 로그인 성공
-  await router.push({
-    name: 'main',
-  });
 }
 </script>
