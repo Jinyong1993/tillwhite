@@ -20,6 +20,10 @@
       <v-card-text
         class="bg-surface-light"
       >
+        <AppAlert
+          v-model="loginError"
+        />
+
         <v-form
           ref="loginForm"
           @submit.prevent="login"
@@ -42,6 +46,8 @@
 
             <v-btn
               type="submit"
+              :loading="isLoggingIn"
+              :disabled="isLoggingIn"
               block
             >
               로그인
@@ -56,7 +62,21 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import AppAlert from '../../components/common/AppAlert.vue';
 import AppPageContainer from '../../components/layout/AppPageContainer.vue';
+
+/**
+ * 로그인 실패 메시지
+ *
+ * Laravel 로그인 요청이 실패했을 때
+ * 서버에서 전달받은 오류 메시지를 저장한다.
+ *
+ * 빈 문자열인 경우 AppAlert는 화면에 표시되지 않는다.
+ */
+const loginError = ref('');
+
+// 로그인 요청 진행 상태
+const isLoggingIn = ref(false);
 
 /**
  * Vue Router 사용
@@ -108,6 +128,14 @@ const rules = {
  * 현재 CSRF 토큰을 요청에 자동으로 포함한다.
  */
 async function login() {
+  /**
+   * 이전 로그인 실패 메시지 초기화
+   *
+   * 사용자가 다시 로그인을 시도할 때
+   * 이전 요청에서 발생한 오류 메시지를 먼저 제거한다.
+   */
+  loginError.value = '';
+
   // 로그인 입력값 검증
   const { valid } = await loginForm.value.validate();
 
@@ -117,6 +145,8 @@ async function login() {
   }
 
   try {
+    isLoggingIn.value = true;
+    
     /**
      * Laravel 로그인 API 호출
      *
@@ -139,14 +169,16 @@ async function login() {
     });
   } catch (error) {
     /**
-     * 로그인 실패 처리
+     * 로그인 실패 메시지 저장
      *
-     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 출력하고,
-     * 메시지가 없으면 기본 오류 메시지를 출력한다.
+     * Laravel에서 전달한 오류 메시지가 존재하면 해당 메시지를 사용하고,
+     * 예상하지 못한 오류라면 기본 오류 메시지를 표시한다.
      */
-    console.error(
-      error.response?.data?.message ?? '로그인 중 오류가 발생했습니다.'
-    );
+    loginError.value =
+      error.response?.data?.message ?? '로그인 중 오류가 발생했습니다.';
+  } finally {
+    // 로그인 요청이 완료되면 로딩 상태를 해제한다.
+    isLoggingIn.value = false;
   }
 }
 </script>
