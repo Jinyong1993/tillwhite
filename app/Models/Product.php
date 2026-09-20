@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
@@ -161,5 +162,25 @@ class Product extends Model
     public function wasteRecords()
     {
         return $this->hasMany(WasteRecord::class);
+    }
+
+    /**
+     * 제품이 등록된 점포별 제품 관계 목록
+     *
+     * 하나의 제품은 여러 점포에서 취급할 수 있으므로
+     * Product와 StoreProduct는 일대다(One-to-Many) 관계를 가진다.
+     *
+     * store_products 테이블의 product_id가
+     * products 테이블의 id를 참조한다.
+     *
+     * 예)
+     * $product->storeProducts
+     *
+     * 위와 같이 사용하면 해당 제품이 등록된
+     * 모든 점포별 제품 관계 정보를 조회할 수 있다.
+     */
+    public function storeProducts(): HasMany
+    {
+        return $this->hasMany(StoreProduct::class);
     }
 }

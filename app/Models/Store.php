@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Store extends Model
@@ -25,16 +26,19 @@ class Store extends Model
      * 한 번에 입력하거나 수정할 수 있는 컬럼을 정의한다.
      */
     protected $fillable = [
-
         /**
          * 점포 코드
          *
          * 실제 업무 및 시스템에서 점포를 식별하기 위한
          * 고유한 코드이다.
          *
-         * 예)
-         * 1 = 무역점
-         * 2 = 다른 점포
+         * 예:
+         *
+         * 1
+         * → 무역점
+         *
+         * 2
+         * → 더현대서울점
          *
          * DB 관계에서 사용하는 id와는 별도로 관리한다.
          */
@@ -45,19 +49,30 @@ class Store extends Model
          *
          * 사용자 화면에 표시되는 실제 점포 이름이다.
          *
-         * 예)
+         * 예:
+         *
          * 무역점
+         *
+         * 더현대서울점
          */
         'name',
 
         /**
          * 점포 운영 상태
          *
-         * true(1)  = 현재 영업중
-         * false(0) = 폐점
+         * boolean 값이 아니라 문자열 상태 코드로 관리한다.
          *
-         * 점포가 폐점하더라도 기존 업무 기록을 보존하기 위해
-         * 점포 자체를 삭제하지 않고 상태값으로 관리한다.
+         * active
+         * → 정상 운영 중
+         *
+         * inactive
+         * → 일시적으로 비활성화된 점포
+         *
+         * closed
+         * → 폐점한 점포
+         *
+         * 점포 운영이 중단되더라도 기존 업무 기록을 보존하기 위해
+         * 점포 자체를 바로 삭제하지 않고 상태값으로 관리한다.
          */
         'status',
 
@@ -67,7 +82,7 @@ class Store extends Model
          * 해당 점포가 실제로 영업을 시작한 날짜이다.
          *
          * 정확한 오픈일을 알 수 없는 기존 점포의 경우에는
-         * null 값을 사용할 수 있다.
+         * NULL 값을 사용할 수 있다.
          */
         'opened_at',
 
@@ -76,8 +91,8 @@ class Store extends Model
          *
          * 해당 점포가 실제로 폐점한 날짜이다.
          *
-         * 현재 영업중인 점포는 null이며,
-         * 폐점한 경우 실제 폐점 날짜를 저장한다.
+         * 현재 운영 중이거나 아직 폐점하지 않은 점포는
+         * NULL 값을 사용한다.
          */
         'closed_at',
     ];
@@ -85,21 +100,15 @@ class Store extends Model
     /**
      * 속성 타입 변환
      *
-     * DB에서 조회하거나 모델에서 사용할 때
-     * 각 컬럼을 적절한 PHP/Laravel 타입으로 자동 변환한다.
+     * DB에서 조회한 값을 애플리케이션에서 사용할 때
+     * 필요한 PHP/Laravel 타입으로 자동 변환한다.
+     *
+     * status는 active, inactive, closed 등의
+     * 문자열 상태 코드를 그대로 사용하므로 cast하지 않는다.
      */
     protected function casts(): array
     {
         return [
-
-            /**
-             * 점포 운영 상태
-             *
-             * DB의 1/0 값을 PHP의 true/false 값으로
-             * 자동 변환하여 사용할 수 있도록 한다.
-             */
-            'status' => 'boolean',
-
             /**
              * 점포 영업 시작일
              *
@@ -113,7 +122,8 @@ class Store extends Model
              *
              * DB의 date 값을 Laravel 날짜 객체로 변환한다.
              *
-             * 영업중인 점포의 경우 null 값이 그대로 유지된다.
+             * 폐점하지 않은 점포의 경우
+             * NULL 값이 그대로 유지된다.
              */
             'closed_at' => 'date',
         ];
@@ -123,19 +133,39 @@ class Store extends Model
      * 점포에 소속된 사용자 목록
      *
      * 하나의 점포에는 여러 명의 사용자가 소속될 수 있으므로
-     * Store와 User는 일대다(One-to-Many) 관계를 가진다.
+     * Store와 User는 일대다 관계를 가진다.
      *
-     * users 테이블의 store_id가
-     * stores 테이블의 id를 참조한다.
+     * users.store_id가 stores.id를 참조한다.
      *
-     * 예)
+     * 예:
+     *
      * $store->users
      *
      * 위와 같이 사용하면 해당 점포에 현재 연결되어 있는
      * 사용자 목록을 조회할 수 있다.
      */
-    public function users()
+    public function users(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    /**
+     * 점포에서 취급하는 제품 관계 목록
+     *
+     * 하나의 점포에서는 여러 제품을 취급할 수 있으므로
+     * Store와 StoreProduct는 일대다 관계를 가진다.
+     *
+     * store_products.store_id가 stores.id를 참조한다.
+     *
+     * 예:
+     *
+     * $store->storeProducts
+     *
+     * 위와 같이 사용하면 해당 점포에 등록된
+     * 모든 제품 관계 정보를 조회할 수 있다.
+     */
+    public function storeProducts(): HasMany
+    {
+        return $this->hasMany(StoreProduct::class);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Position;
 use App\Models\Role;
 use App\Models\Store;
 use App\Models\User;
@@ -12,119 +13,195 @@ class UserSeeder extends Seeder
     /**
      * 기본 사용자 데이터 생성
      *
-     * 시스템 초기 설정 및 로그인 테스트에 사용할
-     * 기본 사용자 계정을 생성한다.
+     * 점포별:
+     * - 주방 헤드 셰프 1명
+     * - 홀 매니저 1명
+     * - 일반 직원 3명
+     *
+     * 본사:
+     * - 최고 관리자 1명
+     * - 본사 관리자 1명
+     * - 본사 직원 1명
+     *
+     * 기존 admin 계정은 일반 직원 테스트 계정으로 유지한다.
      */
     public function run(): void
     {
-        /**
-         * 기본 소속 점포 조회
-         *
-         * StoreSeeder에서 생성한 무역점을
-         * store_code를 기준으로 조회한다.
-         *
-         * 점포가 존재하지 않는 상태에서 사용자를 생성하면
-         * 잘못된 데이터가 만들어질 수 있으므로 firstOrFail()을 사용한다.
+        /*
+         * 역할 조회
          */
-        $store = Store::where('store_code', '1')->firstOrFail();
+        $staffRole = Role::where('code', 'staff')->firstOrFail();
+        $kitchenHeadRole = Role::where('code', 'kitchen_head')->firstOrFail();
+        $hallManagerRole = Role::where('code', 'hall_manager')->firstOrFail();
 
-        /**
-         * 기본 사용자 역할 조회
-         *
-         * RoleSeeder에서 생성한 일반 직원 역할을
-         * 역할 code를 기준으로 조회한다.
+        $headOfficeStaffRole = Role::where('code', 'head_office_staff')->firstOrFail();
+        $headOfficeManagerRole = Role::where('code', 'head_office_manager')->firstOrFail();
+        $superAdminRole = Role::where('code', 'super_admin')->firstOrFail();
+
+        /*
+         * 직급 조회
          */
-        $role = Role::where('code', 'staff')->firstOrFail();
+        $staffPosition = Position::where('code', 'staff')->firstOrFail();
+        $managerPosition = Position::where('code', 'manager')->firstOrFail();
+        $generalManagerPosition = Position::where('code', 'general_manager')->firstOrFail();
+        $presidentPosition = Position::where('code', 'president')->firstOrFail();
 
-        User::updateOrCreate(
+        /*
+         * 모든 점포 조회
+         */
+        $stores = Store::where('status', 'active')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        /*
+         * 점포별 직원 생성
+         */
+        foreach ($stores as $store) {
+            /*
+             * 주방 헤드 셰프
+             */
+            $this->createUser(
+                employeeCode: 'store_' . $store->store_code . '_kitchen_head',
+                name: $store->name . ' 헤드셰프',
+                password: '1234',
+                storeId: $store->id,
+                department: 'kitchen',
+                positionId: $managerPosition->id,
+                roleId: $kitchenHeadRole->id,
+            );
+
+            /*
+             * 홀 매니저
+             */
+            $this->createUser(
+                employeeCode: 'store_' . $store->store_code . '_hall_manager',
+                name: $store->name . ' 홀매니저',
+                password: '1234',
+                storeId: $store->id,
+                department: 'hall',
+                positionId: $managerPosition->id,
+                roleId: $hallManagerRole->id,
+            );
+
+            /*
+             * 일반 직원 3명
+             */
+            for ($i = 1; $i <= 3; $i++) {
+                $this->createUser(
+                    employeeCode: 'store_' . $store->store_code . '_staff_' . $i,
+                    name: $store->name . ' 직원' . $i,
+                    password: '1234',
+                    storeId: $store->id,
+                    department: $i === 1 ? 'kitchen' : 'hall',
+                    positionId: $staffPosition->id,
+                    roleId: $staffRole->id,
+                );
+            }
+        }
+
+        /*
+         * 본사 최고 관리자
+         *
+         * 본사 직원이므로 store_id는 NULL이다.
+         */
+        $this->createUser(
+            employeeCode: 'superadmin',
+            name: '최고 관리자',
+            password: '1234',
+            storeId: null,
+            department: 'head_office',
+            positionId: $presidentPosition->id,
+            roleId: $superAdminRole->id,
+        );
+
+        /*
+         * 본사 관리자
+         */
+        $this->createUser(
+            employeeCode: 'head_admin',
+            name: '본사 관리자',
+            password: '1234',
+            storeId: null,
+            department: 'head_office',
+            positionId: $generalManagerPosition->id,
+            roleId: $headOfficeManagerRole->id,
+        );
+
+        /*
+         * 본사 직원
+         */
+        $this->createUser(
+            employeeCode: 'head_staff',
+            name: '본사 직원',
+            password: '1234',
+            storeId: null,
+            department: 'head_office',
+            positionId: $staffPosition->id,
+            roleId: $headOfficeStaffRole->id,
+        );
+
+        /*
+         * 기존 기본 테스트 계정
+         *
+         * 로그인 기능 테스트용으로 유지한다.
+         *
+         * admin / 1234
+         */
+        $this->createUser(
+            employeeCode: 'admin',
+            name: '홍길동',
+            password: '1234',
+            storeId: $stores->first()?->id,
+            department: 'kitchen',
+            positionId: $staffPosition->id,
+            roleId: $staffRole->id,
+        );
+    }
+
+    /**
+     * 사용자 생성 또는 갱신
+     *
+     * employee_code를 기준으로 중복 생성을 방지한다.
+     */
+    private function createUser(
+        string $employeeCode,
+        string $name,
+        string $password,
+        ?int $storeId,
+        string $department,
+        int $positionId,
+        int $roleId,
+    ): User {
+        return User::updateOrCreate(
             [
-                /**
-                 * 로그인 아이디
-                 *
-                 * 동일한 Seeder를 여러 번 실행하더라도
-                 * 같은 사용자가 중복 생성되지 않도록 조회 기준으로 사용한다.
-                 */
-                'login_id' => 'admin',
+                'employee_code' => $employeeCode,
             ],
             [
-                /**
-                 * 사용자 이름
-                 *
-                 * 시스템 화면에 표시되는
-                 * 실제 사용자 이름이다.
-                 */
-                'name' => '홍길동',
+                'name' => $name,
 
-                /**
-                 * 로그인 비밀번호
-                 *
-                 * 개발 단계에서 로그인 기능을 테스트하기 위한
-                 * 임시 비밀번호이다.
-                 *
-                 * User 모델의 hashed cast에 의해
-                 * DB에는 평문이 아닌 해시된 값으로 저장된다.
+                /*
+                 * User 모델의 'hashed' cast가
+                 * 자동으로 비밀번호를 해시한다.
                  */
-                'password' => '1234',
+                'password' => $password,
 
-                /**
-                 * 현재 소속 점포
-                 *
-                 * StoreSeeder에서 생성한 무역점의
-                 * 실제 PK 값을 저장한다.
-                 */
-                'store_id' => $store->id,
+                'password_changed_at' => null,
+                'phone' => null,
+                'birth_date' => null,
 
-                /**
-                 * 현재 소속 부서
-                 *
-                 * kitchen = 주방
-                 */
-                'department' => 'kitchen',
+                'store_id' => $storeId,
+                'department' => $department,
 
-                /**
-                 * 사용자 역할
-                 *
-                 * RoleSeeder에서 생성한 일반 직원 역할의
-                 * 실제 PK 값을 저장한다.
-                 */
-                'role_id' => $role->id,
+                'position_id' => $positionId,
+                'role_id' => $roleId,
 
-                /**
-                 * 재직 상태
-                 *
-                 * true = 현재 재직중인 직원
-                 */
-                'is_employed' => true,
+                'employment_status' => 'active',
 
-                /**
-                 * 계정 사용 가능 여부
-                 *
-                 * true = 현재 로그인 및 시스템 사용 가능
-                 */
-                'is_active' => true,
-
-                /**
-                 * 입사일
-                 *
-                 * 현재 정확한 입사일을 초기 데이터에
-                 * 지정하지 않으므로 null로 설정한다.
-                 */
                 'hired_at' => null,
-
-                /**
-                 * 퇴사일
-                 *
-                 * 현재 재직중인 직원이므로
-                 * 퇴사일은 null로 설정한다.
-                 */
                 'resigned_at' => null,
 
-                /**
-                 * 마지막 로그인 일시
-                 *
-                 * 아직 새 DB에서 로그인한 기록이 없으므로
-                 * null로 시작한다.
-                 */
+                'is_active' => true,
                 'last_login_at' => null,
             ]
         );

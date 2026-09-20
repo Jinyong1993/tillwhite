@@ -2,148 +2,250 @@
 
 namespace Database\Seeders;
 
+use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Database\Seeder;
 
 class RolePermissionSeeder extends Seeder
 {
     /**
-     * 역할별 권한 연결
+     * 역할별 권한을 설정한다.
      *
-     * roles와 permissions 사이의 다대다 관계를
-     * role_permissions 테이블에 등록한다.
-     *
-     * 역할은 사용자의 업무 위치를 나타내고,
-     * 실제 기능 사용 가능 여부는 연결된 권한을 기준으로 판단한다.
+     * Permission은 "무엇을 할 수 있는가"만 정의한다.
+     * 자기 점포, 자기 부서, 본사, 전 점포 같은 데이터 접근 범위는
+     * RolePermissionSeeder에서 처리하지 않고 Laravel의 Policy,
+     * Service 등의 서버 로직에서 별도로 제한한다.
      */
     public function run(): void
     {
-        $rolePermissions = [
+        /**
+         * 일반 직원
+         *
+         * 자기 점포 범위의 기본 업무를 수행한다.
+         * 생산·폐기·로스 기록은 등록/수정/삭제가 가능하지만,
+         * 실제로 어떤 기록까지 수정/삭제할 수 있는지는
+         * Laravel의 데이터 접근 범위에서 제한한다.
+         */
+        $this->syncPermissions('staff', [
+            'production.view',
+            'production.create',
+            'production.update',
+            'production.delete',
 
-            /**
-             * 일반 직원 권한
-             *
-             * 자신의 생산 및 폐기 기록을
-             * 조회, 등록, 수정할 수 있다.
-             *
-             * 다른 직원의 기록을 대신 등록하거나
-             * 수정할 수 있는 대리 권한은 부여하지 않는다.
-             */
-            'staff' => [
-                'production.view',
-                'production.create',
-                'production.update',
+            'schedule.view',
 
-                'waste.view',
-                'waste.create',
-                'waste.update',
-            ],
+            'attendance.view',
 
-            /**
-             * 주방 헤드 셰프 권한
-             *
-             * 일반적인 생산·폐기 업무뿐만 아니라
-             * 관리 범위 내 주방 직원의 기록을 대리 처리할 수 있다.
-             *
-             * 실제 대리 처리 가능 범위는 권한 존재 여부만으로
-             * 결정하지 않고 Laravel 업무 로직에서 점포, 부서,
-             * 대상 직원의 근무 여부 등을 추가로 검증한다.
-             */
-            'kitchen_head' => [
-                'production.view',
-                'production.create',
-                'production.update',
-                'production.proxy_create',
-                'production.proxy_update',
+            'leave.view',
 
-                'waste.view',
-                'waste.create',
-                'waste.update',
-                'waste.proxy_create',
-                'waste.proxy_update',
+            'product.view',
 
-                'schedule.view',
-            ],
+            'recipe.view',
 
-            /**
-             * 홀 매니저 권한
-             *
-             * 자신의 업무 기록을 처리할 수 있으며
-             * 관리 범위 내 홀 직원의 기록을 대리 처리할 수 있다.
-             *
-             * 실제 대리 처리 시에는 같은 점포 및 홀 부서인지
-             * 서버의 업무 로직에서 추가로 검증한다.
-             */
-            'hall_manager' => [
-                'production.view',
-                'production.create',
-                'production.update',
-                'production.proxy_create',
-                'production.proxy_update',
+            'sales.view',
 
-                'waste.view',
-                'waste.create',
-                'waste.update',
-                'waste.proxy_create',
-                'waste.proxy_update',
+            'employee.view',
 
-                'schedule.view',
-            ],
+            'position.view',
 
-            /**
-             * 운영진 일반 직원 권한
-             *
-             * 생산 및 폐기 현황과 근무 스케줄을
-             * 조회할 수 있도록 한다.
-             *
-             * 운영진이라는 이유만으로 생산 및 폐기 원본 데이터를
-             * 직접 생성하거나 수정하는 권한은 부여하지 않는다.
-             */
-            'operations_staff' => [
-                'production.view',
-                'waste.view',
-                'schedule.view',
-            ],
-
-            /**
-             * 운영 매니저 권한
-             *
-             * 생산 및 폐기 현황을 조회할 수 있으며
-             * 근무 스케줄을 조회하고 관리할 수 있다.
-             *
-             * 생산 및 폐기 원본 데이터에 대한 직접 수정 권한은
-             * 운영 매니저라는 이유만으로 자동 부여하지 않는다.
-             */
-            'operations_manager' => [
-                'production.view',
-                'waste.view',
-
-                'schedule.view',
-                'schedule.manage',
-            ],
-        ];
+            'audit.view',
+        ]);
 
         /**
-         * 역할별 권한 저장
+         * 주방 헤드 셰프
          *
-         * 역할 code를 이용하여 Role을 조회하고
-         * 권한 code에 해당하는 permission ID를 가져온다.
+         * 자기 점포의 주방 부서를 관리한다.
+         * 스케줄, 근태, 휴가, 제품, 레시피 등을 관리할 수 있다.
          *
-         * sync()를 사용하여 Seeder에 정의된 권한 구성을
-         * role_permissions 테이블과 동일하게 맞춘다.
-         *
-         * 따라서 Seeder를 여러 번 실행해도
-         * 동일한 연결 데이터가 중복 생성되지 않는다.
+         * 직원의 인사정보 자체를 수정하는 employee.manage 권한은
+         * 부여하지 않는다.
          */
-        foreach ($rolePermissions as $roleCode => $permissionCodes) {
-            $role = Role::where('code', $roleCode)->firstOrFail();
+        $this->syncPermissions('kitchen_head', [
+            'production.view',
+            'production.create',
+            'production.update',
+            'production.delete',
 
-            $permissionIds = \App\Models\Permission::whereIn(
-                'code',
-                $permissionCodes
-            )->pluck('id');
+            'schedule.view',
+            'schedule.manage',
 
-            $role->permissions()->sync($permissionIds);
-        }
+            'attendance.view',
+            'attendance.manage',
+
+            'leave.view',
+            'leave.manage',
+
+            'product.view',
+            'product.manage',
+
+            'recipe.view',
+            'recipe.manage',
+
+            'sales.view',
+            'sales.manage',
+
+            'employee.view',
+
+            'position.view',
+
+            'audit.view',
+        ]);
+
+        /**
+         * 홀 매니저
+         *
+         * 자기 점포의 홀 부서를 관리한다.
+         * 주방 헤드 셰프와 동일한 관리 권한을 가지지만,
+         * 실제 접근 데이터는 홀 부서 범위로 제한한다.
+         *
+         * 직원의 인사정보 자체를 수정하는 employee.manage 권한은
+         * 부여하지 않는다.
+         */
+        $this->syncPermissions('hall_manager', [
+            'production.view',
+            'production.create',
+            'production.update',
+            'production.delete',
+
+            'schedule.view',
+            'schedule.manage',
+
+            'attendance.view',
+            'attendance.manage',
+
+            'leave.view',
+            'leave.manage',
+
+            'product.view',
+            'product.manage',
+
+            'recipe.view',
+            'recipe.manage',
+
+            'sales.view',
+            'sales.manage',
+
+            'employee.view',
+
+            'position.view',
+
+            'audit.view',
+        ]);
+
+        /**
+         * 본사 직원
+         *
+         * 전 점포의 생산, 제품, 레시피, 매출, 직원, 점포 정보를
+         * 조회할 수 있지만 해당 데이터를 직접 관리하지는 않는다.
+         *
+         * 근무 스케줄, 근태, 휴가는 본사 직원 범위에서만
+         * 조회할 수 있도록 Laravel에서 제한한다.
+         */
+        $this->syncPermissions('head_office_staff', [
+            'production.view',
+
+            'schedule.view',
+
+            'attendance.view',
+
+            'leave.view',
+
+            'product.view',
+
+            'recipe.view',
+
+            'sales.view',
+
+            'employee.view',
+
+            'store.view',
+
+            'position.view',
+
+            'system.view',
+
+            'audit.view',
+        ]);
+
+        /**
+         * 본사 관리자
+         *
+         * 전 점포의 주요 업무 데이터를 조회할 수 있다.
+         * 직원 인사정보, 점포, 직급, 시스템 설정은 관리할 수 있다.
+         *
+         * 생산, 제품, 레시피, 매출은 전 점포 조회만 가능하며
+         * 직접 수정할 수 있는 관리 권한은 부여하지 않는다.
+         *
+         * 스케줄, 근태, 휴가 관리 권한은 본사 직원 범위에서만
+         * 사용할 수 있도록 Laravel에서 제한한다.
+         */
+        $this->syncPermissions('head_office_manager', [
+            'production.view',
+
+            'schedule.view',
+            'schedule.manage',
+
+            'attendance.view',
+            'attendance.manage',
+
+            'leave.view',
+            'leave.manage',
+
+            'product.view',
+
+            'recipe.view',
+
+            'sales.view',
+
+            'employee.view',
+            'employee.manage',
+
+            'store.view',
+            'store.manage',
+
+            'position.view',
+            'position.manage',
+
+            'system.view',
+            'system.manage',
+
+            'audit.view',
+        ]);
+
+        /**
+         * 최고 관리자
+         *
+         * 현재 등록되어 있는 모든 Permission을 가진다.
+         * 새로운 Permission이 추가되더라도 Seeder를 다시 실행하면
+         * 자동으로 최고 관리자 역할에 포함된다.
+         *
+         * 데이터 접근 범위 역시 전 점포와 본사 전체를 대상으로 한다.
+         * 단, audit_logs는 수정/삭제 기능 자체를 제공하지 않고
+         * audit.view를 통한 조회만 허용한다.
+         */
+        $superAdmin = Role::where('code', 'super_admin')->firstOrFail();
+
+        $superAdmin->permissions()->sync(
+            Permission::query()->pluck('id')->all()
+        );
+    }
+
+    /**
+     * 역할 코드와 Permission 코드 목록을 이용해 권한을 동기화한다.
+     *
+     * sync()를 사용하기 때문에 Seeder를 다시 실행했을 때
+     * 기존에 잘못 연결되어 있거나 더 이상 필요하지 않은 권한은 제거되고,
+     * 현재 코드에 정의된 권한 구성과 동일하게 맞춰진다.
+     */
+    private function syncPermissions(string $roleCode, array $permissionCodes): void
+    {
+        $role = Role::where('code', $roleCode)->firstOrFail();
+
+        $permissionIds = Permission::query()
+            ->whereIn('code', $permissionCodes)
+            ->pluck('id')
+            ->all();
+
+        $role->permissions()->sync($permissionIds);
     }
 }

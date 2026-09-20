@@ -20,42 +20,48 @@ class DatabaseSeeder extends Seeder
         $this->call([
 
             /**
-             * 점포 기본 데이터 생성
+             * 점포 기본 데이터
              *
-             * 사용자 데이터가 점포를 참조하므로
-             * 가장 먼저 점포 데이터를 생성한다.
+             * 사용자 및 점포 관련 데이터에서 참조하므로
+             * 가장 먼저 생성한다.
              */
             StoreSeeder::class,
 
             /**
-             * 역할 기본 데이터 생성
+             * 역할 기본 데이터
              *
-             * 사용자가 role_id를 참조하고
-             * 역할별 권한 연결에도 필요하므로 먼저 생성한다.
+             * 사용자 생성 및 역할-권한 연결에 필요하다.
              */
             RoleSeeder::class,
 
             /**
-             * 권한 기본 데이터 생성
+             * 권한 기본 데이터
              *
-             * 역할과 권한을 연결하기 전에
-             * 시스템에서 사용할 권한 데이터를 생성한다.
+             * 역할과 권한을 연결하기 전에 생성한다.
              */
             PermissionSeeder::class,
 
             /**
+             * 직급 기본 데이터
+             *
+             * UserSeeder에서 position_id를 참조하므로
+             * 반드시 사용자 생성보다 먼저 실행한다.
+             */
+            PositionSeeder::class,
+
+            /**
              * 역할과 권한 연결
              *
-             * 앞에서 생성된 roles와 permissions를 이용하여
-             * role_permissions 관계 데이터를 생성한다.
+             * roles와 permissions가 모두 생성된 이후
+             * 관계 데이터를 연결한다.
              */
             RolePermissionSeeder::class,
 
             /**
              * 기본 사용자 생성
              *
-             * 사용자는 store_id와 role_id를 필요로 하므로
-             * 점포와 역할 데이터가 생성된 이후 마지막에 생성한다.
+             * 사용자는 store_id, position_id, role_id를
+             * 참조하므로 관련 기본 데이터가 모두 생성된 후 실행한다.
              */
             UserSeeder::class,
         ]);
