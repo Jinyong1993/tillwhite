@@ -149,23 +149,4 @@ class Store extends Model
         return $this->hasMany(User::class);
     }
 
-    /**
-     * 점포에서 취급하는 제품 관계 목록
-     *
-     * 하나의 점포에서는 여러 제품을 취급할 수 있으므로
-     * Store와 StoreProduct는 일대다 관계를 가진다.
-     *
-     * store_products.store_id가 stores.id를 참조한다.
-     *
-     * 예:
-     *
-     * $store->storeProducts
-     *
-     * 위와 같이 사용하면 해당 점포에 등록된
-     * 모든 제품 관계 정보를 조회할 수 있다.
-     */
-    public function storeProducts(): HasMany
-    {
-        return $this->hasMany(StoreProduct::class);
-    }
 }

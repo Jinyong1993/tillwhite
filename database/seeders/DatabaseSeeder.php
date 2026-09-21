@@ -64,6 +64,13 @@ class DatabaseSeeder extends Seeder
              * 참조하므로 관련 기본 데이터가 모두 생성된 후 실행한다.
              */
             UserSeeder::class,
+
+            /**
+             * 데모 업무 데이터
+             *
+             * 제품, 생산 기록, 근무 코드 등 화면 확인용 데이터를 생성한다.
+             */
+            DemoDataSeeder::class,
         ]);
     }
 }

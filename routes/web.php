@@ -1,34 +1,49 @@
 <?php
-
+use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductionRecordController;
+use App\Http\Controllers\SalesController;
+use App\Http\Controllers\WorkController;
 use Illuminate\Support\Facades\Route;
 
-/**
- * 인증 관련 라우트
- *
- * Vue에서 Laravel 서버로 요청하는 인증 관련 기능을 정의한다.
- * SPA 화면을 반환하는 catch-all 라우트보다 먼저 작성하여
- * 서버에서 처리해야 하는 요청과 Vue 화면 요청을 명확하게 구분한다.
- */
+// 인증 API
+Route::post('/tillwhite/login',[AuthController::class,'login']);
+Route::get('/tillwhite/auth/me',[AuthController::class,'me']);
+Route::post('/tillwhite/logout',[AuthController::class,'logout']);
 
-// 로그인
-Route::post('/tillwhite/login', [AuthController::class, 'login']);
-// 현재 로그인 사용자 조회
-Route::get('/tillwhite/auth/me', [AuthController::class, 'me']);
-// 로그아웃
-Route::post('/tillwhite/logout', [AuthController::class, 'logout']);
+// 로그인 세션이 필요한 업무 API
+Route::middleware('auth')->prefix('tillwhite/api')->group(function(){
+    Route::get('/production',[ProductionRecordController::class,'index']);
+    Route::get('/production/options',[ProductionRecordController::class,'options']);
+    Route::post('/production',[ProductionRecordController::class,'store']);
+    Route::put('/production/{productionRecord}',[ProductionRecordController::class,'update']);
+    Route::delete('/production/{productionRecord}',[ProductionRecordController::class,'destroy']);
 
-/**
- * Till White SPA 페이지
- *
- * /tillwhite 아래의 GET 요청은 Laravel에서 개별 화면을 만들지 않고
- * tillwhite.blade.php를 반환한 뒤 Vue Router가 실제 화면을 결정한다.
- *
- * 따라서 새로운 Vue 페이지가 추가되더라도
- * Laravel에 GET 라우트를 하나씩 추가할 필요가 없다.
- *
- * 서버에서 직접 처리해야 하는 API 및 인증 라우트는
- * 이 catch-all 라우트보다 위에 정의한다.
- */
-Route::get('/tillwhite/{path?}', fn () => view('tillwhite'))
-    ->where('path', '.*');
+    Route::get('/work',[WorkController::class,'index']);
+    Route::post('/work/schedules',[WorkController::class,'schedule']);
+    Route::post('/work/leave',[WorkController::class,'leave']);
+    Route::post('/work/day-off',[WorkController::class,'dayOff']);
+    Route::put('/work/requests/{type}/{id}',[WorkController::class,'review']);
+
+    Route::get('/products',[ProductController::class,'index']);
+    Route::post('/products',[ProductController::class,'store']);
+    Route::put('/products/{product}/toggle',[ProductController::class,'toggle']);
+    Route::post('/products/{product}/recipes',[ProductController::class,'recipe']);
+
+    Route::get('/sales',[SalesController::class,'index']);
+    Route::post('/sales',[SalesController::class,'store']);
+
+    Route::get('/employees',[AdminController::class,'employees']);
+    Route::post('/employees',[AdminController::class,'employeeStore']);
+    Route::put('/employees/{user}/status',[AdminController::class,'employeeStatus']);
+    Route::get('/stores',[AdminController::class,'stores']);
+    Route::post('/stores',[AdminController::class,'storeStore']);
+    Route::get('/system',[AdminController::class,'system']);
+    Route::post('/system/settings',[AdminController::class,'setting']);
+    Route::put('/system/roles/{role}/permissions',[AdminController::class,'rolePermissions']);
+    Route::get('/audits',[AdminController::class,'audits']);
+});
+
+// Vue Router용 SPA catch-all
+Route::get('/tillwhite/{path?}',fn()=>view('tillwhite'))->where('path','.*');

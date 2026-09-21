@@ -52,7 +52,7 @@
       </div>
 
       <div class="font-weight-medium">
-        {{ user.store.name }}
+        {{ user.store?.name ?? '본사' }}
       </div>
     </div>
 
@@ -98,7 +98,7 @@
       </div>
 
       <div class="font-weight-medium">
-        {{ user.role.name }}
+        {{ user.position?.name ?? '미지정' }}
       </div>
     </div>
   </div>
@@ -130,7 +130,7 @@ const props = defineProps({
 const departmentNames = {
   kitchen: '주방',
   hall: '홀',
-  operations: '운영진',
+  head_office: '본사',
 };
 
 /**
