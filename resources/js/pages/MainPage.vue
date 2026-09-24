@@ -2,14 +2,19 @@
   <!--
     Till White 메인 화면
 
-    로그인 이후 사용하는 공통 레이아웃인 AppShell을 사용하고,
-    현재 페이지 이름인 '메인'을 전달한다.
+    로그인 이후 가장 먼저 사용하는 메인 페이지이다.
+
+    AppShell을 통해 공통 헤더, 내비게이션 메뉴,
+    로딩 및 오류 처리 기능을 사용한다.
+
+    메인 화면에서는 현재 로그인한 사용자 정보와
+    자주 사용하는 업무 메뉴를 빠른 메뉴로 표시한다.
   -->
   <AppShell :title="pageTitle">
     <!--
       AppShell 기본 슬롯
 
-      AppShell에서 현재 로그인 사용자와
+      AppShell에서 현재 로그인 사용자 정보와
       Permission 확인 함수를 전달받는다.
 
       user:
@@ -22,7 +27,7 @@
       <!--
         로그인 사용자 정보
 
-        사용자 정보가 정상적으로 존재하는 경우에만
+        현재 로그인한 사용자의
         이름, 점포, 부서, 직급 정보를 표시한다.
       -->
       <UserInfoCard
@@ -42,18 +47,28 @@
       <!--
         빠른 메뉴
 
-        quickItems에 등록된 메뉴 중
-        현재 사용자가 필요한 Permission을 가지고 있는
-        메뉴만 화면에 표시한다.
+        현재 사용자가 Permission을 가지고 있는 메뉴만 표시한다.
 
-        여기에서 메뉴를 숨기는 것은 사용자 화면을 위한 처리이며,
-        실제 접근 권한은 Laravel 서버에서도 별도로 검사한다.
+        현재 사용 가능한 기능:
+        - 제품 관리
+        - 생산·폐기 관리
+
+        개발 중인 기능:
+        - 근무 관리
+        - 매출 관리
+
+        개발 중인 기능도 메뉴에는 표시하지만
+        버튼을 비활성화하여 페이지로 이동할 수 없도록 한다.
+
+        실제 시스템 접근 권한은 프론트 화면만으로 판단하지 않고
+        Laravel 서버에서도 별도로 검사한다.
       -->
       <div class="d-grid">
         <v-btn
           v-for="item in quickItems.filter((item) => can(item.permission))"
           :key="item.title"
-          :to="item.to"
+          :to="item.developing ? undefined : item.to"
+          :disabled="item.developing"
           variant="outlined"
           class="mb-2"
           block
@@ -66,14 +81,24 @@
 
           <!-- 메뉴 이름 -->
           {{ item.title }}
+
+          <!-- 개발 중인 기능 표시 -->
+          <v-chip
+            v-if="item.developing"
+            class="ml-2"
+            size="x-small"
+            variant="tonal"
+          >
+            개발 중
+          </v-chip>
         </v-btn>
       </div>
 
       <!--
-        권한 안내
+        메뉴 및 권한 안내
 
-        로그인한 사용자의 Permission에 따라
-        사용할 수 있는 메뉴가 달라질 수 있음을 안내한다.
+        사용자 Permission에 따라 표시되는 메뉴가 달라질 수 있으며,
+        아직 사용할 수 없는 기능은 '개발 중'으로 표시한다.
       -->
       <v-alert
         class="mt-3"
@@ -81,7 +106,8 @@
         variant="tonal"
         density="compact"
       >
-        권한에 따라 사용할 수 있는 메뉴만 표시됩니다.
+        권한에 따라 사용할 수 있는 기능이 제한됩니다.
+        개발 중인 기능은 현재 사용할 수 없습니다.
       </v-alert>
     </template>
   </AppShell>
@@ -101,7 +127,16 @@ import UserInfoCard from '../components/user/UserInfoCard.vue';
 const pageTitle = '메인';
 
 /**
- * 메인 화면 빠른 메뉴
+ * 메인 화면 빠른 메뉴 목록
+ *
+ * 사용자가 자주 접근하는 주요 업무 기능을
+ * 메인 화면에서 바로 이동할 수 있도록 표시한다.
+ *
+ * 메뉴 배치 순서:
+ * 1. 제품 관리
+ * 2. 생산·폐기 관리
+ * 3. 근무 관리
+ * 4. 매출 관리
  *
  * title:
  * - 화면에 표시할 메뉴 이름
@@ -115,34 +150,42 @@ const pageTitle = '메인';
  * icon:
  * - 메뉴에 표시할 Material Design Icons 아이콘
  *
- * 실제 데이터 접근 권한은 Laravel에서 다시 검사하며,
- * 여기의 permission은 프론트 화면에서
- * 사용할 수 없는 메뉴를 숨기기 위해 사용한다.
+ * developing:
+ * - false이면 현재 사용할 수 있는 기능
+ * - true이면 아직 개발 중인 기능
+ * - 개발 중인 기능은 메뉴에는 표시하지만 클릭할 수 없다.
+ *
+ * Permission은 프론트에서 메뉴 표시 여부를 결정하기 위해 사용하며,
+ * 실제 데이터 접근 권한은 Laravel 서버에서도 다시 검사한다.
  */
 const quickItems = [
   {
-    title: '생산·폐기 입력',
+    title: '제품 관리',
+    to: '/tillwhite/products',
+    permission: 'product.view',
+    icon: 'mdi-food-croissant',
+    developing: false,
+  },
+  {
+    title: '생산·폐기 관리',
     to: '/tillwhite/production',
     permission: 'production.view',
     icon: 'mdi-baguette',
+    developing: false,
   },
   {
     title: '근무 관리',
     to: '/tillwhite/work',
     permission: 'schedule.view',
     icon: 'mdi-calendar-clock',
+    developing: true,
   },
   {
-    title: '제품·레시피',
-    to: '/tillwhite/products',
-    permission: 'product.view',
-    icon: 'mdi-food-croissant',
-  },
-  {
-    title: '매출',
+    title: '매출 관리',
     to: '/tillwhite/sales',
     permission: 'sales.view',
     icon: 'mdi-cash-register',
+    developing: true,
   },
 ];
 </script>
