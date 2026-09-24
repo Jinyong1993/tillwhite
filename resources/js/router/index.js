@@ -109,6 +109,21 @@ const routes = [
   },
 
   /**
+   * 직원 관리
+   *
+   * 현재 개발 중인 기능이므로
+   * 직접 URL을 입력해도 접근할 수 없습니다.
+   */
+  {
+    path: '/tillwhite/employees',
+    component: EmployeePage,
+    meta: {
+      requiresAuth: true,
+      developing: false,
+    },
+  },
+
+  /**
    * 근무 관리
    *
    * 현재 개발 중인 기능이므로
@@ -132,21 +147,6 @@ const routes = [
   {
     path: '/tillwhite/sales',
     component: SalesPage,
-    meta: {
-      requiresAuth: true,
-      developing: true,
-    },
-  },
-
-  /**
-   * 직원 관리
-   *
-   * 현재 개발 중인 기능이므로
-   * 직접 URL을 입력해도 접근할 수 없습니다.
-   */
-  {
-    path: '/tillwhite/employees',
-    component: EmployeePage,
     meta: {
       requiresAuth: true,
       developing: true,

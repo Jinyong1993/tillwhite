@@ -137,9 +137,9 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 아래 Route의 주석을 해제합니다.
      */
 
-    // Route::get('/employees', [AdminController::class, 'employees']);
-    // Route::post('/employees', [AdminController::class, 'employeeStore']);
-    // Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
+    Route::get('/employees', [AdminController::class, 'employees']);
+    Route::post('/employees', [AdminController::class, 'employeeStore']);
+    Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
 
 
     /**

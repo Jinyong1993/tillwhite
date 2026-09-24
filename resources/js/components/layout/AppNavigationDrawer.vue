@@ -214,6 +214,13 @@ const items = [
     developing: false,
   },
   {
+    title: '직원 관리',
+    icon: 'mdi-account-group-outline',
+    to: '/tillwhite/employees',
+    permission: 'employee.view',
+    developing: false,
+  },
+  {
     title: '근무 관리',
     icon: 'mdi-calendar-clock',
     to: '/tillwhite/work',
@@ -225,13 +232,6 @@ const items = [
     icon: 'mdi-cash-register',
     to: '/tillwhite/sales',
     permission: 'sales.view',
-    developing: true,
-  },
-  {
-    title: '직원 관리',
-    icon: 'mdi-account-group-outline',
-    to: '/tillwhite/employees',
-    permission: 'employee.view',
     developing: true,
   },
   {
