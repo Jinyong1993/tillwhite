@@ -4,39 +4,86 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Mailer
+    | 기본 메일 발송 방식
     |--------------------------------------------------------------------------
     |
-    | This option controls the default mailer that is used to send all email
-    | messages unless another mailer is explicitly specified when sending
-    | the message. All additional mailers can be configured within the
-    | "mailers" array. Examples of each type of mailer are provided.
+    | Laravel에서 이메일을 발송할 때 별도의 Mailer를 지정하지 않으면
+    | 기본적으로 사용할 메일 발송 방식을 설정합니다.
+    |
+    | 현재 Till White에서는 실제 이메일 발송 기능을 사용하지 않으므로
+    | 기본값으로 log 방식을 사용합니다.
+    |
+    | MAIL_MAILER=log
+    |
+    | log 방식은 실제 이메일을 외부로 발송하지 않고
+    | 발송될 이메일 내용을 Laravel 로그에 기록합니다.
+    |
+    | 개발 중 이메일 기능을 테스트할 때
+    | 실제 메일이 발송되는 것을 방지할 수 있습니다.
+    |
+    | 추후 비밀번호 재설정, 시스템 알림 등의
+    | 이메일 기능을 구현할 경우 SMTP 또는 외부 메일 서비스를
+    | 연결하여 실제 발송 방식으로 변경할 수 있습니다.
     |
     */
-
     'default' => env('MAIL_MAILER', 'log'),
 
     /*
     |--------------------------------------------------------------------------
-    | Mailer Configurations
+    | Mailer 설정
     |--------------------------------------------------------------------------
     |
-    | Here you may configure all of the mailers used by your application plus
-    | their respective settings. Several examples have been configured for
-    | you and you are free to add your own as your application requires.
+    | Laravel에서 사용할 수 있는
+    | 여러 이메일 발송 방식을 정의합니다.
     |
-    | Laravel supports a variety of mail "transport" drivers that can be used
-    | when delivering an email. You may specify which one you're using for
-    | your mailers below. You may also add additional mailers if needed.
+    | 현재 Till White:
     |
-    | Supported: "smtp", "sendmail", "mailgun", "ses", "ses-v2",
-    |            "postmark", "resend", "log", "array",
-    |            "failover", "roundrobin"
+    | log
+    | - 현재 기본 사용
+    | - 실제 메일을 발송하지 않고 로그에 기록
+    |
+    | smtp
+    | - 일반적인 SMTP 서버를 통한 실제 이메일 발송
+    |
+    | ses
+    | - Amazon SES 사용
+    |
+    | postmark
+    | - Postmark 사용
+    |
+    | resend
+    | - Resend 사용
+    |
+    | sendmail
+    | - 서버의 Sendmail 사용
+    |
+    | array
+    | - 메일을 실제 발송하지 않고 메모리에만 저장
+    | - 주로 테스트에서 사용
+    |
+    | failover
+    | - 첫 번째 Mailer 실패 시 다른 Mailer 사용
+    |
+    | roundrobin
+    | - 여러 Mailer를 순환하여 사용
     |
     */
-
     'mailers' => [
 
+        /*
+        |--------------------------------------------------------------------------
+        | SMTP
+        |--------------------------------------------------------------------------
+        |
+        | SMTP 서버를 통해 실제 이메일을 발송합니다.
+        |
+        | 추후 Till White에서 실제 이메일 기능을 사용할 경우
+        | .env에 SMTP 서버 정보를 설정하여 사용할 수 있습니다.
+        |
+        | 서버 주소, 계정, 비밀번호 등의 민감한 정보는
+        | 이 파일에 직접 작성하지 않고 반드시 .env에서 관리합니다.
+        |
+        */
         'smtp' => [
             'transport' => 'smtp',
             'scheme' => env('MAIL_SCHEME'),
@@ -46,54 +93,175 @@ return [
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
-            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+            'local_domain' => env(
+                'MAIL_EHLO_DOMAIN',
+                parse_url(
+                    (string) env('APP_URL', 'http://localhost'),
+                    PHP_URL_HOST
+                )
+            ),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Amazon SES
+        |--------------------------------------------------------------------------
+        |
+        | Amazon Simple Email Service를 통해
+        | 이메일을 발송할 때 사용하는 설정입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        */
         'ses' => [
             'transport' => 'ses',
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Postmark
+        |--------------------------------------------------------------------------
+        |
+        | Postmark 이메일 서비스를 사용할 경우의 설정입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        */
         'postmark' => [
             'transport' => 'postmark',
+
+            // 필요한 경우 Postmark 세부 설정을 추가할 수 있습니다.
             // 'message_stream_id' => env('POSTMARK_MESSAGE_STREAM_ID'),
             // 'client' => [
             //     'timeout' => 5,
             // ],
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Resend
+        |--------------------------------------------------------------------------
+        |
+        | Resend 이메일 서비스를 사용할 경우의 설정입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        */
         'resend' => [
             'transport' => 'resend',
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Sendmail
+        |--------------------------------------------------------------------------
+        |
+        | 서버에 설치된 Sendmail 프로그램을 통해
+        | 이메일을 발송할 경우 사용합니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        */
         'sendmail' => [
             'transport' => 'sendmail',
-            'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -bs -i'),
+            'path' => env(
+                'MAIL_SENDMAIL_PATH',
+                '/usr/sbin/sendmail -bs -i'
+            ),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Log Mailer
+        |--------------------------------------------------------------------------
+        |
+        | 이메일을 실제로 발송하지 않고
+        | Laravel 로그에 이메일 내용을 기록합니다.
+        |
+        | 현재 Till White에서 사용하는 기본 Mailer입니다.
+        |
+        | 기본적으로 기록된 내용은 Laravel 로그에서
+        | 확인할 수 있습니다.
+        |
+        | 개발 중 이메일 기능을 테스트하기에 적합합니다.
+        |
+        */
         'log' => [
             'transport' => 'log',
             'channel' => env('MAIL_LOG_CHANNEL'),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Array Mailer
+        |--------------------------------------------------------------------------
+        |
+        | 이메일을 실제로 발송하지 않고
+        | 현재 실행 중인 애플리케이션 메모리에 저장합니다.
+        |
+        | 주로 자동화 테스트에서
+        | 이메일 발송 여부를 확인할 때 사용할 수 있습니다.
+        |
+        */
         'array' => [
             'transport' => 'array',
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Failover Mailer
+        |--------------------------------------------------------------------------
+        |
+        | 기본 이메일 발송 방식에 문제가 발생했을 경우
+        | 다음 Mailer를 대신 사용하는 방식입니다.
+        |
+        | 현재 설정 순서:
+        |
+        | 1. smtp
+        | 2. log
+        |
+        | SMTP 발송이 실패하면
+        | log Mailer를 대신 사용할 수 있습니다.
+        |
+        */
         'failover' => [
             'transport' => 'failover',
+
             'mailers' => [
                 'smtp',
                 'log',
             ],
+
             'retry_after' => 60,
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Round Robin Mailer
+        |--------------------------------------------------------------------------
+        |
+        | 여러 이메일 서비스를 순서대로 번갈아 사용합니다.
+        |
+        | 현재 설정:
+        |
+        | ses
+        | postmark
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        | 추후 이메일 발송량이 많아지거나
+        | 여러 메일 서비스를 분산해서 사용할 필요가 있을 때
+        | 활용할 수 있습니다.
+        |
+        */
         'roundrobin' => [
             'transport' => 'roundrobin',
+
             'mailers' => [
                 'ses',
                 'postmark',
             ],
+
             'retry_after' => 60,
         ],
 
@@ -101,18 +269,36 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Global "From" Address
+    | 기본 발신자 정보
     |--------------------------------------------------------------------------
     |
-    | You may wish for all emails sent by your application to be sent from
-    | the same address. Here you may specify a name and address that is
-    | used globally for all emails that are sent by your application.
+    | Laravel에서 이메일을 발송할 때 별도로 발신자를 지정하지 않으면
+    | 기본적으로 사용할 이메일 주소와 이름입니다.
+    |
+    | 실제 운영에서 이메일 기능을 사용할 경우
+    | MAIL_FROM_ADDRESS에는 실제 발신용 이메일 주소를 설정해야 합니다.
+    |
+    | 예:
+    |
+    | MAIL_FROM_ADDRESS=noreply@example.com
+    | MAIL_FROM_NAME="Till White"
+    |
+    | 실제 이메일 주소는 배포 환경에 맞게
+    | .env에서 관리합니다.
+    |
+    | 현재 hello@example.com은 Laravel 기본 예시값이므로
+    | 실제 이메일 발송용 주소로 사용하면 안 됩니다.
     |
     */
-
     'from' => [
-        'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
+        'address' => env(
+            'MAIL_FROM_ADDRESS',
+            'hello@example.com'
+        ),
+        'name' => env(
+            'MAIL_FROM_NAME',
+            env('APP_NAME', 'Till White')
+        ),
     ],
 
 ];

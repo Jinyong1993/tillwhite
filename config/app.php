@@ -4,101 +4,206 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Application Name
+    | 애플리케이션 이름
     |--------------------------------------------------------------------------
     |
-    | This value is the name of your application, which will be used when the
-    | framework needs to place the application's name in a notification or
-    | other UI elements where an application name needs to be displayed.
+    | 시스템 이름을 설정합니다.
+    |
+    | 실제 값은 .env의 APP_NAME을 우선 사용하며,
+    | APP_NAME이 설정되어 있지 않은 경우 "Till White"를 사용합니다.
+    |
+    | .env 권장 설정:
+    |
+    | APP_NAME="Till White"
     |
     */
-
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', 'Till White'),
 
     /*
     |--------------------------------------------------------------------------
-    | Application Environment
+    | 실행 환경
     |--------------------------------------------------------------------------
     |
-    | This value determines the "environment" your application is currently
-    | running in. This may determine how you prefer to configure various
-    | services the application utilizes. Set this in your ".env" file.
+    | 현재 애플리케이션이 어떤 환경에서 실행되고 있는지 설정합니다.
+    |
+    | 일반적으로 다음과 같이 사용합니다.
+    |
+    | local
+    | - 개발 환경
+    |
+    | production
+    | - 실제 운영 환경
+    |
+    | testing
+    | - 테스트 환경
+    |
+    | 실제 값은 .env의 APP_ENV에서 관리합니다.
+    |
+    | 개발 중:
+    | APP_ENV=local
+    |
+    | 실제 운영 서버:
+    | APP_ENV=production
     |
     */
-
     'env' => env('APP_ENV', 'production'),
 
     /*
     |--------------------------------------------------------------------------
-    | Application Debug Mode
+    | 디버그 모드
     |--------------------------------------------------------------------------
     |
-    | When your application is in debug mode, detailed error messages with
-    | stack traces will be shown on every error that occurs within your
-    | application. If disabled, a simple generic error page is shown.
+    | 오류가 발생했을 때 상세한 오류 정보를
+    | 화면에 표시할지 결정합니다.
+    |
+    | 개발 환경에서는 true를 사용할 수 있지만,
+    | 실제 운영 환경에서는 반드시 false로 설정하는 것이 좋습니다.
+    |
+    | 개발 중:
+    | APP_DEBUG=true
+    |
+    | 실제 운영 서버:
+    | APP_DEBUG=false
+    |
+    | 실제 값은 .env의 APP_DEBUG에서 관리합니다.
     |
     */
-
     'debug' => (bool) env('APP_DEBUG', false),
 
     /*
     |--------------------------------------------------------------------------
-    | Application URL
+    | 애플리케이션 기본 URL
     |--------------------------------------------------------------------------
     |
-    | This URL is used by the console to properly generate URLs when using
-    | the Artisan command line tool. You should set this to the root of
-    | the application so that it's available within Artisan commands.
+    | Laravel이 URL을 생성할 때 사용하는
+    | 애플리케이션의 기본 주소입니다.
+    |
+    | 개발 환경에서는 일반적으로:
+    |
+    | APP_URL=http://localhost:8000
+    |
+    | 실제 서버에서는 배포된 도메인을 설정합니다.
+    |
+    | 예:
+    | APP_URL=https://example.com
+    |
+    | 실제 주소는 .env에서 관리합니다.
     |
     */
-
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
     |--------------------------------------------------------------------------
-    | Application Timezone
+    | 기본 시간대
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
+    | Laravel에서 날짜와 시간을 처리할 때 사용하는
+    | 애플리케이션 기본 시간대입니다.
+    |
+    | Till White는 한국에서 사용하는 시스템이므로
+    | Asia/Seoul을 기본 시간대로 사용합니다.
+    |
+    | 이 설정은 created_at, updated_at 및
+    | 각종 날짜/시간 처리에 영향을 줄 수 있으므로
+    | 프로젝트 전체에서 동일한 기준을 사용하는 것이 중요합니다.
     |
     */
-
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'Asia/Seoul'),
 
     /*
     |--------------------------------------------------------------------------
-    | Application Locale Configuration
+    | 기본 언어
     |--------------------------------------------------------------------------
     |
-    | The application locale determines the default locale that will be used
-    | by Laravel's translation / localization methods. This option can be
-    | set to any locale for which you plan to have translation strings.
+    | Laravel의 번역 및 다국어 기능에서 사용하는
+    | 기본 언어를 설정합니다.
+    |
+    | Till White는 한국어 시스템이므로
+    | 기본값을 ko로 설정합니다.
+    |
+    | .env에서 필요에 따라 변경할 수 있습니다.
+    |
+    | APP_LOCALE=ko
     |
     */
+    'locale' => env('APP_LOCALE', 'ko'),
 
-    'locale' => env('APP_LOCALE', 'en'),
-
+    /*
+    |--------------------------------------------------------------------------
+    | 대체 언어
+    |--------------------------------------------------------------------------
+    |
+    | 현재 언어에서 필요한 번역 문구를 찾지 못했을 때
+    | 대신 사용할 언어입니다.
+    |
+    | Laravel 기본 번역이나 일부 패키지에서
+    | 한국어 번역이 존재하지 않을 가능성을 고려하여
+    | 영어(en)를 대체 언어로 사용합니다.
+    |
+    */
     'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
 
-    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
+    /*
+    |--------------------------------------------------------------------------
+    | Faker 기본 언어
+    |--------------------------------------------------------------------------
+    |
+    | Seeder 또는 Factory에서 테스트용 가짜 데이터를
+    | 생성할 때 사용하는 지역 설정입니다.
+    |
+    | 한국 이름, 주소 등의 테스트 데이터를 생성하기 쉽도록
+    | ko_KR을 기본값으로 사용합니다.
+    |
+    */
+    'faker_locale' => env('APP_FAKER_LOCALE', 'ko_KR'),
 
     /*
     |--------------------------------------------------------------------------
-    | Encryption Key
+    | 암호화 방식
     |--------------------------------------------------------------------------
     |
-    | This key is utilized by Laravel's encryption services and should be set
-    | to a random, 32 character string to ensure that all encrypted values
-    | are secure. You should do this prior to deploying the application.
+    | Laravel의 암호화 기능에서 사용하는 암호화 알고리즘입니다.
+    |
+    | Laravel 기본값인 AES-256-CBC를 사용합니다.
+    |
+    | 특별한 이유가 없다면 변경하지 않습니다.
     |
     */
-
     'cipher' => 'AES-256-CBC',
 
+    /*
+    |--------------------------------------------------------------------------
+    | 애플리케이션 암호화 키
+    |--------------------------------------------------------------------------
+    |
+    | 세션, 암호화 데이터 등 Laravel의 보안 기능에서
+    | 사용하는 매우 중요한 암호화 키입니다.
+    |
+    | 실제 값은 .env의 APP_KEY에서 관리합니다.
+    |
+    | 프로젝트를 처음 설치했을 때 다음 명령으로 생성할 수 있습니다.
+    |
+    | php artisan key:generate
+    |
+    | APP_KEY 값은 코드에 직접 작성하거나
+    | 외부에 공개하면 안 됩니다.
+    |
+    */
     'key' => env('APP_KEY'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | 이전 암호화 키
+    |--------------------------------------------------------------------------
+    |
+    | APP_KEY를 변경한 경우 이전 키로 암호화된 데이터를
+    | 복호화할 필요가 있을 때 사용할 수 있습니다.
+    |
+    | 일반적인 개발 단계에서는 비어 있어도 됩니다.
+    |
+    | 필요한 경우 .env의 APP_PREVIOUS_KEYS에서 관리합니다.
+    |
+    */
     'previous_keys' => [
         ...array_filter(
             explode(',', (string) env('APP_PREVIOUS_KEYS', ''))
@@ -107,17 +212,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Maintenance Mode Driver
+    | 유지보수 모드
     |--------------------------------------------------------------------------
     |
-    | These configuration options determine the driver used to determine and
-    | manage Laravel's "maintenance mode" status. The "cache" driver will
-    | allow maintenance mode to be controlled across multiple machines.
+    | 다음과 같은 Artisan 명령으로 사용하는
+    | Laravel 유지보수 모드의 저장 방식을 설정합니다.
     |
-    | Supported drivers: "file", "cache"
+    | php artisan down
+    | php artisan up
+    |
+    | driver:
+    |
+    | file
+    | - 현재 서버의 파일을 이용하여 유지보수 상태를 관리합니다.
+    | - 단일 서버 환경에서는 일반적으로 충분합니다.
+    |
+    | cache
+    | - 캐시를 이용하여 유지보수 상태를 관리합니다.
+    | - 여러 서버에서 동일한 애플리케이션을 운영할 때 유용합니다.
+    |
+    | 현재 Till White에서는 기본값인 file을 사용합니다.
     |
     */
-
     'maintenance' => [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),

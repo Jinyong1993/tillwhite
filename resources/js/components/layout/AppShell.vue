@@ -1,15 +1,36 @@
 <template>
   <!--
-    로그인 이후 각 업무 페이지에서 공통으로 사용하는 전체 화면 영역입니다.
-    페이지의 최대 너비와 기본 여백을 담당합니다.
+    Till White 공통 업무 화면 레이아웃
+
+    로그인 이후 각 업무 페이지에서 공통으로 사용하는
+    전체 화면 구조를 관리한다.
+
+    주요 역할:
+    - 페이지 전체 영역 관리
+    - 로그인 사용자 정보 조회
+    - 전체 화면 로딩 상태 표시
+    - 사이드 메뉴 열림/닫힘 관리
+    - 공통 페이지 카드 표시
+    - 공통 헤더 표시
+    - 공통 오류 메시지 표시
+    - 하위 페이지에 사용자 및 권한 정보 전달
   -->
   <AppPageContainer>
-    <!-- 사용자 정보 등을 불러오는 동안 표시하는 로딩 화면 -->
+    <!--
+      전체 화면 로딩
+
+      로그인 사용자 정보를 불러오거나
+      공통 메뉴에서 로딩 상태를 전달받은 동안 표시한다.
+    -->
     <AppLoadingOverlay :model-value="loading" />
 
     <!--
-      좌측 또는 모바일 내비게이션 메뉴입니다.
-      drawer 값으로 메뉴의 열림/닫힘 상태를 관리합니다.
+      공통 내비게이션 메뉴
+
+      drawer를 통해 메뉴의 열림/닫힘 상태를 관리한다.
+
+      메뉴 내부에서 오류가 발생하면 error 이벤트로 전달받고,
+      로딩 상태가 변경되면 loading 이벤트로 전달받는다.
     -->
     <AppNavigationDrawer
       v-model="drawer"
@@ -18,14 +39,23 @@
     />
 
     <!--
-      사용자 정보 로딩이 완료된 후 실제 페이지를 표시합니다.
-      현재 페이지 제목을 카드의 부제목으로 전달합니다.
+      공통 페이지 카드
+
+      초기 사용자 정보 조회가 완료된 이후에 표시한다.
+
+      현재 페이지의 title을 subtitle로 전달하여
+      페이지 이름을 공통 헤더에 표시할 수 있도록 한다.
     -->
     <AppPageCard
       v-if="!loading"
       :subtitle="title"
     >
-      <!-- 페이지 공통 상단 헤더 -->
+      <!--
+        공통 페이지 헤더
+
+        현재 페이지 이름을 표시하고,
+        메뉴 버튼을 누르면 내비게이션 메뉴를 연다.
+      -->
       <template #header>
         <AppHeader
           :subtitle="title"
@@ -33,15 +63,29 @@
         />
       </template>
 
-      <!-- API 요청이나 사용자 정보 조회 중 발생한 오류 메시지 -->
+      <!--
+        공통 오류 알림
+
+        사용자 정보 조회 또는 하위 페이지에서 전달된
+        오류 메시지를 카드 상단에 표시한다.
+      -->
       <AppAlert v-model="errorMessage" />
 
       <!--
-        각 페이지의 실제 내용을 표시하는 영역입니다.
+        각 업무 페이지의 실제 내용
 
-        user     : 현재 로그인한 사용자 정보
-        can      : 특정 권한 보유 여부를 확인하는 함수
-        setError : 하위 페이지에서 공통 오류 메시지를 설정하는 함수
+        AppShell을 사용하는 하위 페이지에
+        공통으로 필요한 사용자 및 권한 관련 기능을 전달한다.
+
+        user:
+        - 현재 로그인한 사용자 정보
+
+        can:
+        - 특정 Permission 보유 여부를 확인하는 함수
+
+        setError:
+        - 하위 페이지에서 AppShell의
+          공통 오류 메시지를 설정하는 함수
       -->
       <slot
         :user="user"
@@ -54,6 +98,7 @@
 
 <script setup>
 import { onMounted, ref } from 'vue';
+
 import { useSession } from '../../composables/useSession';
 
 import AppAlert from '../common/AppAlert.vue';
@@ -64,9 +109,11 @@ import AppPageCard from './AppPageCard.vue';
 import AppPageContainer from './AppPageContainer.vue';
 
 /**
- * 각 페이지에서 전달받는 속성입니다.
+ * AppShell 속성
  *
- * title : 현재 페이지의 제목
+ * title:
+ * - 현재 업무 페이지의 이름
+ * - AppPageCard와 AppHeader에 전달하여 화면에 표시한다.
  */
 const props = defineProps({
   title: {
@@ -75,21 +122,34 @@ const props = defineProps({
   },
 });
 
-// 내비게이션 메뉴 열림/닫힘 상태
+/**
+ * 공통 화면 상태
+ *
+ * drawer:
+ * - 내비게이션 메뉴의 열림/닫힘 상태
+ *
+ * loading:
+ * - 공통 로딩 상태
+ * - true인 동안 전체 화면 로딩 오버레이를 표시한다.
+ *
+ * errorMessage:
+ * - AppShell에서 표시할 공통 오류 메시지
+ */
 const drawer = ref(false);
-
-// 사용자 정보 로딩 상태
 const loading = ref(true);
-
-// 화면에 표시할 공통 오류 메시지
 const errorMessage = ref('');
 
 /**
- * 로그인 세션 관련 공통 기능입니다.
+ * 로그인 Session 공통 기능
  *
- * user     : 현재 로그인한 사용자
- * loadUser : 서버에서 현재 사용자 정보를 조회하는 함수
- * can      : 현재 사용자의 권한을 확인하는 함수
+ * user:
+ * - 현재 로그인한 사용자
+ *
+ * loadUser:
+ * - 서버에서 현재 로그인 사용자 정보를 조회한다.
+ *
+ * can:
+ * - 현재 사용자가 특정 Permission을 가지고 있는지 확인한다.
  */
 const {
   user,
@@ -97,22 +157,34 @@ const {
   can,
 } = useSession();
 
-// 하위 페이지에서 전달한 오류 메시지를 공통 알림 영역에 설정합니다.
+/**
+ * 공통 오류 메시지 설정
+ *
+ * 하위 업무 페이지에서 오류가 발생했을 때
+ * AppShell의 AppAlert에 표시할 메시지를 설정한다.
+ */
 function setError(message) {
   errorMessage.value = message;
 }
 
 /**
- * AppShell이 화면에 처음 표시될 때
- * 현재 로그인한 사용자 정보를 서버에서 불러옵니다.
+ * AppShell 초기화
+ *
+ * AppShell이 처음 화면에 표시되면
+ * 현재 로그인한 사용자 정보를 불러온다.
+ *
+ * 사용자 정보 조회에 실패하면
+ * 공통 오류 메시지를 표시한다.
+ *
+ * 성공 또는 실패 여부와 관계없이
+ * 요청이 끝나면 초기 로딩 상태를 종료한다.
  */
 onMounted(async () => {
   try {
     await loadUser();
-  } catch (e) {
+  } catch (error) {
     errorMessage.value = '사용자 정보를 불러오지 못했습니다.';
   } finally {
-    // 성공/실패 여부와 관계없이 사용자 정보 조회가 끝나면 로딩을 종료합니다.
     loading.value = false;
   }
 });

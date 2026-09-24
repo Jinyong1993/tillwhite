@@ -1,11 +1,67 @@
+/*
+|--------------------------------------------------------------------------
+| Tailwind CSS
+|--------------------------------------------------------------------------
+|
+| Laravel 기본 프로젝트에서 사용하는 Tailwind CSS를 불러옵니다.
+|
+| 현재 Till White의 실제 화면 구성은
+| Vue.js + Vuetify를 중심으로 작성되어 있으므로
+| Tailwind CSS는 주요 UI 스타일링에 사용하지 않습니다.
+|
+| 현재 단계에서는 Laravel 기본 구성을 유지합니다.
+|
+*/
 @import 'tailwindcss';
 
+/*
+|--------------------------------------------------------------------------
+| Tailwind 클래스 검색 대상
+|--------------------------------------------------------------------------
+|
+| Tailwind는 아래 파일들을 확인하여 실제로 사용되는
+| CSS Utility Class를 찾아 필요한 스타일을 생성합니다.
+|
+| 현재 Till White는 Vuetify 중심이지만
+| Laravel 기본 설정을 그대로 유지합니다.
+|
+*/
+
+/* Laravel Pagination Blade */
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+/* Laravel이 컴파일한 Blade View */
 @source '../../storage/framework/views/*.php';
+
+/* Till White Blade 파일 */
 @source '../**/*.blade.php';
+
+/* Till White JavaScript 파일 */
 @source '../**/*.js';
 
+/*
+|--------------------------------------------------------------------------
+| Tailwind Theme
+|--------------------------------------------------------------------------
+|
+| Tailwind에서 사용할 기본 Sans Serif 글꼴을 설정합니다.
+|
+| Instrument Sans를 우선 사용하고,
+| 사용할 수 없는 환경에서는 운영체제의 기본 Sans Serif
+| 글꼴을 순서대로 사용합니다.
+|
+| 현재 Till White의 주요 UI는 Vuetify가 담당하므로
+| 이 설정이 전체 Vuetify 디자인을 결정하는 것은 아닙니다.
+|
+*/
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans:
+        'Instrument Sans',
+        ui-sans-serif,
+        system-ui,
+        sans-serif,
+        'Apple Color Emoji',
+        'Segoe UI Emoji',
+        'Segoe UI Symbol',
+        'Noto Color Emoji';
 }

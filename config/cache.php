@@ -6,39 +6,84 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Cache Store
+    | 기본 캐시 저장소
     |--------------------------------------------------------------------------
     |
-    | This option controls the default cache store that will be used by the
-    | framework. This connection is utilized if another isn't explicitly
-    | specified when running a cache operation inside the application.
+    | Laravel에서 Cache 기능을 사용할 때
+    | 별도의 저장소를 지정하지 않으면 사용할 기본 캐시 저장소입니다.
+    |
+    | Till White는 현재 database 방식을 기본값으로 사용합니다.
+    |
+    | 실제 값은 .env에서 변경할 수 있습니다.
+    |
+    | CACHE_STORE=database
+    |
+    | database 캐시를 사용할 경우
+    | cache 테이블이 DB에 존재해야 합니다.
     |
     */
-
     'default' => env('CACHE_STORE', 'database'),
 
     /*
     |--------------------------------------------------------------------------
-    | Cache Stores
+    | 캐시 저장소
     |--------------------------------------------------------------------------
     |
-    | Here you may define all of the cache "stores" for your application as
-    | well as their drivers. You may even define multiple stores for the
-    | same cache driver to group types of items stored in your caches.
+    | Laravel에서 사용할 수 있는 캐시 저장 방식을 정의합니다.
     |
-    | Supported drivers: "array", "database", "file", "memcached",
-    |                    "redis", "dynamodb", "octane",
-    |                    "failover", "null"
+    | 현재 Till White에서는 database를 기본으로 사용하지만,
+    | 개발 또는 운영 환경이 변경될 경우
+    | file, Redis 등의 저장소로 변경할 수 있습니다.
+    |
+    | 캐시는 자주 조회하지만 자주 변경되지 않는 데이터를
+    | 일정 시간 저장하여 반복적인 DB 조회나 계산을
+    | 줄이기 위해 사용할 수 있습니다.
+    |
+    | 예:
+    | - 시스템 설정
+    | - 자주 사용하는 기준 정보
+    | - 반복적으로 조회되는 데이터
+    |
+    | 단, 직원 권한이나 실시간 업무 데이터처럼
+    | 즉시 변경사항이 반영되어야 하는 데이터는
+    | 캐시 적용 시 갱신 전략을 함께 고려해야 합니다.
     |
     */
-
     'stores' => [
 
+        /*
+        |--------------------------------------------------------------------------
+        | Array 캐시
+        |--------------------------------------------------------------------------
+        |
+        | 현재 PHP 요청이 실행되는 동안에만
+        | 메모리에 캐시 데이터를 저장합니다.
+        |
+        | 요청이 종료되면 데이터가 사라지므로
+        | 주로 테스트 등에 사용할 수 있습니다.
+        |
+        */
         'array' => [
             'driver' => 'array',
             'serialize' => false,
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Database 캐시
+        |--------------------------------------------------------------------------
+        |
+        | 캐시 데이터를 데이터베이스 테이블에 저장합니다.
+        |
+        | 현재 Till White에서 사용하는 기본 캐시 방식입니다.
+        |
+        | 기본 테이블:
+        | cache
+        |
+        | 캐시 Lock 관련 데이터 역시
+        | 데이터베이스를 통해 관리할 수 있습니다.
+        |
+        */
         'database' => [
             'driver' => 'database',
             'connection' => env('DB_CACHE_CONNECTION'),
@@ -47,22 +92,53 @@ return [
             'lock_table' => env('DB_CACHE_LOCK_TABLE'),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | File 캐시
+        |--------------------------------------------------------------------------
+        |
+        | 캐시 데이터를 서버의 파일 시스템에 저장합니다.
+        |
+        | 저장 위치:
+        | storage/framework/cache/data
+        |
+        | 간단한 단일 서버 환경에서 사용할 수 있습니다.
+        |
+        */
         'file' => [
             'driver' => 'file',
             'path' => storage_path('framework/cache/data'),
             'lock_path' => storage_path('framework/cache/data'),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Memcached 캐시
+        |--------------------------------------------------------------------------
+        |
+        | Memcached 서버를 이용하여
+        | 메모리 기반 캐시를 사용할 때의 설정입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        | 추후 Memcached를 도입하는 경우
+        | .env에서 서버 주소와 인증 정보를 설정할 수 있습니다.
+        |
+        */
         'memcached' => [
             'driver' => 'memcached',
+
             'persistent_id' => env('MEMCACHED_PERSISTENT_ID'),
+
             'sasl' => [
                 env('MEMCACHED_USERNAME'),
                 env('MEMCACHED_PASSWORD'),
             ],
+
             'options' => [
                 // Memcached::OPT_CONNECT_TIMEOUT => 2000,
             ],
+
             'servers' => [
                 [
                     'host' => env('MEMCACHED_HOST', '127.0.0.1'),
@@ -72,12 +148,39 @@ return [
             ],
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Redis 캐시
+        |--------------------------------------------------------------------------
+        |
+        | Redis 서버를 이용한 고속 메모리 캐시 설정입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        | 추후 사용자가 많아지거나 서버를 확장하여
+        | 캐시 성능을 높여야 할 경우 Redis 도입을
+        | 검토할 수 있습니다.
+        |
+        */
         'redis' => [
             'driver' => 'redis',
             'connection' => env('REDIS_CACHE_CONNECTION', 'cache'),
-            'lock_connection' => env('REDIS_CACHE_LOCK_CONNECTION', 'default'),
+            'lock_connection' => env(
+                'REDIS_CACHE_LOCK_CONNECTION',
+                'default'
+            ),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | DynamoDB 캐시
+        |--------------------------------------------------------------------------
+        |
+        | AWS DynamoDB를 캐시 저장소로 사용할 경우의 설정입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        */
         'dynamodb' => [
             'driver' => 'dynamodb',
             'key' => env('AWS_ACCESS_KEY_ID'),
@@ -87,12 +190,41 @@ return [
             'endpoint' => env('DYNAMODB_ENDPOINT'),
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Laravel Octane 캐시
+        |--------------------------------------------------------------------------
+        |
+        | Laravel Octane 환경에서 사용할 수 있는
+        | 캐시 저장소입니다.
+        |
+        | 현재 Till White에서는 사용하지 않습니다.
+        |
+        */
         'octane' => [
             'driver' => 'octane',
         ],
 
+        /*
+        |--------------------------------------------------------------------------
+        | Failover 캐시
+        |--------------------------------------------------------------------------
+        |
+        | 기본 캐시 저장소에 문제가 발생했을 경우
+        | 다른 캐시 저장소를 순서대로 사용할 수 있도록 합니다.
+        |
+        | 현재 설정:
+        |
+        | 1. database
+        | 2. array
+        |
+        | database 캐시를 사용할 수 없는 경우
+        | array 캐시를 대체 저장소로 사용합니다.
+        |
+        */
         'failover' => [
             'driver' => 'failover',
+
             'stores' => [
                 'database',
                 'array',
@@ -103,15 +235,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Cache Key Prefix
+    | 캐시 Key Prefix
     |--------------------------------------------------------------------------
     |
-    | When utilizing the APC, database, memcached, Redis, and DynamoDB cache
-    | stores, there might be other applications using the same cache. For
-    | that reason, you may prefix every cache key to avoid collisions.
+    | 캐시에 저장되는 Key 앞에 붙는 접두사입니다.
+    |
+    | 하나의 Redis, Memcached 또는 데이터베이스 등을
+    | 여러 애플리케이션이 함께 사용할 경우
+    | 서로 같은 캐시 Key가 충돌하는 것을 방지합니다.
+    |
+    | 기본적으로 APP_NAME을 기반으로 자동 생성합니다.
+    |
+    | 예:
+    |
+    | APP_NAME="Till White"
+    |
+    | → till-white-cache-...
+    |
+    | 필요하면 .env에서 직접 지정할 수도 있습니다.
+    |
+    | CACHE_PREFIX=tillwhite-cache-
     |
     */
-
-    'prefix' => env('CACHE_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-cache-'),
+    'prefix' => env(
+        'CACHE_PREFIX',
+        Str::slug((string) env('APP_NAME', 'Till White')).'-cache-'
+    ),
 
 ];

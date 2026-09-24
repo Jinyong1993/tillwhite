@@ -6,15 +6,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Authentication Defaults
+    | 기본 인증 설정
     |--------------------------------------------------------------------------
     |
-    | This option defines the default authentication "guard" and password
-    | reset "broker" for your application. You may change these values
-    | as required, but they're a perfect start for most applications.
+    | Laravel에서 기본적으로 사용할 인증 Guard와
+    | 비밀번호 재설정 Broker를 지정합니다.
+    |
+    | Till White는 일반적인 웹 세션 기반 로그인 방식을 사용하므로
+    | 기본 Guard는 web을 사용합니다.
+    |
+    | 실제 로그인 흐름:
+    |
+    | employee_code + password 입력
+    | → AuthController에서 User 조회
+    | → 비밀번호 확인
+    | → 계정 및 재직 상태 확인
+    | → Auth::login()
+    | → Laravel Session에 로그인 상태 저장
     |
     */
-
     'defaults' => [
         'guard' => env('AUTH_GUARD', 'web'),
         'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
@@ -22,21 +32,27 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Authentication Guards
+    | 인증 Guard
     |--------------------------------------------------------------------------
     |
-    | Next, you may define every authentication guard for your application.
-    | Of course, a great default configuration has been defined for you
-    | which utilizes session storage plus the Eloquent user provider.
+    | 사용자의 로그인 상태를 어떤 방식으로 유지할지 설정합니다.
     |
-    | All authentication guards have a user provider, which defines how the
-    | users are actually retrieved out of your database or other storage
-    | system used by the application. Typically, Eloquent is utilized.
+    | Till White에서는 session 드라이버를 사용합니다.
     |
-    | Supported: "session"
+    | 즉, 로그인에 성공하면 Laravel Session을 통해
+    | 사용자의 인증 상태를 유지합니다.
+    |
+    | provider에는 아래에서 정의한 users Provider를 사용합니다.
+    |
+    | 현재 구조:
+    |
+    | Vue
+    | → Laravel 로그인 API
+    | → Auth::login()
+    | → Session
+    | → 이후 요청에서 인증된 User 확인
     |
     */
-
     'guards' => [
         'web' => [
             'driver' => 'session',
@@ -46,56 +62,77 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | User Providers
+    | 사용자 Provider
     |--------------------------------------------------------------------------
     |
-    | All authentication guards have a user provider, which defines how the
-    | users are actually retrieved out of your database or other storage
-    | system used by the application. Typically, Eloquent is utilized.
+    | 인증 과정에서 사용자 정보를
+    | 어디에서 가져올지 설정합니다.
     |
-    | If you have multiple user tables or models you may configure multiple
-    | providers to represent the model / table. These providers may then
-    | be assigned to any extra authentication guards you have defined.
+    | Till White에서는 Eloquent를 사용하여
+    | App\Models\User 모델과 users 테이블을 사용합니다.
     |
-    | Supported: "database", "eloquent"
+    | User 모델에는 다음과 같은 정보가 포함됩니다.
+    |
+    | - 사번(employee_code)
+    | - 이름
+    | - 비밀번호
+    | - 점포
+    | - 부서
+    | - 직급
+    | - Role
+    | - 재직 상태
+    | - 계정 활성 상태
+    |
+    | 로그인 ID는 email이 아니라 employee_code를 사용하지만,
+    | 현재 AuthController에서 employee_code로 직접 사용자를 조회하므로
+    | 이 설정에서 별도로 지정할 필요는 없습니다.
     |
     */
-
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
         ],
-
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Resetting Passwords
+    | 비밀번호 재설정
     |--------------------------------------------------------------------------
     |
-    | These configuration options specify the behavior of Laravel's password
-    | reset functionality, including the table utilized for token storage
-    | and the user provider that is invoked to actually retrieve users.
+    | Laravel의 비밀번호 재설정 기능을 사용할 경우
+    | 재설정 토큰을 어떻게 관리할지 설정합니다.
     |
-    | The expiry time is the number of minutes that each reset token will be
-    | considered valid. This security feature keeps tokens short-lived so
-    | they have less time to be guessed. You may change this as needed.
+    | provider
+    | - users Provider를 통해 사용자를 조회합니다.
     |
-    | The throttle setting is the number of seconds a user must wait before
-    | generating more password reset tokens. This prevents the user from
-    | quickly generating a very large amount of password reset tokens.
+    | table
+    | - 비밀번호 재설정 토큰을 저장할 테이블입니다.
+    |
+    | expire
+    | - 재설정 토큰의 유효시간입니다.
+    | - 현재 60분입니다.
+    |
+    | throttle
+    | - 새로운 재설정 토큰을 다시 요청할 수 있을 때까지
+    |   기다려야 하는 시간입니다.
+    | - 현재 60초입니다.
+    |
+    | 현재 Till White 로그인에서는
+    | 별도의 비밀번호 찾기/재설정 기능을 사용하지 않더라도
+    | Laravel 기본 설정으로 남겨둘 수 있습니다.
+    |
+    | 추후 관리자 비밀번호 초기화 또는
+    | 직원 비밀번호 재설정 기능을 구현할 때 사용할 수 있습니다.
     |
     */
-
     'passwords' => [
         'users' => [
             'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'table' => env(
+                'AUTH_PASSWORD_RESET_TOKEN_TABLE',
+                'password_reset_tokens'
+            ),
             'expire' => 60,
             'throttle' => 60,
         ],
@@ -103,15 +140,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Password Confirmation Timeout
+    | 비밀번호 재확인 유효시간
     |--------------------------------------------------------------------------
     |
-    | Here you may define the number of seconds before a password confirmation
-    | window expires and users are asked to re-enter their password via the
-    | confirmation screen. By default, the timeout lasts for three hours.
+    | 중요한 작업을 수행하기 전에 비밀번호를 다시 입력하도록 하는
+    | Laravel 비밀번호 확인 기능의 유효시간입니다.
+    |
+    | 기본값:
+    | 10800초 = 3시간
+    |
+    | 예를 들어 추후 비밀번호 변경이나
+    | 중요한 시스템 관리 기능에서 비밀번호 재확인을 적용한다면
+    | 이 시간이 지나면 다시 비밀번호를 입력해야 합니다.
+    |
+    | 현재 Till White에서는 별도의 비밀번호 재확인 화면을
+    | 구현하지 않았으므로 직접 사용되는 설정은 아닙니다.
     |
     */
-
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
 ];

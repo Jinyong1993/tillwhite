@@ -6,143 +6,220 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Session Driver
+    | 기본 Session 저장 방식
     |--------------------------------------------------------------------------
     |
-    | This option determines the default session driver that is utilized for
-    | incoming requests. Laravel supports a variety of storage options to
-    | persist session data. Database storage is a great default choice.
+    | Laravel 로그인 상태와 Session 데이터를
+    | 어디에 저장할지 설정합니다.
     |
-    | Supported: "file", "cookie", "database", "memcached",
-    |            "redis", "dynamodb", "array"
+    | 현재 Till White는 database 방식을 사용합니다.
+    |
+    | .env:
+    |
+    | SESSION_DRIVER=database
+    |
+    | database 방식을 사용하면 Session 정보가
+    | DB의 sessions 테이블에 저장됩니다.
+    |
+    | Till White 로그인 흐름:
+    |
+    | employee_code + password
+    | → AuthController 로그인 처리
+    | → Auth::login()
+    | → Session 생성
+    | → sessions 테이블에 Session 저장
+    | → 이후 요청에서도 로그인 사용자 확인
+    |
+    | Supported:
+    | file, cookie, database, memcached,
+    | redis, dynamodb, array
     |
     */
-
     'driver' => env('SESSION_DRIVER', 'database'),
 
     /*
     |--------------------------------------------------------------------------
-    | Session Lifetime
+    | Session 유지 시간
     |--------------------------------------------------------------------------
     |
-    | Here you may specify the number of minutes that you wish the session
-    | to be allowed to remain idle before it expires. If you want them
-    | to expire immediately when the browser is closed then you may
-    | indicate that via the expire_on_close configuration option.
+    | 사용자가 아무 요청도 하지 않은 상태에서
+    | Session을 몇 분 동안 유지할지 설정합니다.
+    |
+    | 기본값:
+    |
+    | 120분 = 2시간
+    |
+    | 사용자가 계속 시스템을 사용하면 Session 활동이 갱신되며,
+    | 설정된 시간 동안 아무 활동이 없으면 Session이 만료됩니다.
+    |
+    | 실제 값은 .env에서 변경할 수 있습니다.
+    |
+    | SESSION_LIFETIME=120
     |
     */
-
     'lifetime' => (int) env('SESSION_LIFETIME', 120),
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
-
     /*
     |--------------------------------------------------------------------------
-    | Session Encryption
+    | 브라우저 종료 시 Session 만료 여부
     |--------------------------------------------------------------------------
     |
-    | This option allows you to easily specify that all of your session data
-    | should be encrypted before it's stored. All encryption is performed
-    | automatically by Laravel and you may use the session like normal.
+    | true:
+    | - 브라우저를 닫으면 Session Cookie가 만료됩니다.
+    |
+    | false:
+    | - 브라우저를 닫더라도 설정된 Session 유지시간에 따라
+    |   로그인 상태가 유지될 수 있습니다.
+    |
+    | 현재 기본값은 false입니다.
     |
     */
-
-    'encrypt' => env('SESSION_ENCRYPT', false),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session File Location
-    |--------------------------------------------------------------------------
-    |
-    | When utilizing the "file" session driver, the session files are placed
-    | on disk. The default storage location is defined here; however, you
-    | are free to provide another location where they should be stored.
-    |
-    */
-
-    'files' => storage_path('framework/sessions'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session Database Connection
-    |--------------------------------------------------------------------------
-    |
-    | When using the "database" or "redis" session drivers, you may specify a
-    | connection that should be used to manage these sessions. This should
-    | correspond to a connection in your database configuration options.
-    |
-    */
-
-    'connection' => env('SESSION_CONNECTION'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session Database Table
-    |--------------------------------------------------------------------------
-    |
-    | When using the "database" session driver, you may specify the table to
-    | be used to store sessions. Of course, a sensible default is defined
-    | for you; however, you're welcome to change this to another table.
-    |
-    */
-
-    'table' => env('SESSION_TABLE', 'sessions'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session Cache Store
-    |--------------------------------------------------------------------------
-    |
-    | When using one of the framework's cache driven session backends, you may
-    | define the cache store which should be used to store the session data
-    | between requests. This must match one of your defined cache stores.
-    |
-    | Affects: "dynamodb", "memcached", "redis"
-    |
-    */
-
-    'store' => env('SESSION_STORE'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session Sweeping Lottery
-    |--------------------------------------------------------------------------
-    |
-    | Some session drivers must manually sweep their storage location to get
-    | rid of old sessions from storage. Here are the chances that it will
-    | happen on a given request. By default, the odds are 2 out of 100.
-    |
-    */
-
-    'lottery' => [2, 100],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session Cookie Name
-    |--------------------------------------------------------------------------
-    |
-    | Here you may change the name of the session cookie that is created by
-    | the framework. Typically, you should not need to change this value
-    | since doing so does not grant a meaningful security improvement.
-    |
-    */
-
-    'cookie' => env(
-        'SESSION_COOKIE',
-        Str::slug((string) env('APP_NAME', 'laravel')).'-session'
+    'expire_on_close' => env(
+        'SESSION_EXPIRE_ON_CLOSE',
+        false
     ),
 
     /*
     |--------------------------------------------------------------------------
-    | Session Cookie Path
+    | Session 데이터 암호화
     |--------------------------------------------------------------------------
     |
-    | The session cookie path determines the path for which the cookie will
-    | be regarded as available. Typically, this will be the root path of
-    | your application, but you're free to change this when necessary.
+    | Session 저장소에 데이터를 저장하기 전에
+    | Session 내용을 암호화할지 설정합니다.
+    |
+    | true로 설정하면 Laravel이 Session 데이터를
+    | 자동으로 암호화하고 복호화합니다.
+    |
+    | 현재 기본값은 false입니다.
     |
     */
+    'encrypt' => env('SESSION_ENCRYPT', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | File Session 저장 위치
+    |--------------------------------------------------------------------------
+    |
+    | SESSION_DRIVER=file을 사용할 경우
+    | Session 파일을 저장할 위치입니다.
+    |
+    | 저장 위치:
+    |
+    | storage/framework/sessions
+    |
+    | 현재 Till White는 database Session을 사용하므로
+    | 기본 로그인 처리에서는 사용하지 않습니다.
+    |
+    */
+    'files' => storage_path('framework/sessions'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session DB 연결
+    |--------------------------------------------------------------------------
+    |
+    | database 또는 redis Session Driver를 사용할 때
+    | 어떤 DB 연결을 사용할지 지정할 수 있습니다.
+    |
+    | 값을 별도로 지정하지 않으면
+    | 애플리케이션의 기본 DB 연결을 사용합니다.
+    |
+    | 현재 Till White의 기본 DB는 SQLite이므로
+    | 별도 설정이 없다면 SQLite를 사용합니다.
+    |
+    */
+    'connection' => env('SESSION_CONNECTION'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session 테이블
+    |--------------------------------------------------------------------------
+    |
+    | database Session Driver에서
+    | Session 정보를 저장할 테이블입니다.
+    |
+    | 기본 테이블:
+    |
+    | sessions
+    |
+    | 현재 Till White에도 sessions 테이블이 존재하며,
+    | 로그인 Session을 저장하는 데 사용합니다.
+    |
+    */
+    'table' => env('SESSION_TABLE', 'sessions'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session Cache 저장소
+    |--------------------------------------------------------------------------
+    |
+    | Redis, Memcached, DynamoDB처럼
+    | Cache 기반 Session Driver를 사용할 경우
+    | 어떤 Cache Store를 사용할지 지정합니다.
+    |
+    | 현재 Till White는 database Session을 사용하므로
+    | 기본 로그인 처리에서는 사용하지 않습니다.
+    |
+    */
+    'store' => env('SESSION_STORE'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | 만료된 Session 정리 확률
+    |--------------------------------------------------------------------------
+    |
+    | 오래되어 만료된 Session 데이터를
+    | 정리할 확률을 설정합니다.
+    |
+    | 현재 설정:
+    |
+    | [2, 100]
+    |
+    | 즉, 해당 정리가 필요한 Session Driver에서는
+    | 요청이 들어올 때 100번 중 약 2번의 확률로
+    | 만료된 Session 정리를 시도합니다.
+    |
+    */
+    'lottery' => [2, 100],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session Cookie 이름
+    |--------------------------------------------------------------------------
+    |
+    | 브라우저에 저장되는 Session Cookie의 이름입니다.
+    |
+    | 별도로 SESSION_COOKIE를 지정하지 않으면
+    | APP_NAME을 기반으로 자동 생성합니다.
+    |
+    | 예:
+    |
+    | APP_NAME="Till White"
+    |
+    | → till-white-session
+    |
+    */
+    'cookie' => env(
+        'SESSION_COOKIE',
+        Str::slug(
+            (string) env('APP_NAME', 'Till White')
+        ).'-session'
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Session Cookie 적용 경로
+    |--------------------------------------------------------------------------
+    |
+    | Session Cookie를 어느 URL 경로에서
+    | 사용할 수 있는지 설정합니다.
+    |
+    | 현재 기본값은 / 이므로
+    | 애플리케이션 전체 경로에서 사용할 수 있습니다.
+    |
+    | Till White의 /tillwhite 경로 역시 포함됩니다.
+    |
+    */
     'path' => env('SESSION_PATH', '/'),
 
     /*
@@ -150,68 +227,106 @@ return [
     | Session Cookie Domain
     |--------------------------------------------------------------------------
     |
-    | This value determines the domain and subdomains the session cookie is
-    | available to. By default, the cookie will be available to the root
-    | domain without subdomains. Typically, this shouldn't be changed.
+    | Session Cookie를 사용할 Domain을 설정합니다.
+    |
+    | 기본값은 NULL이며,
+    | 현재 접속한 Domain을 기준으로 동작합니다.
+    |
+    | 개발 환경에서는 일반적으로
+    | 별도로 설정할 필요가 없습니다.
+    |
+    | 실제 운영 환경에서 여러 Subdomain 사이에
+    | Session을 공유해야 하는 경우 설정할 수 있습니다.
     |
     */
-
     'domain' => env('SESSION_DOMAIN'),
 
     /*
     |--------------------------------------------------------------------------
-    | HTTPS Only Cookies
+    | HTTPS 전용 Session Cookie
     |--------------------------------------------------------------------------
     |
-    | By setting this option to true, session cookies will only be sent back
-    | to the server if the browser has a HTTPS connection. This will keep
-    | the cookie from being sent to you when it can't be done securely.
+    | true로 설정하면 HTTPS 연결에서만
+    | Session Cookie를 전송합니다.
+    |
+    | 실제 운영 서버에서 HTTPS를 사용하는 경우
+    | 보안을 위해 true 사용을 권장합니다.
+    |
+    | 로컬 개발 환경에서 HTTP를 사용하면서 true로 설정하면
+    | Session Cookie가 정상적으로 전달되지 않을 수 있으므로
+    | 개발 환경에서는 주의해야 합니다.
     |
     */
-
     'secure' => env('SESSION_SECURE_COOKIE'),
 
     /*
     |--------------------------------------------------------------------------
-    | HTTP Access Only
+    | HttpOnly Session Cookie
     |--------------------------------------------------------------------------
     |
-    | Setting this value to true will prevent JavaScript from accessing the
-    | value of the cookie and the cookie will only be accessible through
-    | the HTTP protocol. It's unlikely you should disable this option.
+    | true로 설정하면 브라우저 JavaScript에서
+    | Session Cookie 값에 직접 접근할 수 없습니다.
+    |
+    | XSS 공격 등을 통해 Session Cookie가
+    | 탈취될 위험을 줄이는 데 도움이 됩니다.
+    |
+    | 특별한 이유가 없다면 true를 유지하는 것이 좋습니다.
     |
     */
-
-    'http_only' => env('SESSION_HTTP_ONLY', true),
+    'http_only' => env(
+        'SESSION_HTTP_ONLY',
+        true
+    ),
 
     /*
     |--------------------------------------------------------------------------
-    | Same-Site Cookies
+    | SameSite Cookie 정책
     |--------------------------------------------------------------------------
     |
-    | This option determines how your cookies behave when cross-site requests
-    | take place, and can be used to mitigate CSRF attacks. By default, we
-    | will set this value to "lax" to permit secure cross-site requests.
+    | 다른 사이트에서 요청이 들어올 때
+    | Session Cookie를 어떻게 처리할지 설정합니다.
     |
-    | See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#samesitesamesite-value
+    | CSRF 공격을 줄이는 데 중요한 Cookie 설정입니다.
     |
-    | Supported: "lax", "strict", "none", null
+    | 지원 값:
+    |
+    | lax
+    | strict
+    | none
+    | null
+    |
+    | 현재 기본값은 lax입니다.
+    |
+    | 현재 Till White처럼 Vue와 Laravel이 같은 애플리케이션에서
+    | 동작하는 구조에서는 기본값 lax를 유지하면 됩니다.
     |
     */
-
-    'same_site' => env('SESSION_SAME_SITE', 'lax'),
+    'same_site' => env(
+        'SESSION_SAME_SITE',
+        'lax'
+    ),
 
     /*
     |--------------------------------------------------------------------------
-    | Partitioned Cookies
+    | Partitioned Cookie
     |--------------------------------------------------------------------------
     |
-    | Setting this value to true will tie the cookie to the top-level site for
-    | a cross-site context. Partitioned cookies are accepted by the browser
-    | when flagged "secure" and the Same-Site attribute is set to "none".
+    | Cross-Site 환경에서 Cookie를
+    | 최상위 사이트 기준으로 분리하여 관리하는 설정입니다.
+    |
+    | Partitioned Cookie를 사용하려면 일반적으로
+    | Secure Cookie와 SameSite=None 설정이 함께 필요합니다.
+    |
+    | 현재 Till White는 같은 사이트에서
+    | Vue와 Laravel을 사용하는 구조이므로
+    | 사용할 필요가 없습니다.
+    |
+    | 기본값은 false입니다.
     |
     */
-
-    'partitioned' => env('SESSION_PARTITIONED_COOKIE', false),
+    'partitioned' => env(
+        'SESSION_PARTITIONED_COOKIE',
+        false
+    ),
 
 ];
