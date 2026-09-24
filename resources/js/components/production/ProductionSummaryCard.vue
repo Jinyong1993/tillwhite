@@ -108,12 +108,12 @@ import SectionTitle from '../common/SectionTitle.vue';
  *
  * title:
  * - 현황 영역에 표시할 제목
- * - 기본값은 "오늘 현황"
+ * - 기본값은 "금일 생산 현황"
  */
 defineProps({
   title: {
     type: String,
-    default: '오늘 현황',
+    default: '금일 생산 현황',
   },
 });
 
