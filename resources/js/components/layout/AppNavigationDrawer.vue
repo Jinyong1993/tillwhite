@@ -15,8 +15,19 @@
       density="comfortable"
       nav
     >
-      <!-- 내비게이션 제목 -->
-      <v-list-subheader class="font-weight-black">
+      <!--
+        시스템 이름 / 메인 이동
+
+        Drawer 상단의 Till White를 클릭하면
+        메인 화면으로 이동하고 Drawer를 닫습니다.
+
+        상단 공통 헤더의 Till White와 동일하게
+        시스템 이름 자체를 홈 링크처럼 사용할 수 있습니다.
+      -->
+      <v-list-subheader
+        class="font-weight-black cursor-pointer"
+        @click="goToMain"
+      >
         Till White
       </v-list-subheader>
 
@@ -260,6 +271,23 @@ const visibleItems = computed(() => {
     return !item.permission || can(item.permission);
   });
 });
+
+/**
+ * Drawer 상단의 Till White 클릭 처리
+ *
+ * Till White를 클릭하면 Drawer를 닫고
+ * 메인 화면으로 이동합니다.
+ *
+ * 이미 메인 화면에 있는 경우에도
+ * 동일하게 Drawer만 닫히므로 자연스럽게 동작합니다.
+ */
+async function goToMain() {
+  drawer.value = false;
+
+  await router.push({
+    name: 'main',
+  });
+}
 
 /**
  * 내비게이션 메뉴 클릭 처리
