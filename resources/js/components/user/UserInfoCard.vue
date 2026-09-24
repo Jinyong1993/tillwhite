@@ -43,8 +43,11 @@
 
       현재 사용자가 소속된 점포 이름을 표시한다.
 
-      본사 직원은 store가 NULL이므로
-      점포 이름 대신 '본사'를 표시한다.
+      본사 직원처럼 특정 점포에 소속되지 않은 사용자는
+      store가 NULL이므로 '-'를 표시한다.
+
+      본사 여부는 아래 부서 정보에서 별도로 표시하므로
+      점포 항목에는 '본사'를 중복해서 표시하지 않는다.
     -->
     <div class="user-info-row">
       <div class="user-info-label">
@@ -59,7 +62,7 @@
       </div>
 
       <div class="font-weight-medium">
-        {{ user.store?.name ?? '본사' }}
+        {{ user.store?.name ?? '-' }}
       </div>
     </div>
 

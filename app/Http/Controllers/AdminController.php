@@ -16,7 +16,8 @@ use Illuminate\Http\Request;
 class AdminController extends Controller
 {
     /**
-     * 권한 검사와 감사 로그 서비스를 주입받습니다.
+     * 권한 검사 서비스(AccessService)와
+     * 감사 로그 서비스(AuditService)를 사용합니다.
      */
     public function __construct(
         private AccessService $access,
@@ -25,61 +26,366 @@ class AdminController extends Controller
     }
 
     /**
-     * 직원 목록 조회
+     * 직원 목록을 조회합니다.
      *
-     * employee.view 권한이 필요합니다.
-     * 점포 직원은 자신의 점포 직원만 조회할 수 있습니다.
-     * 본사 직원과 super_admin은 전체 직원을 조회할 수 있습니다.
+     * 직원 조회 권한(employee.view)이 있는 사용자만
+     * 직원 관리 화면의 데이터를 조회할 수 있습니다.
+     *
+     * 화면에서 접근 제한을 우회하거나 API를 직접 호출하더라도
+     * 서버에서 직원 조회 권한(employee.view)을 다시 확인합니다.
      */
     public function employees(Request $request)
     {
+        // 현재 로그인한 사용자 정보를 가져옵니다.
         $user = $request->user();
 
-        // 직원 조회 권한 확인
+        /**
+         * 직원 조회 권한(employee.view)을 확인합니다.
+         *
+         * 화면의 메뉴 표시 여부와 관계없이
+         * 실제 직원 정보 접근은 서버에서 최종적으로 판단합니다.
+         */
         $this->access->requirePermission($user, 'employee.view');
 
-        // 직원과 소속 점포, 직급, 역할 정보를 함께 조회
+        /**
+         * 직원 목록과 함께 소속 점포(store),
+         * 직급(position), 시스템 역할(role)을 조회합니다.
+         *
+         * 직원 상세보기에서도 이 정보를 사용합니다.
+         */
         $query = User::with([
             'store:id,name',
             'position:id,name',
             'role:id,code,name',
         ])->orderBy('name');
 
-        // 일반 점포 직원은 자신의 점포 직원만 조회
+        /**
+         * 점포 사용자가 나중에 직원 조회 권한(employee.view)을
+         * 가지게 되더라도 자신의 소속 점포(store_id)의 직원만 조회합니다.
+         *
+         * 본사 사용자와 최고 관리자(super_admin)는
+         * 전체 직원 정보를 조회할 수 있습니다.
+         */
         if (! $user->isHeadOffice() && $user->role?->code !== 'super_admin') {
             $query->where('store_id', $user->store_id);
         }
 
-        // 직원 등록 화면에서 사용할 선택 항목도 함께 반환
+        /**
+         * 직원 등록 화면에서 사용할 시스템 역할(role) 목록을 조회합니다.
+         *
+         * 최고 관리자(super_admin)가 아닌 사용자는
+         * 최고 관리자 역할(super_admin)을 다른 직원에게
+         * 부여할 수 없으므로 목록에서도 제외합니다.
+         *
+         * 화면에서 목록을 숨기는 것과 별개로
+         * 실제 직원 등록 시 서버에서도 다시 검사합니다.
+         */
+        $roleQuery = Role::where('is_active', true);
+
+        if ($user->role?->code !== 'super_admin') {
+            $roleQuery->where('code', '!=', 'super_admin');
+        }
+
+        // 직원 관리 화면과 직원 상세보기에 필요한 정보를 반환합니다.
         return response()->json([
             'employees' => $query->get(),
 
+            // 현재 운영 중인 점포(status = active)만 반환합니다.
             'stores' => Store::where('status', 'active')
                 ->orderBy('sort_order')
                 ->get(['id', 'name']),
 
+            // 현재 사용 중인 직급(is_active = true)만 반환합니다.
             'positions' => Position::where('is_active', true)
                 ->orderBy('sort_order')
                 ->get(['id', 'name']),
 
-            'roles' => Role::where('is_active', true)
+            // 현재 사용자가 선택할 수 있는 시스템 역할(role)을 반환합니다.
+            'roles' => $roleQuery
+                ->orderBy('id')
+                ->get(['id', 'code', 'name']),
+        ]);
+    }
+
+        /**
+     * 직원 등록 화면을 열기 전에
+     * 직원 관리 권한(employee.manage)을 확인합니다.
+     *
+     * 화면에서 직원 등록 버튼이 비활성화되어 있더라도
+     * 개발자 도구 등을 이용해 버튼을 강제로 활성화할 수 있으므로
+     * 실제 등록 다이얼로그를 열기 전에 서버에서 다시 확인합니다.
+     *
+     * 권한 확인이 완료되면 직원 등록에 필요한
+     * 점포(store), 직급(position), 시스템 역할(role) 목록을 반환합니다.
+     */
+    public function employeeCreate(Request $request)
+    {
+        // 현재 로그인한 사용자 정보를 가져옵니다.
+        $user = $request->user();
+
+        /**
+         * 직원 관리 권한(employee.manage)을 확인합니다.
+         *
+         * 권한이 없는 사용자가 API를 직접 호출하거나
+         * 화면의 직원 등록 버튼을 강제로 활성화해도
+         * 서버에서 접근을 차단합니다.
+         */
+        $this->access->requirePermission($user, 'employee.manage');
+
+        /**
+         * 직원 등록 화면에서 사용할 시스템 역할(role) 목록을 조회합니다.
+         *
+         * 최고 관리자(super_admin)가 아닌 사용자는
+         * 최고 관리자 역할(super_admin)을 부여할 수 없으므로
+         * 선택 목록에서도 제외합니다.
+         */
+        $roleQuery = Role::where('is_active', true);
+
+        if ($user->role?->code !== 'super_admin') {
+            $roleQuery->where('code', '!=', 'super_admin');
+        }
+
+        return response()->json([
+            'message' => '직원 등록 권한이 확인되었습니다.',
+
+            // 현재 운영 중인 점포(status = active)만 반환합니다.
+            'stores' => Store::where('status', 'active')
+                ->orderBy('sort_order')
+                ->get(['id', 'name']),
+
+            // 현재 사용 중인 직급(is_active = true)만 반환합니다.
+            'positions' => Position::where('is_active', true)
+                ->orderBy('sort_order')
+                ->get(['id', 'name']),
+
+            // 현재 사용자가 부여할 수 있는 시스템 역할(role)을 반환합니다.
+            'roles' => $roleQuery
+                ->orderBy('id')
                 ->get(['id', 'code', 'name']),
         ]);
     }
 
     /**
-     * 직원 등록
+     * 직원 상세정보를 조회합니다.
      *
-     * employee.manage 권한이 필요합니다.
+     * 상세보기 버튼을 눌렀을 때
+     * 화면에 이미 저장되어 있는 직원 정보를 그대로 사용하지 않고
+     * Laravel 서버에서 권한을 확인한 뒤 최신 직원 정보를 다시 조회합니다.
+     *
+     * 직원 조회 권한(employee.view)이 없는 사용자가
+     * 상세보기 버튼을 강제로 활성화하거나 API를 직접 호출해도
+     * 서버에서 접근을 차단합니다.
+     *
+     * 상세정보 응답에서는
+     * 직원 화면에서 실제로 사용하는 정보만 명시적으로 반환합니다.
+     *
+     * 이렇게 하면 나중에 users 테이블에 새로운 민감 정보가 추가되어도
+     * User 모델 전체가 자동으로 화면에 노출되는 것을 방지할 수 있습니다.
+     */
+    public function employeeShow(Request $request, User $user)
+    {
+        // 현재 상세정보 조회를 요청한 로그인 사용자를 가져옵니다.
+        $actor = $request->user();
+
+        /**
+         * 직원 조회 권한(employee.view)을 확인합니다.
+         *
+         * 화면에서 상세보기 버튼을 강제로 활성화하거나
+         * API 주소를 직접 호출하더라도
+         * 직원 조회 권한(employee.view)이 없으면 서버에서 차단합니다.
+         */
+        $this->access->requirePermission($actor, 'employee.view');
+
+        /**
+         * 점포 사용자의 직원 조회 범위를 다시 확인합니다.
+         *
+         * 점포 사용자가 직원 조회 권한(employee.view)을 가지더라도
+         * 자신의 소속 점포(store_id)에 속한 직원만 조회할 수 있습니다.
+         *
+         * 본사 사용자와 최고 관리자(super_admin)는
+         * 전체 직원의 상세정보를 조회할 수 있습니다.
+         */
+        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+            abort_if(
+                $user->store_id !== $actor->store_id,
+                403,
+                '해당 직원 정보를 열람할 권한이 없습니다.'
+            );
+        }
+
+        /**
+         * 화면에 남아 있는 기존 데이터를 사용하지 않고
+         * 데이터베이스에서 직원의 최신 관계 정보를 다시 조회합니다.
+         *
+         * 소속 점포(store)
+         * 직급(position)
+         * 시스템 역할(role)
+         */
+        $user->load([
+            'store:id,name',
+            'position:id,name',
+            'role:id,code,name',
+        ]);
+
+        /**
+         * 직원 상세보기에서 사용할 정보를 반환합니다.
+         *
+         * ------------------------------------------------------------
+         * 기본 정보
+         * ------------------------------------------------------------
+         *
+         * id
+         * - 시스템 내부 직원 번호
+         *
+         * employee_code
+         * - 사번 및 로그인 ID
+         *
+         * name
+         * - 직원 이름
+         *
+         * phone
+         * - 연락처
+         *
+         * birth_date
+         * - 생년월일
+         *
+         * ------------------------------------------------------------
+         * 소속 정보
+         * ------------------------------------------------------------
+         *
+         * store
+         * - 현재 소속 점포
+         * - 본사 직원은 NULL
+         *
+         * department
+         * - 주방(kitchen), 홀(hall), 본사(head_office)
+         *
+         * position
+         * - 회사 조직상의 직급
+         *
+         * role
+         * - 시스템에서 사용하는 역할 및 권한 묶음
+         *
+         * ------------------------------------------------------------
+         * 재직 정보
+         * ------------------------------------------------------------
+         *
+         * employment_status
+         * - 재직(active), 휴직(leave), 퇴사(resigned)
+         *
+         * hired_at
+         * - 입사일
+         *
+         * resigned_at
+         * - 퇴사일
+         *
+         * ------------------------------------------------------------
+         * 시스템 정보
+         * ------------------------------------------------------------
+         *
+         * is_active
+         * - 계정 활성 상태
+         *
+         * last_login_at
+         * - 마지막 로그인 시간
+         *
+         * password_changed_at
+         * - 마지막 비밀번호 변경 시간
+         *
+         * created_at
+         * - 직원 계정 생성 시간
+         *
+         * updated_at
+         * - 직원 정보 마지막 수정 시간
+         *
+         * 비밀번호(password)와 로그인 유지 토큰(remember_token)은
+         * 어떠한 경우에도 이 응답에 포함하지 않습니다.
+         */
+        return response()->json([
+            'employee' => [
+                'id' => $user->id,
+                'employee_code' => $user->employee_code,
+                'name' => $user->name,
+                'phone' => $user->phone,
+                'birth_date' => $user->birth_date?->format('Y-m-d'),
+
+                'store' => $user->store
+                    ? [
+                        'id' => $user->store->id,
+                        'name' => $user->store->name,
+                    ]
+                    : null,
+
+                'department' => $user->department,
+
+                'position' => $user->position
+                    ? [
+                        'id' => $user->position->id,
+                        'name' => $user->position->name,
+                    ]
+                    : null,
+
+                'role' => $user->role
+                    ? [
+                        'id' => $user->role->id,
+                        'code' => $user->role->code,
+                        'name' => $user->role->name,
+                    ]
+                    : null,
+
+                'employment_status' => $user->employment_status,
+                'hired_at' => $user->hired_at?->format('Y-m-d'),
+                'resigned_at' => $user->resigned_at?->format('Y-m-d'),
+                'is_active' => $user->is_active,
+
+                'last_login_at' => $user->last_login_at?->toISOString(),
+                'password_changed_at' => $user->password_changed_at?->toISOString(),
+
+                'created_at' => $user->created_at?->toISOString(),
+                'updated_at' => $user->updated_at?->toISOString(),
+            ],
+        ]);
+    }
+
+    /**
+     * 새로운 직원을 등록합니다.
+     *
+     * 직원 관리 권한(employee.manage)이 있는 사용자만
+     * 새로운 직원을 등록할 수 있습니다.
+     *
+     * 화면에서 직원 등록 버튼을 강제로 활성화하거나
+     * API를 직접 호출하는 경우에도 서버에서 다시 검사합니다.
+     *
+     * 또한 서버에서 다음과 같은 비정상적인 요청을 차단합니다.
+     *
+     * - 직원 관리 권한(employee.manage)이 없는 사용자의 등록 요청
+     * - 사용 중지된 시스템 역할(role_id) 지정
+     * - 일반 관리자의 최고 관리자(super_admin) 역할 부여
+     * - 사용 중지 또는 폐점된 점포(store_id) 지정
+     * - 본사 직원에게 임의의 점포(store_id) 지정
+     * - 점포 직원인데 소속 점포(store_id)를 지정하지 않는 요청
+     * - 사용 중지된 직급(position_id) 지정
      */
     public function employeeStore(Request $request)
     {
+        // 실제 직원 등록을 요청한 로그인 사용자를 가져옵니다.
         $user = $request->user();
 
-        // 직원 관리 권한 확인
+        /**
+         * 직원 관리 권한(employee.manage)을 확인합니다.
+         *
+         * 본사 직원(head_office_staff)처럼 직원 조회 권한만 있는 사용자가
+         * 화면의 비활성화 상태를 강제로 변경하거나 API를 직접 호출해도
+         * 직원 관리 권한(employee.manage)이 없으면 서버에서 차단합니다.
+         */
         $this->access->requirePermission($user, 'employee.manage');
 
-        // 입력값 검증
+        /**
+         * 직원 등록 정보를 검사합니다.
+         *
+         * 화면에서 정상적으로 입력된 값이라도 신뢰하지 않고
+         * 서버에서 형식과 실제 데이터 존재 여부를 다시 확인합니다.
+         */
         $validated = $request->validate([
             'employee_code' => [
                 'required',
@@ -116,28 +422,114 @@ class AdminController extends Controller
         ]);
 
         /**
-         * 본사 직원은 특정 점포에 소속되지 않습니다.
+         * 요청받은 시스템 역할(role_id)을
+         * 데이터베이스에서 다시 조회합니다.
          *
-         * 점포 직원은 반드시 소속 점포가 있어야 합니다.
+         * 사용자가 개발자 도구나 직접 API 호출을 통해
+         * 화면에 없는 시스템 역할(role_id)을 전송할 수 있으므로
+         * 화면에서 전달된 값을 그대로 신뢰하지 않습니다.
+         */
+        $selectedRole = Role::findOrFail($validated['role_id']);
+
+        /**
+         * 사용 중지된 시스템 역할(is_active = false)은
+         * 새로운 직원에게 부여할 수 없습니다.
+         */
+        abort_if(
+            ! $selectedRole->is_active,
+            422,
+            '현재 사용할 수 없는 시스템 역할입니다.'
+        );
+
+        /**
+         * 최고 관리자 역할(super_admin)은
+         * 현재 로그인한 사용자 역시 최고 관리자(super_admin)인 경우에만
+         * 다른 직원에게 부여할 수 있습니다.
+         *
+         * 본사 관리자(head_office_manager)가 요청 내용을 조작하여
+         * 최고 관리자 역할(super_admin)의 역할 번호(role_id)를
+         * 직접 전송하는 경우에도 서버에서 차단합니다.
+         */
+        abort_if(
+            $selectedRole->code === 'super_admin'
+                && $user->role?->code !== 'super_admin',
+            403,
+            '최고 관리자 역할을 부여할 권한이 없습니다.'
+        );
+
+        /**
+         * 소속 부서(department)가 본사(head_office)인 직원은
+         * 특정 점포(store_id)에 소속되지 않습니다.
+         *
+         * 사용자가 임의의 점포(store_id)를 함께 전송하더라도
+         * 서버에서 소속 점포(store_id)를 비어 있는 값(NULL)으로 변경합니다.
          */
         if ($validated['department'] === 'head_office') {
             $validated['store_id'] = null;
         } else {
+            /**
+             * 소속 부서(department)가 주방(kitchen) 또는 홀(hall)인 직원은
+             * 반드시 소속 점포(store_id)가 있어야 합니다.
+             */
             abort_if(
                 $validated['store_id'] === null,
                 422,
                 '점포 직원은 점포를 선택해야 합니다.'
             );
+
+            /**
+             * 선택한 소속 점포(store_id)가
+             * 실제로 운영 중인 점포인지 확인합니다.
+             *
+             * 점포가 데이터베이스에 존재하더라도
+             * 사용 중지(inactive) 또는 폐점(closed) 상태라면
+             * 새로운 직원의 소속 점포로 지정할 수 없습니다.
+             */
+            $selectedStore = Store::find($validated['store_id']);
+
+            abort_if(
+                ! $selectedStore || $selectedStore->status !== 'active',
+                422,
+                '현재 이용할 수 없는 점포입니다.'
+            );
         }
 
-        // 신규 직원 생성
+        /**
+         * 직급(position_id)이 지정되어 있다면
+         * 현재 사용 중인 직급인지 확인합니다.
+         *
+         * 화면에 표시되지 않는 사용 중지된 직급을
+         * 직접 전송하는 경우에도 서버에서 차단합니다.
+         */
+        if ($validated['position_id'] !== null) {
+            $selectedPosition = Position::find($validated['position_id']);
+
+            abort_if(
+                ! $selectedPosition || ! $selectedPosition->is_active,
+                422,
+                '현재 사용할 수 없는 직급입니다.'
+            );
+        }
+
+        /**
+         * 검사가 완료된 정보로 새로운 직원을 생성합니다.
+         *
+         * 신규 직원은 기본적으로
+         * 재직 상태(employment_status)를 재직(active)으로 등록하고
+         * 계정 활성 상태(is_active)도 활성(true)으로 설정합니다.
+         */
         $employee = User::create([
             ...$validated,
             'employment_status' => 'active',
             'is_active' => true,
         ]);
 
-        // 직원 등록 감사 로그 기록
+        /**
+         * 직원 등록 내용을 감사 로그(audit log)에 기록합니다.
+         *
+         * 누가 어떤 직원 계정을 생성했는지
+         * 나중에 확인할 수 있도록 기록을 남깁니다.
+         */
         $this->audit->log(
             $user,
             'employee',
@@ -155,43 +547,114 @@ class AdminController extends Controller
     }
 
     /**
-     * 직원 재직 상태 및 계정 상태 변경
+     * 직원의 재직 상태(employment_status)를 변경합니다.
      *
-     * employee.manage 권한이 필요합니다.
+     * 직원 관리 권한(employee.manage)이 있는 사용자만
+     * 직원의 재직 상태를 변경할 수 있습니다.
+     *
+     * 화면에서는 재직 상태(employment_status)만 서버로 전달합니다.
+     * 계정 활성 상태(is_active)는 화면에서 직접 변경하지 않습니다.
+     *
+     * 재직 상태에 따른 계정 처리:
+     *
+     * - 재직(active) → 계정 활성(is_active = true)
+     * - 휴직(leave) → 계정 비활성(is_active = false)
+     * - 퇴사(resigned) → 계정 비활성(is_active = false)
+     *
+     * 이렇게 하면 사용자가 요청 내용을 조작하여
+     * 휴직 또는 퇴사 상태인데 로그인 가능한 계정을 만드는 것을 방지할 수 있습니다.
      */
     public function employeeStatus(Request $request, User $user)
     {
+        // 실제 상태 변경을 요청한 로그인 사용자를 가져옵니다.
         $actor = $request->user();
 
-        // 직원 관리 권한 확인
+        /**
+         * 직원 관리 권한(employee.manage)을 확인합니다.
+         *
+         * 화면에서 저장 버튼을 강제로 활성화하거나
+         * 상태 변경 API를 직접 호출하더라도
+         * 직원 관리 권한(employee.manage)이 없으면 서버에서 차단합니다.
+         */
         $this->access->requirePermission($actor, 'employee.manage');
 
-        // 변경할 상태 검증
+        // 변경 대상 직원의 시스템 역할(role)을 함께 조회합니다.
+        $user->loadMissing('role');
+
+        /**
+         * 최고 관리자(super_admin) 계정을 보호합니다.
+         *
+         * 현재 로그인한 사용자가 최고 관리자(super_admin)가 아니라면
+         * 기존 최고 관리자(super_admin)의 재직 상태를 변경할 수 없습니다.
+         *
+         * 화면에서 상태 변경 기능을 강제로 활성화하거나
+         * API 주소를 직접 호출하는 경우에도 서버에서 차단합니다.
+         */
+        abort_if(
+            $user->role?->code === 'super_admin'
+                && $actor->role?->code !== 'super_admin',
+            403,
+            '최고 관리자 계정을 변경할 권한이 없습니다.'
+        );
+
+        /**
+         * 화면에서 전달받은 재직 상태(employment_status)를 검사합니다.
+         *
+         * 서버에서 허용하는 상태:
+         * - 재직(active)
+         * - 휴직(leave)
+         * - 퇴사(resigned)
+         *
+         * 계정 활성 상태(is_active)는 요청값으로 받지 않습니다.
+         * Laravel 서버가 재직 상태를 기준으로 직접 결정합니다.
+         */
         $validated = $request->validate([
             'employment_status' => [
                 'required',
                 'in:active,leave,resigned',
             ],
-            'is_active' => [
-                'required',
-                'boolean',
-            ],
         ]);
 
-        // 변경 전 상태를 감사 로그용으로 저장
+        // 감사 로그 기록을 위해 변경 전 직원 정보를 저장합니다.
         $oldData = $user->toArray();
 
-        // 직원 상태 변경
-        $user->update([
-            ...$validated,
+        /**
+         * 재직 상태(employment_status)를 기준으로
+         * 계정 활성 상태(is_active)를 서버에서 결정합니다.
+         *
+         * 재직(active) 상태인 직원만 로그인 가능한 계정으로 처리합니다.
+         */
+        $isActive = $validated['employment_status'] === 'active';
 
-            // 퇴사 상태라면 현재 날짜를 퇴사일로 기록
+        /**
+         * 직원의 재직 상태를 변경합니다.
+         *
+         * 재직(active):
+         * - 계정 활성(is_active = true)
+         * - 퇴사일(resigned_at = NULL)
+         *
+         * 휴직(leave):
+         * - 계정 비활성(is_active = false)
+         * - 퇴사일(resigned_at = NULL)
+         *
+         * 퇴사(resigned):
+         * - 계정 비활성(is_active = false)
+         * - 현재 날짜를 퇴사일(resigned_at)로 기록
+         */
+        $user->update([
+            'employment_status' => $validated['employment_status'],
+            'is_active' => $isActive,
             'resigned_at' => $validated['employment_status'] === 'resigned'
                 ? now()->toDateString()
                 : null,
         ]);
 
-        // 직원 상태 변경 감사 로그 기록
+        /**
+         * 직원 상태 변경 내용을 감사 로그(audit log)에 기록합니다.
+         *
+         * 변경 전 정보와 변경 후 정보를 함께 저장하여
+         * 누가 어떤 직원의 상태를 변경했는지 확인할 수 있도록 합니다.
+         */
         $this->audit->log(
             $actor,
             'employee',
@@ -200,45 +663,49 @@ class AdminController extends Controller
             $user->id,
             $oldData,
             $user->toArray(),
-            '직원 상태 변경'
+            '직원 재직 상태 변경'
         );
 
         return response()->json([
-            'message' => '직원 상태가 변경되었습니다.',
+            'message' => '직원 재직 상태가 변경되었습니다.',
         ]);
     }
 
     /**
-     * 점포 목록 조회
+     * 점포 목록을 조회합니다.
      *
-     * store.view 권한이 필요합니다.
+     * 점포 조회 권한(store.view)이 있는 사용자만
+     * 점포 목록을 조회할 수 있습니다.
      */
     public function stores(Request $request)
     {
-        // 점포 조회 권한 확인
+        // 점포 조회 권한(store.view)을 확인합니다.
         $this->access->requirePermission(
             $request->user(),
             'store.view'
         );
 
+        // 등록된 점포를 정렬 순서(sort_order)에 따라 반환합니다.
         return response()->json([
             'stores' => Store::orderBy('sort_order')->get(),
         ]);
     }
 
     /**
-     * 점포 등록
+     * 새로운 점포를 등록합니다.
      *
-     * store.manage 권한이 필요합니다.
+     * 점포 관리 권한(store.manage)이 있는 사용자만
+     * 새로운 점포를 등록할 수 있습니다.
      */
     public function storeStore(Request $request)
     {
+        // 실제 점포 등록을 요청한 로그인 사용자를 가져옵니다.
         $user = $request->user();
 
-        // 점포 관리 권한 확인
+        // 점포 관리 권한(store.manage)을 확인합니다.
         $this->access->requirePermission($user, 'store.manage');
 
-        // 점포 입력값 검증
+        // 새로운 점포의 입력 정보를 검사합니다.
         $validated = $request->validate([
             'store_code' => [
                 'required',
@@ -269,10 +736,15 @@ class AdminController extends Controller
             ],
         ]);
 
-        // 신규 점포 생성
+        // 검사가 완료된 정보로 새로운 점포를 생성합니다.
         $store = Store::create($validated);
 
-        // 점포 등록 감사 로그 기록
+        /**
+         * 점포 등록 내용을 감사 로그(audit log)에 기록합니다.
+         *
+         * 누가 어떤 점포를 등록했는지
+         * 나중에 확인할 수 있도록 기록을 남깁니다.
+         */
         $this->audit->log(
             $user,
             'store',
@@ -290,48 +762,52 @@ class AdminController extends Controller
     }
 
     /**
-     * 시스템 설정, 역할, 권한, 직급 조회
+     * 시스템 설정과 시스템 역할(role),
+     * 권한(permission), 직급(position)을 조회합니다.
      *
-     * system.view 권한이 필요합니다.
+     * 시스템 조회 권한(system.view)이 있는 사용자만
+     * 시스템 관리 정보를 조회할 수 있습니다.
      */
     public function system(Request $request)
     {
-        // 시스템 조회 권한 확인
+        // 시스템 조회 권한(system.view)을 확인합니다.
         $this->access->requirePermission(
             $request->user(),
             'system.view'
         );
 
         return response()->json([
-            // 시스템 설정
+            // 시스템 설정(system settings)을 반환합니다.
             'settings' => SystemSetting::orderBy('key')->get(),
 
-            // 역할 및 역할별 권한
+            // 시스템 역할(role)과 해당 역할의 권한(permission)을 반환합니다.
             'roles' => Role::with('permissions:id,code,name')->get(),
 
-            // 현재 활성화된 권한
+            // 현재 사용 중인 권한(is_active = true)을 반환합니다.
             'permissions' => Permission::where('is_active', true)
                 ->orderBy('code')
                 ->get(),
 
-            // 회사 직급
+            // 회사 직급(position)을 정렬 순서(sort_order)에 따라 반환합니다.
             'positions' => Position::orderBy('sort_order')->get(),
         ]);
     }
 
     /**
-     * 시스템 설정 저장
+     * 시스템 설정(system setting)을 저장합니다.
      *
-     * system.manage 권한이 필요합니다.
+     * 시스템 관리 권한(system.manage)이 있는 사용자만
+     * 시스템 설정을 저장할 수 있습니다.
      */
     public function setting(Request $request)
     {
+        // 실제 시스템 설정 변경을 요청한 로그인 사용자를 가져옵니다.
         $user = $request->user();
 
-        // 시스템 관리 권한 확인
+        // 시스템 관리 권한(system.manage)을 확인합니다.
         $this->access->requirePermission($user, 'system.manage');
 
-        // 시스템 설정 입력값 검증
+        // 시스템 설정의 입력 정보를 검사합니다.
         $validated = $request->validate([
             'key' => [
                 'required',
@@ -352,8 +828,8 @@ class AdminController extends Controller
         ]);
 
         /**
-         * 동일한 key가 존재하면 수정하고,
-         * 존재하지 않으면 새로운 설정을 생성합니다.
+         * 동일한 설정 키(key)가 이미 존재하면 기존 설정을 수정하고,
+         * 존재하지 않으면 새로운 시스템 설정을 생성합니다.
          */
         $setting = SystemSetting::updateOrCreate(
             [
@@ -362,16 +838,22 @@ class AdminController extends Controller
             [
                 ...$validated,
 
-                // 배열 값은 JSON 문자열로 변환하여 저장
+                /**
+                 * 설정 값(value)이 배열인 경우
+                 * 데이터베이스에 저장할 수 있도록 JSON 문자열로 변환합니다.
+                 */
                 'value' => is_array($validated['value'])
                     ? json_encode($validated['value'], JSON_UNESCAPED_UNICODE)
                     : (string) $validated['value'],
 
+                // 마지막으로 설정을 변경한 사용자(updated_by)를 기록합니다.
                 'updated_by' => $user->id,
             ]
         );
 
-        // 시스템 설정 변경 감사 로그 기록
+        /**
+         * 시스템 설정 변경 내용을 감사 로그(audit log)에 기록합니다.
+         */
         $this->audit->log(
             $user,
             'system',
@@ -389,18 +871,25 @@ class AdminController extends Controller
     }
 
     /**
-     * 역할별 권한 동기화
+     * 시스템 역할(role)에 부여된 권한(permission)을 변경합니다.
      *
-     * system.manage 권한이 필요합니다.
+     * 시스템 관리 권한(system.manage)이 있는 사용자만
+     * 역할별 권한을 변경할 수 있습니다.
      */
     public function rolePermissions(Request $request, Role $role)
     {
+        // 실제 역할 권한 변경을 요청한 로그인 사용자를 가져옵니다.
         $user = $request->user();
 
-        // 시스템 관리 권한 확인
+        // 시스템 관리 권한(system.manage)을 확인합니다.
         $this->access->requirePermission($user, 'system.manage');
 
-        // 전달받은 권한 코드 검증
+        /**
+         * 역할(role)에 부여할 권한 코드(permission code)를 검사합니다.
+         *
+         * 전달된 모든 권한 코드는 실제 권한 테이블(permissions)에
+         * 존재하는 값이어야 합니다.
+         */
         $validated = $request->validate([
             'permissions' => [
                 'required',
@@ -412,16 +901,24 @@ class AdminController extends Controller
             ],
         ]);
 
-        // 권한 코드를 Permission ID 목록으로 변환
+        /**
+         * 전달받은 권한 코드(permission code)를
+         * 실제 권한 번호(permission id) 목록으로 변환합니다.
+         */
         $permissionIds = Permission::whereIn(
             'code',
             $validated['permissions']
         )->pluck('id');
 
-        // 기존 역할 권한을 전달받은 권한 목록으로 동기화
+        /**
+         * 해당 시스템 역할(role)에 연결된 기존 권한을 제거하고
+         * 전달받은 권한(permission) 목록으로 동기화합니다.
+         */
         $role->permissions()->sync($permissionIds);
 
-        // 역할 권한 변경 감사 로그 기록
+        /**
+         * 역할별 권한 변경 내용을 감사 로그(audit log)에 기록합니다.
+         */
         $this->audit->log(
             $user,
             'system',
@@ -441,25 +938,36 @@ class AdminController extends Controller
     }
 
     /**
-     * 감사 로그 조회
+     * 감사 로그(audit log)를 조회합니다.
      *
-     * audit.view 권한이 필요합니다.
+     * 감사 로그 조회 권한(audit.view)이 있는 사용자만
+     * 시스템에서 발생한 변경 기록을 조회할 수 있습니다.
      *
-     * 점포 직원은 자신의 점포와 관련된 사용자들의 로그만 조회하고,
-     * 본사 직원과 super_admin은 전체 로그를 조회합니다.
+     * 점포 사용자는 자신의 소속 점포(store_id)와 관련된
+     * 사용자들의 감사 로그만 조회합니다.
+     *
+     * 본사 사용자와 최고 관리자(super_admin)는
+     * 전체 감사 로그를 조회할 수 있습니다.
      */
     public function audits(Request $request)
     {
+        // 현재 로그인한 사용자 정보를 가져옵니다.
         $user = $request->user();
 
-        // 감사 로그 조회 권한 확인
+        // 감사 로그 조회 권한(audit.view)을 확인합니다.
         $this->access->requirePermission($user, 'audit.view');
 
-        // 최근 감사 로그부터 조회
+        // 최근에 생성된 감사 로그부터 조회합니다.
         $query = AuditLog::with('user:id,name,store_id')
             ->orderByDesc('id');
 
-        // 점포 직원은 자신의 점포 사용자와 관련된 로그만 조회
+        /**
+         * 점포 사용자는 자신의 소속 점포(store_id)에 속한
+         * 사용자와 관련된 감사 로그만 조회합니다.
+         *
+         * 본사 사용자와 최고 관리자(super_admin)는
+         * 이 제한을 적용하지 않습니다.
+         */
         if (! $user->isHeadOffice() && $user->role?->code !== 'super_admin') {
             $userIds = User::where('store_id', $user->store_id)
                 ->pluck('id');
@@ -467,7 +975,7 @@ class AdminController extends Controller
             $query->whereIn('user_id', $userIds);
         }
 
-        // 최대 최근 300건 반환
+        // 가장 최근 감사 로그를 최대 300건까지 반환합니다.
         return response()->json([
             'logs' => $query->limit(300)->get(),
         ]);

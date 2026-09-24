@@ -53,8 +53,30 @@ class User extends Authenticatable
      * is_active
      * - 시스템 계정의 활성화 여부
      *
-     * 따라서 재직 상태와 시스템 계정 활성 상태는
-     * 서로 별개의 값으로 관리합니다.
+     * ------------------------------------------------------------
+     * 재직 상태와 계정 활성 상태
+     * ------------------------------------------------------------
+     *
+     * 직원 관리 화면에서는
+     * 재직 상태(employment_status)만 직접 변경합니다.
+     *
+     * 계정 활성 상태(is_active)는 화면에서 직접 변경하지 않고
+     * Laravel 서버가 재직 상태를 기준으로 자동으로 결정합니다.
+     *
+     * 재직(active)
+     * - is_active = true
+     * - 로그인 가능
+     *
+     * 휴직(leave)
+     * - is_active = false
+     * - 로그인 불가
+     *
+     * 퇴사(resigned)
+     * - is_active = false
+     * - 로그인 불가
+     *
+     * 실제 로그인 가능 여부는 canLogin()에서
+     * 재직 상태와 계정 활성 상태를 다시 확인합니다.
      */
 
     /**
@@ -238,7 +260,8 @@ class User extends Authenticatable
     /**
      * 현재 재직 중인지 확인합니다.
      *
-     * employment_status가 active이면 true를 반환합니다.
+     * 재직 상태(employment_status)가
+     * 재직(active)이면 true를 반환합니다.
      */
     public function isEmployed(): bool
     {
@@ -248,7 +271,8 @@ class User extends Authenticatable
     /**
      * 현재 휴직 중인지 확인합니다.
      *
-     * employment_status가 leave이면 true를 반환합니다.
+     * 재직 상태(employment_status)가
+     * 휴직(leave)이면 true를 반환합니다.
      */
     public function isOnLeave(): bool
     {
@@ -256,9 +280,10 @@ class User extends Authenticatable
     }
 
     /**
-     * 퇴사 상태인지 확인합니다.
+     * 현재 퇴사 상태인지 확인합니다.
      *
-     * employment_status가 resigned이면 true를 반환합니다.
+     * 재직 상태(employment_status)가
+     * 퇴사(resigned)이면 true를 반환합니다.
      */
     public function isResigned(): bool
     {
@@ -268,10 +293,10 @@ class User extends Authenticatable
     /**
      * 본사 소속 직원인지 확인합니다.
      *
-     * department가 head_office인 경우
+     * 소속 부서(department)가 본사(head_office)인 경우
      * 본사 소속으로 판단합니다.
      *
-     * store_id가 NULL인지 여부만으로
+     * 소속 점포(store_id)가 NULL인지 여부만으로
      * 본사 직원을 판단하지 않습니다.
      */
     public function isHeadOffice(): bool
@@ -284,11 +309,18 @@ class User extends Authenticatable
      *
      * 다음 두 조건을 모두 만족해야 합니다.
      *
-     * 1. is_active가 true인 활성 계정
-     * 2. employment_status가 active인 재직 직원
+     * 1. 계정 활성 상태(is_active)가 활성(true)
+     * 2. 재직 상태(employment_status)가 재직(active)
      *
-     * 따라서 휴직, 퇴사 또는 비활성화된 계정은
-     * 로그인할 수 없습니다.
+     * 직원 관리 화면에서 재직 상태를 변경할 때
+     * Laravel 서버가 계정 활성 상태(is_active)를 자동으로 맞추지만,
+     * 로그인 시에도 두 값을 다시 확인하여 비정상적인 데이터 상태를 방어합니다.
+     *
+     * 따라서 다음 상태는 로그인할 수 없습니다.
+     *
+     * - 휴직(leave)
+     * - 퇴사(resigned)
+     * - 계정 비활성(is_active = false)
      */
     public function canLogin(): bool
     {

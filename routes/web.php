@@ -30,7 +30,7 @@ Route::post('/tillwhite/logout', [AuthController::class, 'logout']);
 /**
  * Till White 업무 API
  *
- * auth 미들웨어를 적용하여
+ * 인증 미들웨어(auth)를 적용하여
  * Laravel 세션 인증이 완료된 사용자만 접근할 수 있습니다.
  *
  * 아래 그룹 내부의 모든 주소에는
@@ -39,20 +39,17 @@ Route::post('/tillwhite/logout', [AuthController::class, 'logout']);
  * 현재 실제 사용하는 기능:
  * - 제품 관리
  * - 생산·폐기 관리
+ * - 직원 관리
  *
  * 현재 개발 중인 기능:
  * - 근무 관리
  * - 매출 관리
- * - 직원 관리
  * - 점포 관리
  * - 시스템
  * - 감사 로그
  *
  * 개발 중인 기능의 Route 코드는 삭제하지 않고
  * 주석 상태로 보존합니다.
- *
- * 따라서 개발 중인 기능의 Controller로 연결되는
- * API Route는 현재 Laravel에 등록되지 않습니다.
  *
  * 나중에 기능 개발이 완료되면
  * 필요한 Route의 주석을 해제하여 다시 활성화할 수 있습니다.
@@ -106,9 +103,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 근무 관리
      *
      * 현재 개발 중인 기능입니다.
-     *
-     * 기능 개발이 완료되면
-     * 아래 Route의 주석을 해제합니다.
      */
 
     // Route::get('/work', [WorkController::class, 'index']);
@@ -122,9 +116,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 매출 관리
      *
      * 현재 개발 중인 기능입니다.
-     *
-     * 기능 개발이 완료되면
-     * 아래 Route의 주석을 해제합니다.
      */
 
     // Route::get('/sales', [SalesController::class, 'index']);
@@ -134,14 +125,43 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     /**
      * 직원 관리
      *
-     * 현재 개발 중인 기능입니다.
+     * 현재 사용 중인 기능입니다.
      *
-     * 기능 개발이 완료되면
-     * 아래 Route의 주석을 해제합니다.
+     * 화면에서 버튼의 활성/비활성 상태만 신뢰하지 않고
+     * 실제 동작 직전에 Laravel 서버에서 권한을 다시 확인합니다.
      */
 
+    // 직원 목록 조회
     Route::get('/employees', [AdminController::class, 'employees']);
+
+    /**
+     * 직원 등록 화면 접근 확인
+     *
+     * 직원 등록 버튼을 누르면 등록 다이얼로그를 열기 전에
+     * 직원 관리 권한(employee.manage)을 서버에서 확인합니다.
+     */
+    Route::get('/employees/create', [AdminController::class, 'employeeCreate']);
+
+    /**
+     * 직원 상세정보 조회
+     *
+     * 상세보기 버튼을 누르면 다이얼로그를 열기 전에
+     * 직원 조회 권한(employee.view)과
+     * 해당 직원에 대한 조회 가능 범위를 서버에서 확인합니다.
+     *
+     * 검사가 통과하면 해당 직원의 최신 정보를 반환합니다.
+     */
+    Route::get('/employees/{user}', [AdminController::class, 'employeeShow']);
+
+    // 신규 직원 등록
     Route::post('/employees', [AdminController::class, 'employeeStore']);
+
+    /**
+     * 직원 재직 상태 변경
+     *
+     * 실제 저장 시 직원 관리 권한(employee.manage)을
+     * Laravel 서버에서 다시 확인합니다.
+     */
     Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
 
 
@@ -149,9 +169,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 점포 관리
      *
      * 현재 개발 중인 기능입니다.
-     *
-     * 기능 개발이 완료되면
-     * 아래 Route의 주석을 해제합니다.
      */
 
     // Route::get('/stores', [AdminController::class, 'stores']);
@@ -162,9 +179,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 시스템 관리
      *
      * 현재 개발 중인 기능입니다.
-     *
-     * 기능 개발이 완료되면
-     * 아래 Route의 주석을 해제합니다.
      */
 
     // Route::get('/system', [AdminController::class, 'system']);
@@ -176,9 +190,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 감사 로그
      *
      * 현재 개발 중인 기능입니다.
-     *
-     * 기능 개발이 완료되면
-     * 아래 Route의 주석을 해제합니다.
      */
 
     // Route::get('/audits', [AdminController::class, 'audits']);
@@ -190,14 +201,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
  *
  * 위에서 정상적으로 등록된 API와 일치하지 않는
  * /tillwhite/api/* 요청은 모두 404 Not Found로 처리합니다.
- *
- * 예:
- * - /tillwhite/api/work
- * - /tillwhite/api/sales
- * - /tillwhite/api/employees
- * - /tillwhite/api/stores
- * - /tillwhite/api/system
- * - /tillwhite/api/audits
  *
  * 개발 중인 API뿐만 아니라 존재하지 않는 잘못된 API 주소도
  * Vue SPA 화면으로 넘어가지 않고 여기에서 차단됩니다.

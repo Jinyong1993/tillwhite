@@ -32,7 +32,11 @@ class AuthController extends Controller
         ]);
 
         // 사번(employee_code)을 기준으로 사용자 및 관련 정보 조회
-        $user = User::with(['store', 'position', 'role.permissions'])
+        $user = User::with([
+            'store',
+            'position',
+            'role.permissions',
+        ])
             ->where('employee_code', $validated['id'])
             ->first();
 
@@ -185,14 +189,28 @@ class AuthController extends Controller
     /**
      * Vue에 전달할 사용자 정보를 구성합니다.
      *
-     * 프론트엔드는 메뉴 및 버튼 표시를 위해
-     * permission 코드를 사용합니다.
+     * 프론트엔드는 메뉴 및 버튼 표시와
+     * 페이지 접근 가능 여부를 판단하기 위해
+     * 권한(Permission) 코드 배열을 사용합니다.
      *
-     * 다만 프론트엔드의 권한 확인은 화면 표시를 위한 것이며,
-     * 실제 데이터 접근 권한은 Laravel에서 다시 검증합니다.
+     * 다만 프론트엔드의 권한 확인은
+     * 사용자 화면(UX)을 위한 보조 처리입니다.
+     *
+     * 실제 데이터 접근 및 변경 권한은
+     * Laravel 서버에서 다시 검증합니다.
      */
     private function userResponse(User $user): array
     {
+        /**
+         * 관계 데이터가 아직 로드되지 않은 경우를 대비하여
+         * 사용자 응답에 필요한 관계를 불러옵니다.
+         */
+        $user->loadMissing([
+            'store',
+            'position',
+            'role.permissions',
+        ]);
+
         return [
             // 사용자 기본 정보
             'id' => $user->id,
@@ -216,11 +234,11 @@ class AuthController extends Controller
             ] : null,
 
             // 시스템 역할 정보
-            'role' => [
+            'role' => $user->role ? [
                 'id' => $user->role->id,
                 'code' => $user->role->code,
                 'name' => $user->role->name,
-            ],
+            ] : null,
 
             /**
              * 현재 역할에 연결된 활성화 권한만 추출하여
@@ -230,14 +248,16 @@ class AuthController extends Controller
              * [
              *     'production.view',
              *     'production.create',
-             *     'schedule.view',
+             *     'employee.view',
              * ]
              */
-            'permissions' => $user->role->permissions
-                ->where('is_active', true)
-                ->pluck('code')
-                ->values()
-                ->all(),
+            'permissions' => $user->role
+                ? $user->role->permissions
+                    ->where('is_active', true)
+                    ->pluck('code')
+                    ->values()
+                    ->all()
+                : [],
         ];
     }
 }

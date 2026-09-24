@@ -2,8 +2,12 @@
   <!--
     로그인 이후 사용하는 공통 내비게이션 메뉴입니다.
 
-    PC와 모바일 모두 temporary Drawer 형태로 표시하며,
+    PC와 모바일 모두 임시 내비게이션 메뉴(temporary Drawer) 형태로 표시하며,
     현재 사용 가능한 기능과 개발 중인 기능을 함께 표시합니다.
+
+    직원 관리 메뉴는 직원 개인정보와 관련된 기능이므로
+    권한이 없는 사용자에게도 메뉴의 존재는 보여주되
+    '권한 없음' 상태를 명확하게 표시합니다.
   -->
   <v-navigation-drawer
     v-model="drawer"
@@ -32,18 +36,24 @@
       </v-list-subheader>
 
       <!--
-        현재 사용자가 볼 수 있는 메뉴 목록입니다.
+        현재 사용자에게 표시할 메뉴 목록입니다.
 
-        사용 가능한 메뉴:
-        - 정상적으로 페이지 이동 가능
+        일반 메뉴:
+        - 필요한 권한(Permission)이 있으면 표시
+        - 클릭하면 해당 화면으로 이동
 
-        개발 중인 메뉴:
-        - 메뉴 목록에는 표시
-        - 클릭 불가능
+        개발 중 메뉴:
+        - 필요한 권한이 있으면 표시
         - 오른쪽에 '개발 중' 표시
+        - 클릭 불가
 
-        기존 Permission 검사는 그대로 유지하여
-        사용자가 볼 수 있는 메뉴만 표시합니다.
+        직원 관리 메뉴:
+        - employee.view 권한과 관계없이 항상 표시
+        - 권한이 있으면 정상적으로 이용 가능
+        - 권한이 없으면 오른쪽에 '권한 없음' 표시
+        - 권한이 없어도 클릭 자체는 가능
+        - 클릭 후 Vue Router에서 권한을 검사
+        - 권한이 없으면 메인으로 이동하면서 안내 메시지 표시
       -->
       <template
         v-for="item in visibleItems"
@@ -56,16 +66,25 @@
           :disabled="item.developing"
           @click="handleMenuClick(item)"
         >
-          <!-- 개발 중인 기능 표시 -->
+          <!--
+            메뉴 오른쪽 상태 표시
+
+            개발 중:
+            - 아직 사용할 수 없는 기능
+
+            권한 없음:
+            - 기능은 사용 중이지만
+              현재 사용자에게 필요한 권한이 없는 기능
+          -->
           <template
-            v-if="item.developing"
+            v-if="item.developing || hasNoPermission(item)"
             #append
           >
             <v-chip
               size="x-small"
               variant="tonal"
             >
-              개발 중
+              {{ item.developing ? '개발 중' : '권한 없음' }}
             </v-chip>
           </template>
         </v-list-item>
@@ -87,7 +106,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import {
+  computed,
+  ref,
+} from 'vue';
+
 import { useRouter } from 'vue-router';
 
 import { useSession } from '../../composables/useSession';
@@ -123,17 +146,18 @@ const emit = defineEmits([
   'loading',
 ]);
 
-// Vue Router
+// 화면 이동을 처리하는 Vue Router
 const router = useRouter();
 
 /**
- * 로그인 Session 공통 기능
+ * 로그인 세션(Session) 공통 기능
  *
  * can:
- * - 현재 사용자의 Permission 보유 여부 확인
+ * - 현재 사용자가 특정 권한(Permission)을
+ *   가지고 있는지 확인합니다.
  *
  * clear:
- * - 프론트엔드에 저장된 로그인 사용자 정보 초기화
+ * - 프론트엔드에 저장된 로그인 사용자 정보를 초기화합니다.
  */
 const {
   can,
@@ -161,9 +185,9 @@ const drawer = computed({
  * 1. 메인
  * 2. 제품 관리
  * 3. 생산·폐기 관리
- * 4. 근무 관리
- * 5. 매출 관리
- * 6. 직원 관리
+ * 4. 직원 관리
+ * 5. 근무 관리
+ * 6. 매출 관리
  * 7. 점포 관리
  * 8. 시스템
  * 9. 감사 로그
@@ -172,25 +196,42 @@ const drawer = computed({
  * - 메인
  * - 제품 관리
  * - 생산·폐기 관리
+ * - 직원 관리
  *
- * 나머지 기능은 삭제하지 않고
- * 향후 개발을 위해 '개발 중' 상태로 유지합니다.
+ * 현재 개발 중인 기능:
+ * - 근무 관리
+ * - 매출 관리
+ * - 점포 관리
+ * - 시스템
+ * - 감사 로그
  *
  * title:
  * - 화면에 표시할 메뉴 이름
  *
  * icon:
- * - Material Design Icons 아이콘
+ * - Material Design Icons(MDI) 아이콘
  *
  * to:
  * - 클릭 시 이동할 Vue Router 경로
  *
  * permission:
- * - 메뉴 표시 여부를 판단할 Permission 코드
+ * - 해당 기능에 필요한 권한(Permission) 코드
  *
  * developing:
- * - true이면 현재 개발 중인 기능
- * - 메뉴에는 표시하지만 클릭할 수 없도록 비활성화합니다.
+ * - true = 현재 개발 중인 기능
+ * - 메뉴에는 표시하지만 클릭할 수 없도록 비활성화
+ *
+ * showWithoutPermission:
+ * - true = 필요한 권한이 없어도 메뉴 자체는 표시
+ *
+ * 현재 직원 관리에 사용합니다.
+ *
+ * 직원 관리 권한이 없는 사용자는
+ * 메뉴 오른쪽에 '권한 없음'이 표시되지만
+ * 메뉴 클릭 자체는 가능합니다.
+ *
+ * 실제 화면 접근은 Vue Router에서 다시 검사하며,
+ * 실제 데이터 접근은 Laravel 서버에서 다시 검사합니다.
  */
 const items = [
   {
@@ -219,6 +260,7 @@ const items = [
     to: '/tillwhite/employees',
     permission: 'employee.view',
     developing: false,
+    showWithoutPermission: true,
   },
   {
     title: '근무 관리',
@@ -258,28 +300,55 @@ const items = [
 ];
 
 /**
- * 현재 사용자가 볼 수 있는 메뉴만 추려냅니다.
+ * 현재 사용자에게 표시할 메뉴를 결정합니다.
  *
- * permission이 없는 메뉴는 항상 표시하고,
- * permission이 있는 메뉴는 can()을 통해 권한을 확인합니다.
+ * permission이 없는 메뉴:
+ * - 항상 표시
  *
- * 개발 중인 메뉴도 사용자가 해당 Permission을 가지고 있다면
- * 목록에는 표시하되 클릭할 수 없도록 처리합니다.
+ * 필요한 권한을 가진 메뉴:
+ * - 표시
+ *
+ * showWithoutPermission이 true인 메뉴:
+ * - 필요한 권한이 없어도 표시
+ *
+ * 현재 직원 관리 메뉴가 이 방식을 사용하므로
+ * 일반 직원에게도 직원 관리 메뉴가 표시됩니다.
+ *
+ * 단, 메뉴가 보인다는 것이
+ * 실제 기능 접근 권한을 의미하지는 않습니다.
  */
 const visibleItems = computed(() => {
   return items.filter((item) => {
-    return !item.permission || can(item.permission);
+    return (
+      !item.permission
+      || can(item.permission)
+      || item.showWithoutPermission
+    );
   });
 });
+
+/**
+ * 현재 사용자가 해당 메뉴의
+ * 필요한 권한(Permission)을 가지고 있지 않은지 확인합니다.
+ *
+ * showWithoutPermission이 true인 메뉴에 대해서만
+ * '권한 없음' 상태를 표시합니다.
+ *
+ * 현재는 직원 관리 메뉴에 사용합니다.
+ */
+function hasNoPermission(item) {
+  return (
+    item.showWithoutPermission
+    && item.permission
+    && !can(item.permission)
+  );
+}
 
 /**
  * Drawer 상단의 Till White 클릭 처리
  *
  * Till White를 클릭하면 Drawer를 닫고
  * 메인 화면으로 이동합니다.
- *
- * 이미 메인 화면에 있는 경우에도
- * 동일하게 Drawer만 닫히므로 자연스럽게 동작합니다.
  */
 async function goToMain() {
   drawer.value = false;
@@ -292,10 +361,19 @@ async function goToMain() {
 /**
  * 내비게이션 메뉴 클릭 처리
  *
- * 사용 가능한 메뉴를 클릭하면 Drawer를 닫습니다.
+ * 정상 메뉴:
+ * - Drawer를 닫음
+ * - v-list-item의 to 속성을 통해 화면 이동
  *
- * 개발 중인 메뉴는 disabled 상태이므로
- * 실제 페이지 이동이 발생하지 않습니다.
+ * 권한 없음 메뉴:
+ * - 클릭 가능
+ * - Drawer를 닫음
+ * - 해당 화면으로 이동을 시도
+ * - Vue Router의 권한 검사에서 접근 차단
+ * - 메인 화면으로 이동하면서 권한 안내 표시
+ *
+ * 개발 중 메뉴:
+ * - disabled 상태이므로 클릭할 수 없음
  */
 function handleMenuClick(item) {
   if (item.developing) {
@@ -336,7 +414,8 @@ async function logout() {
     // 서버에서 전달된 메시지가 없으면 기본 오류 메시지 사용
     emit(
       'error',
-      error.response?.data?.message ?? '로그아웃 중 오류가 발생했습니다.',
+      error.response?.data?.message
+        ?? '로그아웃 중 오류가 발생했습니다.',
     );
 
     isLoggingOut.value = false;

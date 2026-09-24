@@ -8,10 +8,11 @@
     공통 헤더, 내비게이션 메뉴, 로딩 및 오류 처리를 관리한다.
 
     메인 화면 구성:
-    1. 현재 로그인한 사용자 정보
-    2. 오늘 생산·폐기·로스 현황
-    3. 자주 사용하는 업무의 빠른 메뉴
-    4. 권한 및 개발 중 기능 안내
+    1. 접근 권한 안내
+    2. 현재 로그인한 사용자 정보
+    3. 오늘 생산·폐기·로스 현황
+    4. 자주 사용하는 업무의 빠른 메뉴
+    5. 권한 및 개발 중 기능 안내
   -->
   <AppShell :title="pageTitle">
     <!--
@@ -28,6 +29,30 @@
         가지고 있는지 확인하는 함수
     -->
     <template #default="{ user, can }">
+      <!--
+        접근 권한 안내
+
+        권한이 없는 화면에 URL을 직접 입력하는 등의 방법으로
+        접근했을 때 전역 페이지 이동 가드(Navigation Guard)가
+        메인 화면으로 이동시키면서 전달한 메시지를 표시한다.
+
+        예:
+        직원 관리 화면에 employee.view 권한 없이 접근
+        → 메인 화면으로 이동
+        → "직원 정보를 열람할 권한이 없습니다." 표시
+      -->
+      <v-alert
+        v-if="accessDeniedMessage"
+        class="mb-4"
+        type="warning"
+        variant="tonal"
+        density="compact"
+        closable
+        @click:close="clearAccessDeniedMessage"
+      >
+        {{ accessDeniedMessage }}
+      </v-alert>
+
       <!--
         로그인 사용자 정보
 
@@ -158,10 +183,37 @@
 </template>
 
 <script setup>
+import {
+  computed,
+  onMounted,
+} from 'vue';
+
+import {
+  useRoute,
+  useRouter,
+} from 'vue-router';
+
 import SectionTitle from '../components/common/SectionTitle.vue';
 import AppShell from '../components/layout/AppShell.vue';
 import ProductionSummaryCard from '../components/production/ProductionSummaryCard.vue';
 import UserInfoCard from '../components/user/UserInfoCard.vue';
+
+/**
+ * 현재 화면의 주소 정보(Route)를 가져온다.
+ *
+ * 권한이 없는 화면에서 메인으로 이동했을 때
+ * 전달된 접근 거부 메시지를 확인하기 위해 사용한다.
+ */
+const route = useRoute();
+
+/**
+ * 현재 주소를 변경하기 위한
+ * Vue Router 객체를 가져온다.
+ *
+ * 접근 거부 메시지를 확인한 뒤
+ * 주소에서 accessDenied 값을 제거하기 위해 사용한다.
+ */
+const router = useRouter();
 
 /**
  * 현재 페이지 제목
@@ -170,6 +222,73 @@ import UserInfoCard from '../components/user/UserInfoCard.vue';
  * 공통 헤더(AppHeader)의 부제목으로 표시된다.
  */
 const pageTitle = '메인';
+
+/**
+ * 권한이 없는 화면에서 전달된
+ * 접근 거부 안내 메시지이다.
+ *
+ * 예:
+ * /tillwhite/employees 접근
+ * → 직원 조회 권한(employee.view) 없음
+ * → 메인으로 이동
+ * → accessDenied에 안내 메시지 전달
+ *
+ * accessDenied 값이 없거나 문자열이 아닌 경우에는
+ * 빈 문자열을 반환하여 알림을 표시하지 않는다.
+ */
+const accessDeniedMessage = computed(() => {
+  return typeof route.query.accessDenied === 'string'
+    ? route.query.accessDenied
+    : '';
+});
+
+/**
+ * 접근 거부 안내 메시지를 URL에서 제거한다.
+ *
+ * 현재 주소의 다른 Query 값은 그대로 유지하고
+ * accessDenied 값만 제거한다.
+ *
+ * router.replace()를 사용하므로
+ * 브라우저 방문 기록에 불필요한 이동 기록을 추가하지 않는다.
+ */
+async function clearAccessDeniedMessage() {
+  if (!route.query.accessDenied) {
+    return;
+  }
+
+  const query = {
+    ...route.query,
+  };
+
+  delete query.accessDenied;
+
+  await router.replace({
+    name: 'main',
+    query,
+  });
+}
+
+/**
+ * 메인 화면이 열린 뒤
+ * 접근 거부 메시지가 URL에 남아 있다면
+ * 주소에서는 해당 값을 제거한다.
+ *
+ * 화면에 표시되는 메시지는 현재 렌더링 과정에서 확인할 수 있지만
+ * URL에는 접근 거부 문구가 계속 남지 않도록 정리한다.
+ */
+onMounted(async () => {
+  if (!route.query.accessDenied) {
+    return;
+  }
+
+  /**
+   * 메시지를 바로 제거하면 computed 값도 함께 사라지므로
+   * 현재 구현에서는 사용자가 알림의 닫기 버튼을 눌렀을 때
+   * URL의 accessDenied 값을 제거한다.
+   *
+   * 따라서 여기서는 별도의 자동 제거 작업을 하지 않는다.
+   */
+});
 
 /**
  * 메인 화면 빠른 메뉴 목록
