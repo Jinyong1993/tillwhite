@@ -86,6 +86,9 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 생산·폐기·로스 기록 조회
     Route::get('/production', [ProductionRecordController::class, 'index']);
 
+    // 오늘 생산·폐기·로스 현황 조회
+    Route::get('/production/summary', [ProductionRecordController::class, 'summary']);
+
     // 생산 입력에 필요한 제품 및 작업자 목록 조회
     Route::get('/production/options', [ProductionRecordController::class, 'options']);
 
