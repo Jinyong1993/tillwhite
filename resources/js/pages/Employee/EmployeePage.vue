@@ -158,12 +158,10 @@
         :employee="selectedEmployee"
         :can-change-status="canChangeEmployeeStatus(
           selectedEmployee,
-          user,
           can
         )"
         :status-unavailable-message="statusUnavailableMessage(
           selectedEmployee,
-          user,
           can
         )"
         @close="closeDetailDialog"
@@ -473,8 +471,12 @@ function hasRegisterFormChanges() {
  * 실제 직원 관리 권한(employee.manage)과
  * 최고 관리자(super_admin) 보호는
  * Laravel 서버에서 다시 검사합니다.
+ *
+ * 최고 관리자(super_admin)는
+ * 현재 로그인 사용자의 역할과 관계없이
+ * 일반 직원 관리 화면에서 재직 상태를 변경하지 않습니다.
  */
-function canChangeEmployeeStatus(employee, user, can) {
+function canChangeEmployeeStatus(employee, can) {
   if (!employee) {
     return false;
   }
@@ -484,13 +486,15 @@ function canChangeEmployeeStatus(employee, user, can) {
   }
 
   /**
-   * 변경 대상이 최고 관리자(super_admin)라면
-   * 현재 로그인한 사용자 역시 최고 관리자(super_admin)여야 합니다.
+   * 최고 관리자(super_admin)는
+   * 일반 직원 관리 기능의 재직 상태 변경 대상에서 제외합니다.
+   *
+   * 현재 로그인한 사용자 역시 최고 관리자이더라도
+   * 이 화면에서는 최고 관리자 계정의 상태를 변경하지 않습니다.
+   *
+   * 실제 보호는 Laravel 서버에서도 동일하게 적용합니다.
    */
-  if (
-    employee?.role?.code === 'super_admin'
-    && user?.role?.code !== 'super_admin'
-  ) {
+  if (employee?.role?.code === 'super_admin') {
     return false;
   }
 
@@ -499,8 +503,11 @@ function canChangeEmployeeStatus(employee, user, can) {
 
 /**
  * 재직 상태를 변경할 수 없는 이유를 표시합니다.
+ *
+ * 실제 변경 가능 여부는 Laravel 서버에서 다시 검사하며,
+ * 이 함수는 사용자에게 화면상 이유를 안내하기 위해 사용합니다.
  */
-function statusUnavailableMessage(employee, user, can) {
+function statusUnavailableMessage(employee, can) {
   if (!employee) {
     return '';
   }
@@ -509,11 +516,13 @@ function statusUnavailableMessage(employee, user, can) {
     return '직원의 재직 상태를 변경할 권한이 없습니다.';
   }
 
-  if (
-    employee?.role?.code === 'super_admin'
-    && user?.role?.code !== 'super_admin'
-  ) {
-    return '최고 관리자 계정의 재직 상태를 변경할 권한이 없습니다.';
+  /**
+   * 최고 관리자(super_admin)는
+   * 현재 로그인 사용자의 역할과 관계없이
+   * 일반 직원 관리 화면에서 재직 상태를 변경하지 않습니다.
+   */
+  if (employee?.role?.code === 'super_admin') {
+    return '최고 관리자 계정의 재직 상태는 직원 관리에서 변경할 수 없습니다.';
   }
 
   return '';
@@ -1134,6 +1143,20 @@ function closeDetailDialog() {
  *
  * 등록이 정상적으로 완료되면 Laravel 서버에서
  * 직원 등록 임시저장 데이터(draft)도 삭제합니다.
+ *
+ * 직원 등록 요청과 등록 후 직원 목록 재조회는
+ * 서로 별개의 작업으로 처리합니다.
+ *
+ * 직원 등록 요청이 성공한 뒤 목록 재조회만 실패한 경우에는
+ * 실제 직원 등록은 이미 완료된 상태이므로
+ * 직원 등록 실패로 처리하지 않습니다.
+ *
+ * 또한 직원 등록 요청 중 네트워크 연결이 끊겨
+ * Laravel 서버의 HTTP 응답 자체를 확인하지 못한 경우에는
+ * 등록 성공 또는 실패를 프론트에서 확정하지 않습니다.
+ *
+ * 서버에서 실제 등록은 완료되었지만
+ * 응답만 브라우저에 도착하지 않았을 가능성이 있기 때문입니다.
  */
 async function saveEmployee(
   setError,
@@ -1145,43 +1168,125 @@ async function saveEmployee(
 
   registerLoadingAction.value = 'submit';
 
+  /**
+   * 실제 직원 등록 요청입니다.
+   *
+   * Laravel 서버의 응답을 정상적으로 받은 경우에는
+   * 해당 응답을 기준으로 등록 성공 또는 실패를 판단합니다.
+   */
   try {
     await window.axios.post(
       '/tillwhite/api/employees',
       form.value,
     );
-
+  } catch (error) {
     /**
-     * 등록 성공 후 등록 창과 확인창을 닫고
-     * 현재 작성 양식을 초기화합니다.
-     */
-    registerDialog.value = false;
-
-    form.value = createEmptyForm();
-    hasLoadedDraft.value = false;
-    initialRegisterForm.value = copyRegisterForm(
-      form.value,
-    );
-
-    /**
-     * 등록된 직원을 목록에 반영하기 위해 다시 조회합니다.
+     * Laravel 서버로부터 HTTP 응답을 받은 경우입니다.
      *
-     * 최초 페이지 진입이 아니므로
-     * 공통 전체 화면 로딩은 사용하지 않습니다.
+     * 예:
+     *
+     * - 403: 직원 등록 권한 없음
+     * - 422: 입력값 검증 실패
+     * - 500: 서버 내부 오류
+     *
+     * 서버가 요청 처리 결과를 HTTP 응답으로 반환했으므로
+     * 일반적인 직원 등록 실패로 처리합니다.
      */
-    await load();
+    if (error.response) {
+      setError(
+        errorMessage(
+          error,
+          '직원 등록에 실패했습니다.',
+        ),
+      );
+    } else {
+      /**
+       * Laravel 서버의 HTTP 응답 자체를
+       * 확인하지 못한 경우입니다.
+       *
+       * 네트워크 연결 중단 등의 상황에서는
+       * 요청이 서버에 도착하기 전에 실패했을 수도 있고,
+       *
+       * 반대로 서버에서 직원 등록이 완료된 뒤
+       * 응답만 브라우저에 도착하지 않았을 수도 있습니다.
+       *
+       * 따라서 이 경우에는 직원 등록 실패라고
+       * 확정해서 안내하지 않습니다.
+       *
+       * 이미 직원이 등록된 상태에서 사용자가
+       * 동일한 내용으로 다시 등록하는 것을 방지하기 위해
+       * 먼저 직원 목록을 확인하도록 안내합니다.
+       */
+      setError(
+        '서버 응답을 확인하지 못했습니다. 직원이 이미 등록되었을 수 있으므로 다시 등록하기 전에 직원 목록을 확인해주세요.',
+      );
+    }
 
-    setSuccess('직원을 등록했습니다.');
+    /**
+     * 등록에 실패했거나 등록 결과를 확정할 수 없으므로
+     * 현재 작성 중인 등록 양식은 초기화하지 않습니다.
+     *
+     * 사용자가 입력한 내용을 유지한 상태에서
+     * 등록 요청 처리 상태만 종료합니다.
+     */
+    registerLoadingAction.value = null;
+    clearConfirmDialog();
+
+    return;
+  }
+
+  /**
+   * 여기까지 왔다면 Laravel 서버에서
+   * 직원 등록 성공 응답을 정상적으로 받은 상태입니다.
+   *
+   * 서버에서는 직원 등록 성공 후
+   * 현재 로그인 세션의 직원 등록 draft도 삭제합니다.
+   *
+   * 따라서 프론트에서도 등록 양식을 초기화하고
+   * draft 복원 상태를 해제합니다.
+   */
+  registerDialog.value = false;
+
+  form.value = createEmptyForm();
+  hasLoadedDraft.value = false;
+
+  initialRegisterForm.value = copyRegisterForm(
+    form.value,
+  );
+
+  /**
+   * 직원 등록 요청 자체는 이미 완료되었으므로
+   * 등록 관련 로딩 상태와 확인창을 종료합니다.
+   */
+  registerLoadingAction.value = null;
+  clearConfirmDialog();
+
+  /**
+   * 직원 등록 성공 여부는
+   * 이후 직원 목록 재조회 성공 여부와 관계없이 확정됩니다.
+   */
+  setSuccess('직원을 등록했습니다.');
+
+  /**
+   * 새로 등록된 직원을 현재 직원 목록에 반영하기 위해
+   * 직원 목록을 다시 조회합니다.
+   *
+   * 최초 페이지 진입이 아니므로
+   * 공통 전체 화면 로딩은 사용하지 않습니다.
+   *
+   * 목록 재조회에 실패하더라도
+   * 직원 등록 자체는 이미 성공한 상태이므로
+   * "직원 등록 실패" 메시지를 표시하지 않습니다.
+   */
+  try {
+    await load();
   } catch (error) {
     setError(
       errorMessage(
         error,
-        '직원 등록에 실패했습니다.',
+        '직원 등록은 완료되었지만 직원 목록을 새로고침하지 못했습니다.',
       ),
     );
-  } finally {
-    registerLoadingAction.value = null;
-    clearConfirmDialog();
   }
 }
 
@@ -1201,6 +1306,14 @@ async function saveStatus(setError) {
     return;
   }
 
+  /**
+   * 재직 상태 변경 요청 자체와
+   * 변경 완료 후 직원 목록 새로고침을 분리해서 처리합니다.
+   *
+   * 상태 변경은 서버에서 이미 완료되었는데
+   * 이후 목록 새로고침만 실패한 경우까지
+   * "재직 상태 변경 실패"로 표시하면 안 되기 때문입니다.
+   */
   try {
     await window.axios.put(
       `/tillwhite/api/employees/${selectedEmployee.value.id}/status`,
@@ -1209,22 +1322,61 @@ async function saveStatus(setError) {
           statusForm.value.employment_status,
       },
     );
-
-    closeDetailDialog();
-
+  } catch (error) {
     /**
-     * 변경된 재직 상태를 직원 카드에도 반영합니다.
+     * Laravel 서버가 실제 오류 응답을 반환한 경우에는
+     * 서버가 전달한 오류 내용을 표시합니다.
      *
-     * 최초 페이지 진입이 아니므로
-     * 공통 전체 화면 로딩은 사용하지 않습니다.
+     * 예:
+     * - 직원 관리 권한 없음
+     * - 변경할 수 없는 직원
+     * - 잘못된 재직 상태
      */
+    if (error.response) {
+      setError(
+        errorMessage(
+          error,
+          '직원 재직 상태 변경에 실패했습니다.',
+        ),
+      );
+    } else {
+      /**
+       * 서버 응답 자체를 확인하지 못한 경우에는
+       * 실제 변경 성공 여부를 확정할 수 없습니다.
+       *
+       * 서버에서는 변경이 완료되었지만
+       * 응답을 받는 과정에서 네트워크가 끊겼을 수도 있으므로
+       * 단순한 "변경 실패"로 표시하지 않습니다.
+       *
+       * 사용자가 같은 요청을 바로 반복하기 전에
+       * 직원 정보를 다시 확인하도록 안내합니다.
+       */
+      setError(
+        '서버 응답을 확인하지 못했습니다. 재직 상태가 이미 변경되었을 수 있으므로 직원 정보를 다시 확인해주세요.',
+      );
+    }
+
+    return;
+  }
+
+  /**
+   * 서버에서 재직 상태 변경 성공 응답을 받은 경우에만
+   * 직원 상세 다이얼로그를 닫습니다.
+   */
+  closeDetailDialog();
+
+  /**
+   * 재직 상태 변경이 완료된 뒤
+   * 직원 목록을 서버에서 다시 조회합니다.
+   *
+   * 이 작업은 이미 완료된 상태 변경과 별개의 작업이므로
+   * 목록 새로고침 실패를 상태 변경 실패로 처리하지 않습니다.
+   */
+  try {
     await load();
   } catch (error) {
     setError(
-      errorMessage(
-        error,
-        '직원 재직 상태 변경에 실패했습니다.',
-      ),
+      '재직 상태 변경은 완료되었지만 직원 목록을 새로고침하지 못했습니다.',
     );
   }
 }
