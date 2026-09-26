@@ -107,7 +107,7 @@ class AdminController extends Controller
         ]);
     }
 
-        /**
+    /**
      * 직원 등록 화면을 열기 전에
      * 직원 관리 권한(employee.manage)을 확인합니다.
      *
@@ -116,7 +116,8 @@ class AdminController extends Controller
      * 실제 등록 다이얼로그를 열기 전에 서버에서 다시 확인합니다.
      *
      * 권한 확인이 완료되면 직원 등록에 필요한
-     * 점포(store), 직급(position), 시스템 역할(role) 목록을 반환합니다.
+     * 점포(store), 직급(position), 권한 역할(role) 목록과
+     * 현재 로그인 세션에 임시저장된 직원 등록 내용(draft)을 반환합니다.
      */
     public function employeeCreate(Request $request)
     {
@@ -133,7 +134,7 @@ class AdminController extends Controller
         $this->access->requirePermission($user, 'employee.manage');
 
         /**
-         * 직원 등록 화면에서 사용할 시스템 역할(role) 목록을 조회합니다.
+         * 직원 등록 화면에서 사용할 권한 역할(role) 목록을 조회합니다.
          *
          * 최고 관리자(super_admin)가 아닌 사용자는
          * 최고 관리자 역할(super_admin)을 부여할 수 없으므로
@@ -158,10 +159,225 @@ class AdminController extends Controller
                 ->orderBy('sort_order')
                 ->get(['id', 'name']),
 
-            // 현재 사용자가 부여할 수 있는 시스템 역할(role)을 반환합니다.
+            // 현재 사용자가 부여할 수 있는 권한 역할(role)을 반환합니다.
             'roles' => $roleQuery
                 ->orderBy('id')
                 ->get(['id', 'code', 'name']),
+
+            /**
+             * 현재 로그인 세션에 임시저장된 직원 등록 내용(draft)을 반환합니다.
+             *
+             * 비밀번호(password)는 임시저장 대상이 아니므로
+             * draft 데이터에 포함되지 않습니다.
+             */
+            'draft' => $request->session()->get(
+                'employee_registration_draft'
+            ),
+        ]);
+    }
+
+    /**
+     * 직원 등록 내용을 현재 로그인 세션에 임시저장합니다.
+     *
+     * 직원 관리 권한(employee.manage)이 있는 사용자만
+     * 직원 등록 내용을 임시저장할 수 있습니다.
+     *
+     * 임시저장은 작성 중인 내용을 보관하기 위한 기능이므로
+     * 최종 등록과 달리 모든 입력값을 필수로 요구하지 않습니다.
+     *
+     * 비밀번호(password)는 보안을 위해
+     * 임시저장 대상에 포함하지 않습니다.
+     */
+    public function employeeDraft(Request $request)
+    {
+        // 현재 로그인한 사용자 정보를 가져옵니다.
+        $user = $request->user();
+
+        /**
+         * 직원 관리 권한(employee.manage)을 확인합니다.
+         *
+         * 화면을 조작하거나 API를 직접 호출하더라도
+         * 권한이 없으면 서버에서 임시저장을 차단합니다.
+         */
+        $this->access->requirePermission($user, 'employee.manage');
+
+        /**
+         * 임시저장할 수 있는 입력값을 검사합니다.
+         *
+         * 작성 중인 데이터이므로 모든 항목에 nullable을 사용합니다.
+         * 최종 등록에 필요한 필수 검사는 직원 등록(employeeStore)에서
+         * 다시 수행합니다.
+         */
+        $validated = $request->validate([
+            'employee_code' => [
+                'nullable',
+                'string',
+                'regex:/^\d{1,20}$/',
+            ],
+            'name' => [
+                'nullable',
+                'string',
+                'max:50',
+            ],
+            'phone' => [
+                'nullable',
+                'string',
+                'regex:/^010\d{8}$/',
+            ],
+            'birth_date' => [
+                'nullable',
+                'date',
+                'before_or_equal:today',
+            ],
+            'store_id' => [
+                'nullable',
+                'exists:stores,id',
+            ],
+            'department' => [
+                'nullable',
+                'in:kitchen,hall,head_office',
+            ],
+            'position_id' => [
+                'nullable',
+                'exists:positions,id',
+            ],
+            'role_id' => [
+                'nullable',
+                'exists:roles,id',
+            ],
+            'hired_at' => [
+                'nullable',
+                'date',
+            ],
+        ]);
+
+        /**
+         * 권한 역할(role_id)이 입력되어 있다면
+         * 현재 사용할 수 있는 역할인지 서버에서 다시 확인합니다.
+         */
+        if (! empty($validated['role_id'])) {
+            $selectedRole = Role::find($validated['role_id']);
+
+            abort_if(
+                ! $selectedRole || ! $selectedRole->is_active,
+                422,
+                '현재 사용할 수 없는 권한 역할입니다.'
+            );
+
+            /**
+             * 최고 관리자(super_admin)가 아닌 사용자는
+             * 임시저장 단계에서도 최고 관리자 역할을 지정할 수 없습니다.
+             */
+            abort_if(
+                $selectedRole->code === 'super_admin'
+                    && $user->role?->code !== 'super_admin',
+                403,
+                '최고 관리자 역할을 부여할 권한이 없습니다.'
+            );
+        }
+
+        /**
+         * 직급(position_id)이 입력되어 있다면
+         * 현재 사용 중인 직급인지 확인합니다.
+         */
+        if (! empty($validated['position_id'])) {
+            $selectedPosition = Position::find($validated['position_id']);
+
+            abort_if(
+                ! $selectedPosition || ! $selectedPosition->is_active,
+                422,
+                '현재 사용할 수 없는 직급입니다.'
+            );
+        }
+
+        /**
+         * 본사(head_office) 직원은 특정 점포에 소속되지 않으므로
+         * 점포(store_id)가 전달되어도 NULL로 변경합니다.
+         */
+        if (($validated['department'] ?? null) === 'head_office') {
+            $validated['store_id'] = null;
+        } elseif (! empty($validated['store_id'])) {
+            /**
+             * 점포(store_id)가 입력되어 있다면
+             * 현재 운영 중인 점포인지 확인합니다.
+             */
+            $selectedStore = Store::find($validated['store_id']);
+
+            abort_if(
+                ! $selectedStore || $selectedStore->status !== 'active',
+                422,
+                '현재 이용할 수 없는 점포입니다.'
+            );
+        }
+
+        /**
+         * 비밀번호(password)는 검증 목록에도 포함하지 않았으며
+         * Laravel Session에도 저장하지 않습니다.
+         */
+        unset($validated['password']);
+
+        // 현재 로그인 세션에 직원 등록 내용을 임시저장합니다.
+        $request->session()->put(
+            'employee_registration_draft',
+            $validated
+        );
+
+        return response()->json([
+            'message' => '직원 등록 내용이 임시저장되었습니다.',
+            'draft' => $validated,
+        ]);
+    }
+
+    /**
+     * 직원 등록 임시저장 내용을 전체 삭제합니다.
+     *
+     * 직원 등록 화면에서 "전체 삭제"를 선택했을 때
+     * 현재 로그인 세션에 저장되어 있는
+     * 직원 등록 임시저장 내용(draft)을 삭제합니다.
+     *
+     * 이 기능은 실제 등록된 직원 정보를 삭제하는 기능이 아닙니다.
+     * 아직 등록되지 않은 직원 등록 작성 내용만 삭제합니다.
+     *
+     * 직원 관리 권한(employee.manage)이 있는 사용자만
+     * 임시저장 내용을 삭제할 수 있습니다.
+     *
+     * 화면의 버튼이나 요청 내용을 조작하여
+     * API를 직접 호출하는 경우에도
+     * Laravel 서버에서 권한을 다시 확인합니다.
+     *
+     * 비밀번호(password)는 원래 임시저장 대상이 아니므로
+     * 서버에서 별도로 삭제할 비밀번호 데이터는 없습니다.
+     */
+    public function employeeDraftDelete(Request $request)
+    {
+        // 현재 로그인한 사용자 정보를 가져옵니다.
+        $user = $request->user();
+
+        /**
+         * 직원 관리 권한(employee.manage)을 확인합니다.
+         *
+         * 직원 조회 권한(employee.view)만 있는 사용자나
+         * 직원 관리 권한이 없는 사용자가 API를 직접 호출하더라도
+         * 서버에서 임시저장 전체 삭제를 차단합니다.
+         */
+        $this->access->requirePermission(
+            $user,
+            'employee.manage'
+        );
+
+        /**
+         * 현재 로그인 세션에 저장된
+         * 직원 등록 임시저장 내용(draft)을 삭제합니다.
+         *
+         * 세션 키가 존재하지 않는 경우에도 오류를 발생시키지 않고
+         * 삭제된 상태로 정상 처리합니다.
+         */
+        $request->session()->forget(
+            'employee_registration_draft'
+        );
+
+        return response()->json([
+            'message' => '직원 등록 내용이 모두 삭제되었습니다.',
         ]);
     }
 
@@ -356,15 +572,32 @@ class AdminController extends Controller
      * 화면에서 직원 등록 버튼을 강제로 활성화하거나
      * API를 직접 호출하는 경우에도 서버에서 다시 검사합니다.
      *
-     * 또한 서버에서 다음과 같은 비정상적인 요청을 차단합니다.
+     * 프론트 입력 검사는 사용자 편의를 위한 검사이며
+     * 실제 직원 등록에 대한 최종 검증과 보안 처리는
+     * Laravel 서버에서 수행합니다.
+     *
+     * 서버에서 다음과 같은 비정상적인 요청을 차단합니다.
      *
      * - 직원 관리 권한(employee.manage)이 없는 사용자의 등록 요청
-     * - 사용 중지된 시스템 역할(role_id) 지정
-     * - 일반 관리자의 최고 관리자(super_admin) 역할 부여
+     * - 숫자가 아니거나 20자리를 초과하는 사번(employee_code)
+     * - 이미 사용 중인 사번(employee_code)
+     * - 대한민국 휴대폰 번호 형식이 아닌 전화번호(phone)
+     * - 미래 날짜로 입력된 생년월일(birth_date)
+     * - 8자 미만 또는 72자를 초과하는 초기 비밀번호(password)
+     * - 허용되지 않은 부서(department) 지정
      * - 사용 중지 또는 폐점된 점포(store_id) 지정
-     * - 본사 직원에게 임의의 점포(store_id) 지정
+     * - 본사(head_office) 직원에게 임의의 점포(store_id) 지정
      * - 점포 직원인데 소속 점포(store_id)를 지정하지 않는 요청
      * - 사용 중지된 직급(position_id) 지정
+     * - 사용 중지된 권한 역할(role_id) 지정
+     * - 일반 관리자의 최고 관리자(super_admin) 역할 부여
+     *
+     * 신규 직원은 기본적으로
+     * 재직 상태(employment_status)를 재직(active)으로 등록하고
+     * 계정 활성 상태(is_active)를 활성(true)으로 설정합니다.
+     *
+     * 직원 등록이 정상적으로 완료되면
+     * 현재 로그인 세션의 직원 등록 임시저장(draft)을 삭제합니다.
      */
     public function employeeStore(Request $request)
     {
@@ -374,8 +607,9 @@ class AdminController extends Controller
         /**
          * 직원 관리 권한(employee.manage)을 확인합니다.
          *
-         * 본사 직원(head_office_staff)처럼 직원 조회 권한만 있는 사용자가
-         * 화면의 비활성화 상태를 강제로 변경하거나 API를 직접 호출해도
+         * 직원 조회 권한(employee.view)만 있는 사용자가
+         * 화면의 등록 버튼을 강제로 활성화하거나
+         * API 주소를 직접 호출하더라도
          * 직원 관리 권한(employee.manage)이 없으면 서버에서 차단합니다.
          */
         $this->access->requirePermission($user, 'employee.manage');
@@ -383,25 +617,118 @@ class AdminController extends Controller
         /**
          * 직원 등록 정보를 검사합니다.
          *
-         * 화면에서 정상적으로 입력된 값이라도 신뢰하지 않고
-         * 서버에서 형식과 실제 데이터 존재 여부를 다시 확인합니다.
+         * ------------------------------------------------------------
+         * 사번(employee_code)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 문자열로 처리하여 앞자리 0을 유지
+         * - 숫자만 허용
+         * - 최대 20자리
+         * - 기존 직원과 중복 불가
+         *
+         * ------------------------------------------------------------
+         * 이름(name)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 문자열
+         * - 최대 50자
+         *
+         * ------------------------------------------------------------
+         * 전화번호(phone)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 문자열로 처리하여 앞자리 0을 유지
+         * - 하이픈(-) 없이 숫자만 입력
+         * - 010으로 시작하는 대한민국 휴대폰 번호
+         * - 총 11자리
+         *
+         * 예:
+         * 01012341234
+         *
+         * ------------------------------------------------------------
+         * 생년월일(birth_date)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 날짜 형식
+         * - 오늘보다 미래 날짜는 입력 불가
+         *
+         * ------------------------------------------------------------
+         * 초기 비밀번호(password)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 최소 8자
+         * - 최대 72자
+         *
+         * ------------------------------------------------------------
+         * 소속 점포(store_id)
+         * ------------------------------------------------------------
+         *
+         * - 본사(head_office)는 NULL
+         * - 주방(kitchen), 홀(hall)은 필수
+         * - 실제 데이터베이스에 존재하는 점포만 허용
+         *
+         * ------------------------------------------------------------
+         * 부서(department)
+         * ------------------------------------------------------------
+         *
+         * 허용 값:
+         * - 주방(kitchen)
+         * - 홀(hall)
+         * - 본사(head_office)
+         *
+         * ------------------------------------------------------------
+         * 직급(position_id)
+         * ------------------------------------------------------------
+         *
+         * - 신규 직원 등록에서는 필수
+         * - 실제 데이터베이스에 존재하는 직급만 허용
+         *
+         * ------------------------------------------------------------
+         * 권한 역할(role_id)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 실제 데이터베이스에 존재하는 역할만 허용
+         *
+         * ------------------------------------------------------------
+         * 입사일(hired_at)
+         * ------------------------------------------------------------
+         *
+         * - 필수 입력
+         * - 날짜 형식
          */
         $validated = $request->validate([
             'employee_code' => [
                 'required',
                 'string',
-                'max:255',
+                'regex:/^\d{1,20}$/',
                 'unique:users,employee_code',
             ],
             'name' => [
                 'required',
                 'string',
-                'max:255',
+                'max:50',
+            ],
+            'phone' => [
+                'required',
+                'string',
+                'regex:/^010\d{8}$/',
+            ],
+            'birth_date' => [
+                'required',
+                'date',
+                'before_or_equal:today',
             ],
             'password' => [
                 'required',
                 'string',
-                'min:4',
+                'min:8',
+                'max:72',
             ],
             'store_id' => [
                 'nullable',
@@ -412,42 +739,46 @@ class AdminController extends Controller
                 'in:kitchen,hall,head_office',
             ],
             'position_id' => [
-                'nullable',
+                'required',
                 'exists:positions,id',
             ],
             'role_id' => [
                 'required',
                 'exists:roles,id',
             ],
+            'hired_at' => [
+                'required',
+                'date',
+            ],
         ]);
 
         /**
-         * 요청받은 시스템 역할(role_id)을
+         * 요청받은 권한 역할(role_id)을
          * 데이터베이스에서 다시 조회합니다.
          *
          * 사용자가 개발자 도구나 직접 API 호출을 통해
-         * 화면에 없는 시스템 역할(role_id)을 전송할 수 있으므로
+         * 화면에 표시되지 않는 권한 역할(role_id)을 전송할 수 있으므로
          * 화면에서 전달된 값을 그대로 신뢰하지 않습니다.
          */
         $selectedRole = Role::findOrFail($validated['role_id']);
 
         /**
-         * 사용 중지된 시스템 역할(is_active = false)은
+         * 사용 중지된 권한 역할(is_active = false)은
          * 새로운 직원에게 부여할 수 없습니다.
          */
         abort_if(
             ! $selectedRole->is_active,
             422,
-            '현재 사용할 수 없는 시스템 역할입니다.'
+            '현재 사용할 수 없는 권한 역할입니다.'
         );
 
         /**
-         * 최고 관리자 역할(super_admin)은
+         * 최고 관리자(super_admin) 역할은
          * 현재 로그인한 사용자 역시 최고 관리자(super_admin)인 경우에만
          * 다른 직원에게 부여할 수 있습니다.
          *
          * 본사 관리자(head_office_manager)가 요청 내용을 조작하여
-         * 최고 관리자 역할(super_admin)의 역할 번호(role_id)를
+         * 최고 관리자(super_admin)의 역할 번호(role_id)를
          * 직접 전송하는 경우에도 서버에서 차단합니다.
          */
         abort_if(
@@ -462,7 +793,7 @@ class AdminController extends Controller
          * 특정 점포(store_id)에 소속되지 않습니다.
          *
          * 사용자가 임의의 점포(store_id)를 함께 전송하더라도
-         * 서버에서 소속 점포(store_id)를 비어 있는 값(NULL)으로 변경합니다.
+         * 서버에서 소속 점포(store_id)를 NULL로 변경합니다.
          */
         if ($validated['department'] === 'head_office') {
             $validated['store_id'] = null;
@@ -495,21 +826,18 @@ class AdminController extends Controller
         }
 
         /**
-         * 직급(position_id)이 지정되어 있다면
-         * 현재 사용 중인 직급인지 확인합니다.
+         * 신규 직원 등록에서는 직급(position_id)이 필수입니다.
          *
          * 화면에 표시되지 않는 사용 중지된 직급을
          * 직접 전송하는 경우에도 서버에서 차단합니다.
          */
-        if ($validated['position_id'] !== null) {
-            $selectedPosition = Position::find($validated['position_id']);
+        $selectedPosition = Position::find($validated['position_id']);
 
-            abort_if(
-                ! $selectedPosition || ! $selectedPosition->is_active,
-                422,
-                '현재 사용할 수 없는 직급입니다.'
-            );
-        }
+        abort_if(
+            ! $selectedPosition || ! $selectedPosition->is_active,
+            422,
+            '현재 사용할 수 없는 직급입니다.'
+        );
 
         /**
          * 검사가 완료된 정보로 새로운 직원을 생성합니다.
@@ -517,11 +845,18 @@ class AdminController extends Controller
          * 신규 직원은 기본적으로
          * 재직 상태(employment_status)를 재직(active)으로 등록하고
          * 계정 활성 상태(is_active)도 활성(true)으로 설정합니다.
+         *
+         * 퇴사일(resigned_at)은 아직 퇴사한 직원이 아니므로
+         * NULL로 저장합니다.
+         *
+         * 비밀번호(password)는 User 모델의
+         * hashed cast를 통해 해시 처리됩니다.
          */
         $employee = User::create([
             ...$validated,
             'employment_status' => 'active',
             'is_active' => true,
+            'resigned_at' => null,
         ]);
 
         /**
@@ -541,223 +876,19 @@ class AdminController extends Controller
             '직원 등록'
         );
 
+        /**
+         * 직원 등록이 정상적으로 완료된 경우에만
+         * 현재 로그인 세션의 직원 등록 임시저장(draft)을 삭제합니다.
+         *
+         * 입력 검증 실패나 권한 오류 등으로 등록이 실패하면
+         * 이 코드까지 실행되지 않으므로 기존 임시저장 내용은 유지됩니다.
+         */
+        $request->session()->forget(
+            'employee_registration_draft'
+        );
+
         return response()->json([
             'message' => '직원이 등록되었습니다.',
-        ], 201);
-    }
-
-    /**
-     * 직원의 재직 상태(employment_status)를 변경합니다.
-     *
-     * 직원 관리 권한(employee.manage)이 있는 사용자만
-     * 직원의 재직 상태를 변경할 수 있습니다.
-     *
-     * 화면에서는 재직 상태(employment_status)만 서버로 전달합니다.
-     * 계정 활성 상태(is_active)는 화면에서 직접 변경하지 않습니다.
-     *
-     * 재직 상태에 따른 계정 처리:
-     *
-     * - 재직(active) → 계정 활성(is_active = true)
-     * - 휴직(leave) → 계정 비활성(is_active = false)
-     * - 퇴사(resigned) → 계정 비활성(is_active = false)
-     *
-     * 이렇게 하면 사용자가 요청 내용을 조작하여
-     * 휴직 또는 퇴사 상태인데 로그인 가능한 계정을 만드는 것을 방지할 수 있습니다.
-     */
-    public function employeeStatus(Request $request, User $user)
-    {
-        // 실제 상태 변경을 요청한 로그인 사용자를 가져옵니다.
-        $actor = $request->user();
-
-        /**
-         * 직원 관리 권한(employee.manage)을 확인합니다.
-         *
-         * 화면에서 저장 버튼을 강제로 활성화하거나
-         * 상태 변경 API를 직접 호출하더라도
-         * 직원 관리 권한(employee.manage)이 없으면 서버에서 차단합니다.
-         */
-        $this->access->requirePermission($actor, 'employee.manage');
-
-        // 변경 대상 직원의 시스템 역할(role)을 함께 조회합니다.
-        $user->loadMissing('role');
-
-        /**
-         * 최고 관리자(super_admin) 계정을 보호합니다.
-         *
-         * 현재 로그인한 사용자가 최고 관리자(super_admin)가 아니라면
-         * 기존 최고 관리자(super_admin)의 재직 상태를 변경할 수 없습니다.
-         *
-         * 화면에서 상태 변경 기능을 강제로 활성화하거나
-         * API 주소를 직접 호출하는 경우에도 서버에서 차단합니다.
-         */
-        abort_if(
-            $user->role?->code === 'super_admin'
-                && $actor->role?->code !== 'super_admin',
-            403,
-            '최고 관리자 계정을 변경할 권한이 없습니다.'
-        );
-
-        /**
-         * 화면에서 전달받은 재직 상태(employment_status)를 검사합니다.
-         *
-         * 서버에서 허용하는 상태:
-         * - 재직(active)
-         * - 휴직(leave)
-         * - 퇴사(resigned)
-         *
-         * 계정 활성 상태(is_active)는 요청값으로 받지 않습니다.
-         * Laravel 서버가 재직 상태를 기준으로 직접 결정합니다.
-         */
-        $validated = $request->validate([
-            'employment_status' => [
-                'required',
-                'in:active,leave,resigned',
-            ],
-        ]);
-
-        // 감사 로그 기록을 위해 변경 전 직원 정보를 저장합니다.
-        $oldData = $user->toArray();
-
-        /**
-         * 재직 상태(employment_status)를 기준으로
-         * 계정 활성 상태(is_active)를 서버에서 결정합니다.
-         *
-         * 재직(active) 상태인 직원만 로그인 가능한 계정으로 처리합니다.
-         */
-        $isActive = $validated['employment_status'] === 'active';
-
-        /**
-         * 직원의 재직 상태를 변경합니다.
-         *
-         * 재직(active):
-         * - 계정 활성(is_active = true)
-         * - 퇴사일(resigned_at = NULL)
-         *
-         * 휴직(leave):
-         * - 계정 비활성(is_active = false)
-         * - 퇴사일(resigned_at = NULL)
-         *
-         * 퇴사(resigned):
-         * - 계정 비활성(is_active = false)
-         * - 현재 날짜를 퇴사일(resigned_at)로 기록
-         */
-        $user->update([
-            'employment_status' => $validated['employment_status'],
-            'is_active' => $isActive,
-            'resigned_at' => $validated['employment_status'] === 'resigned'
-                ? now()->toDateString()
-                : null,
-        ]);
-
-        /**
-         * 직원 상태 변경 내용을 감사 로그(audit log)에 기록합니다.
-         *
-         * 변경 전 정보와 변경 후 정보를 함께 저장하여
-         * 누가 어떤 직원의 상태를 변경했는지 확인할 수 있도록 합니다.
-         */
-        $this->audit->log(
-            $actor,
-            'employee',
-            'update',
-            User::class,
-            $user->id,
-            $oldData,
-            $user->toArray(),
-            '직원 재직 상태 변경'
-        );
-
-        return response()->json([
-            'message' => '직원 재직 상태가 변경되었습니다.',
-        ]);
-    }
-
-    /**
-     * 점포 목록을 조회합니다.
-     *
-     * 점포 조회 권한(store.view)이 있는 사용자만
-     * 점포 목록을 조회할 수 있습니다.
-     */
-    public function stores(Request $request)
-    {
-        // 점포 조회 권한(store.view)을 확인합니다.
-        $this->access->requirePermission(
-            $request->user(),
-            'store.view'
-        );
-
-        // 등록된 점포를 정렬 순서(sort_order)에 따라 반환합니다.
-        return response()->json([
-            'stores' => Store::orderBy('sort_order')->get(),
-        ]);
-    }
-
-    /**
-     * 새로운 점포를 등록합니다.
-     *
-     * 점포 관리 권한(store.manage)이 있는 사용자만
-     * 새로운 점포를 등록할 수 있습니다.
-     */
-    public function storeStore(Request $request)
-    {
-        // 실제 점포 등록을 요청한 로그인 사용자를 가져옵니다.
-        $user = $request->user();
-
-        // 점포 관리 권한(store.manage)을 확인합니다.
-        $this->access->requirePermission($user, 'store.manage');
-
-        // 새로운 점포의 입력 정보를 검사합니다.
-        $validated = $request->validate([
-            'store_code' => [
-                'required',
-                'string',
-                'unique:stores,store_code',
-            ],
-            'name' => [
-                'required',
-                'string',
-                'unique:stores,name',
-            ],
-            'phone' => [
-                'nullable',
-                'string',
-            ],
-            'address' => [
-                'nullable',
-                'string',
-            ],
-            'attendance_radius_meters' => [
-                'required',
-                'integer',
-                'min:10',
-            ],
-            'status' => [
-                'required',
-                'in:active,inactive,closed',
-            ],
-        ]);
-
-        // 검사가 완료된 정보로 새로운 점포를 생성합니다.
-        $store = Store::create($validated);
-
-        /**
-         * 점포 등록 내용을 감사 로그(audit log)에 기록합니다.
-         *
-         * 누가 어떤 점포를 등록했는지
-         * 나중에 확인할 수 있도록 기록을 남깁니다.
-         */
-        $this->audit->log(
-            $user,
-            'store',
-            'create',
-            Store::class,
-            $store->id,
-            null,
-            $store->toArray(),
-            '점포 등록'
-        );
-
-        return response()->json([
-            'message' => '점포가 등록되었습니다.',
         ], 201);
     }
 

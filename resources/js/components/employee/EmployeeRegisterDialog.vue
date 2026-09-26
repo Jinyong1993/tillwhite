@@ -75,32 +75,12 @@
               </div>
 
               <div class="register-section-description">
-                직원의 기본 인적 정보를 입력합니다.
+                직원의 기본 정보와 입사일을 입력합니다.
               </div>
             </div>
           </div>
 
           <div class="register-fields">
-            <!-- 사번(employee_code) -->
-            <div
-              ref="employeeCodeRef"
-              class="field-anchor"
-            >
-              <v-text-field
-                :model-value="form.employee_code"
-                label="사번 / 로그인 ID"
-                placeholder="숫자만 입력"
-                variant="outlined"
-                prepend-inner-icon="mdi-card-account-details-outline"
-                autocomplete="off"
-                inputmode="numeric"
-                maxlength="20"
-                counter="20"
-                :error-messages="fieldError('employee_code')"
-                @update:model-value="updateNumericField('employee_code', $event, 20)"
-              />
-            </div>
-
             <!-- 이름(name) -->
             <div
               ref="nameRef"
@@ -157,6 +137,22 @@
                 @update:model-value="updateField('birth_date', $event)"
               />
             </div>
+
+            <!-- 입사일(hired_at) -->
+            <div
+              ref="hiredAtRef"
+              class="field-anchor"
+            >
+              <v-text-field
+                :model-value="form.hired_at"
+                label="입사일"
+                type="date"
+                variant="outlined"
+                prepend-inner-icon="mdi-calendar-check-outline"
+                :error-messages="fieldError('hired_at')"
+                @update:model-value="updateField('hired_at', $event)"
+              />
+            </div>
           </div>
         </section>
 
@@ -178,12 +174,32 @@
               </div>
 
               <div class="register-section-description">
-                최초 로그인에 사용할 비밀번호를 설정합니다.
+                직원이 로그인할 사원번호와 초기 비밀번호를 설정합니다.
               </div>
             </div>
           </div>
 
           <div class="register-fields">
+            <!-- 사원번호(employee_code) -->
+            <div
+              ref="employeeCodeRef"
+              class="field-anchor"
+            >
+              <v-text-field
+                :model-value="form.employee_code"
+                label="사원번호"
+                placeholder="숫자만 입력"
+                variant="outlined"
+                prepend-inner-icon="mdi-card-account-details-outline"
+                autocomplete="off"
+                inputmode="numeric"
+                maxlength="20"
+                counter="20"
+                :error-messages="fieldError('employee_code')"
+                @update:model-value="updateNumericField('employee_code', $event, 20)"
+              />
+            </div>
+
             <!-- 초기 비밀번호(password) -->
             <div
               ref="passwordRef"
@@ -360,48 +376,6 @@
             </span>
           </div>
         </section>
-
-        <v-divider />
-
-        <!-- 근무 정보 -->
-        <section class="register-section">
-          <div class="register-section-header">
-            <div class="register-section-icon">
-              <v-icon
-                icon="mdi-briefcase-outline"
-                size="18"
-              />
-            </div>
-
-            <div>
-              <div class="register-section-title">
-                근무 정보
-              </div>
-
-              <div class="register-section-description">
-                직원의 입사 정보를 입력합니다.
-              </div>
-            </div>
-          </div>
-
-          <div class="register-fields">
-            <!-- 입사일(hired_at) -->
-            <div
-              ref="hiredAtRef"
-              class="field-anchor"
-            >
-              <v-text-field
-                :model-value="form.hired_at"
-                label="입사일"
-                type="date"
-                variant="outlined"
-                prepend-inner-icon="mdi-calendar-check-outline"
-                :error-messages="fieldError('hired_at')"
-                @update:model-value="updateField('hired_at', $event)"
-              />
-            </div>
-          </div>
-        </section>
       </div>
 
       <v-divider />
@@ -410,7 +384,13 @@
         직원 등록 고정 하단 영역
 
         순서:
-        취소 → 임시저장 → 등록
+        취소 → 전체 삭제 → 임시저장 → 등록
+
+        전체 삭제는 실제 등록된 직원을 삭제하는 기능이 아닙니다.
+
+        현재 작성 중인 등록 내용과
+        Laravel Session에 저장된 임시저장 내용(draft)을
+        삭제하기 위한 요청을 부모 화면(EmployeePage)에 전달합니다.
       -->
       <div class="register-actions">
         <v-btn
@@ -424,6 +404,22 @@
         <v-spacer />
 
         <div class="register-action-buttons">
+          <!--
+            직원 등록 내용 전체 삭제
+
+            실제 삭제 처리와 Laravel 서버 요청은
+            부모 화면(EmployeePage)에서 담당합니다.
+          -->
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-delete-outline"
+            :disabled="loading"
+            @click="deleteDraft"
+          >
+            전체 삭제
+          </v-btn>
+
+          <!-- 직원 등록 내용 임시저장 -->
           <v-btn
             variant="flat"
             prepend-icon="mdi-content-save-outline"
@@ -433,6 +429,7 @@
             임시저장
           </v-btn>
 
+          <!-- 실제 직원 등록 -->
           <v-btn
             variant="flat"
             prepend-icon="mdi-account-plus-outline"
@@ -515,7 +512,7 @@ const props = defineProps({
   },
 
   /**
-   * 직원 등록 요청 진행 상태입니다.
+   * 직원 등록, 임시저장 또는 전체 삭제 요청 진행 상태입니다.
    */
   loading: {
     type: Boolean,
@@ -528,6 +525,7 @@ const emit = defineEmits([
   'update:form',
   'submit',
   'draft',
+  'delete',
   'close',
 ]);
 
@@ -666,7 +664,7 @@ function updateField(field, value) {
 /**
  * 숫자만 허용하는 입력값을 처리합니다.
  *
- * 사번(employee_code)과 휴대폰 번호(phone)는
+ * 사원번호(employee_code)와 휴대폰 번호(phone)는
  * 숫자로 계산하는 값이 아니므로 문자열로 유지합니다.
  *
  * 숫자가 아닌 문자는 입력 단계에서 제거하고
@@ -710,16 +708,16 @@ function updateDepartment(value) {
  */
 function getFieldRef(field) {
   const refs = {
-    employee_code: employeeCodeRef,
     name: nameRef,
     phone: phoneRef,
     birth_date: birthDateRef,
+    hired_at: hiredAtRef,
+    employee_code: employeeCodeRef,
     password: passwordRef,
     department: departmentRef,
     store_id: storeRef,
     position_id: positionRef,
     role_id: roleRef,
-    hired_at: hiredAtRef,
   };
 
   return refs[field]?.value ?? null;
@@ -766,7 +764,12 @@ function showValidationError(field, message) {
 
 /**
  * 등록 버튼을 눌렀을 때
- * 화면 위쪽 입력칸부터 순서대로 검사합니다.
+ * 실제 화면에 표시되는 입력칸 순서대로 검사합니다.
+ *
+ * 검사 순서:
+ * 이름 → 휴대폰 번호 → 생년월일 → 입사일
+ * → 사원번호 → 초기 비밀번호
+ * → 부서 → 점포 → 직급 → 권한 역할
  *
  * 한 번에 모든 오류를 표시하지 않고
  * 첫 번째 오류만 사용자에게 안내합니다.
@@ -777,52 +780,26 @@ function showValidationError(field, message) {
 function validateAndSubmit() {
   clearValidation();
 
-  const employeeCode = String(props.form.employee_code ?? '');
   const name = String(props.form.name ?? '').trim();
   const phone = String(props.form.phone ?? '');
   const birthDate = String(props.form.birth_date ?? '');
+  const hiredAt = String(props.form.hired_at ?? '');
+  const employeeCode = String(props.form.employee_code ?? '');
   const password = String(props.form.password ?? '');
   const department = props.form.department;
   const storeId = props.form.store_id;
   const positionId = props.form.position_id;
   const roleId = props.form.role_id;
-  const hiredAt = String(props.form.hired_at ?? '');
 
   /**
-   * 1. 사번(employee_code)
-   */
-  if (isEmpty(employeeCode)) {
-    showValidationError(
-      'employee_code',
-      '사번을 입력해주세요.',
-    );
-    return;
-  }
-
-  if (!/^\d+$/.test(employeeCode)) {
-    showValidationError(
-      'employee_code',
-      '사번은 숫자만 입력할 수 있습니다.',
-    );
-    return;
-  }
-
-  if (employeeCode.length > 20) {
-    showValidationError(
-      'employee_code',
-      '사번은 최대 20자리까지 입력할 수 있습니다.',
-    );
-    return;
-  }
-
-  /**
-   * 2. 이름(name)
+   * 1. 이름(name)
    */
   if (isEmpty(name)) {
     showValidationError(
       'name',
       '이름을 입력해주세요.',
     );
+
     return;
   }
 
@@ -831,17 +808,19 @@ function validateAndSubmit() {
       'name',
       '이름은 최대 50자까지 입력할 수 있습니다.',
     );
+
     return;
   }
 
   /**
-   * 3. 휴대폰 번호(phone)
+   * 2. 휴대폰 번호(phone)
    */
   if (isEmpty(phone)) {
     showValidationError(
       'phone',
       '휴대폰 번호를 입력해주세요.',
     );
+
     return;
   }
 
@@ -850,6 +829,7 @@ function validateAndSubmit() {
       'phone',
       '휴대폰 번호는 하이픈(-) 없이 숫자만 입력해주세요.',
     );
+
     return;
   }
 
@@ -858,17 +838,19 @@ function validateAndSubmit() {
       'phone',
       '휴대폰 번호는 010으로 시작하는 11자리 숫자로 입력해주세요.',
     );
+
     return;
   }
 
   /**
-   * 4. 생년월일(birth_date)
+   * 3. 생년월일(birth_date)
    */
   if (isEmpty(birthDate)) {
     showValidationError(
       'birth_date',
       '생년월일을 입력해주세요.',
     );
+
     return;
   }
 
@@ -877,17 +859,61 @@ function validateAndSubmit() {
       'birth_date',
       '생년월일은 오늘 이후 날짜를 선택할 수 없습니다.',
     );
+
     return;
   }
 
   /**
-   * 5. 초기 비밀번호(password)
+   * 4. 입사일(hired_at)
+   */
+  if (isEmpty(hiredAt)) {
+    showValidationError(
+      'hired_at',
+      '입사일을 입력해주세요.',
+    );
+
+    return;
+  }
+
+  /**
+   * 5. 사원번호(employee_code)
+   */
+  if (isEmpty(employeeCode)) {
+    showValidationError(
+      'employee_code',
+      '사원번호를 입력해주세요.',
+    );
+
+    return;
+  }
+
+  if (!/^\d+$/.test(employeeCode)) {
+    showValidationError(
+      'employee_code',
+      '사원번호는 숫자만 입력할 수 있습니다.',
+    );
+
+    return;
+  }
+
+  if (employeeCode.length > 20) {
+    showValidationError(
+      'employee_code',
+      '사원번호는 최대 20자리까지 입력할 수 있습니다.',
+    );
+
+    return;
+  }
+
+  /**
+   * 6. 초기 비밀번호(password)
    */
   if (isEmpty(password)) {
     showValidationError(
       'password',
       '초기 비밀번호를 입력해주세요.',
     );
+
     return;
   }
 
@@ -896,6 +922,7 @@ function validateAndSubmit() {
       'password',
       '초기 비밀번호는 8자 이상 입력해주세요.',
     );
+
     return;
   }
 
@@ -904,17 +931,19 @@ function validateAndSubmit() {
       'password',
       '초기 비밀번호는 최대 72자까지 입력할 수 있습니다.',
     );
+
     return;
   }
 
   /**
-   * 6. 소속 부서(department)
+   * 7. 소속 부서(department)
    */
   if (isEmpty(department)) {
     showValidationError(
       'department',
       '부서를 선택해주세요.',
     );
+
     return;
   }
 
@@ -929,11 +958,12 @@ function validateAndSubmit() {
       'department',
       '올바른 부서를 선택해주세요.',
     );
+
     return;
   }
 
   /**
-   * 7. 소속 점포(store_id)
+   * 8. 소속 점포(store_id)
    *
    * 본사(head_office)는 특정 점포에 소속되지 않으므로
    * 점포 선택 검사를 하지 않습니다.
@@ -946,39 +976,31 @@ function validateAndSubmit() {
       'store_id',
       '점포를 선택해주세요.',
     );
+
     return;
   }
 
   /**
-   * 8. 직급(position_id)
+   * 9. 직급(position_id)
    */
   if (isEmpty(positionId)) {
     showValidationError(
       'position_id',
       '직급을 선택해주세요.',
     );
+
     return;
   }
 
   /**
-   * 9. 권한 역할(role_id)
+   * 10. 권한 역할(role_id)
    */
   if (isEmpty(roleId)) {
     showValidationError(
       'role_id',
       '권한 역할을 선택해주세요.',
     );
-    return;
-  }
 
-  /**
-   * 10. 입사일(hired_at)
-   */
-  if (isEmpty(hiredAt)) {
-    showValidationError(
-      'hired_at',
-      '입사일을 입력해주세요.',
-    );
     return;
   }
 
@@ -1000,10 +1022,32 @@ function validateAndSubmit() {
  * 부모 화면(EmployeePage)의 API 요청에서 처리합니다.
  *
  * 비밀번호(password)는 서버 임시저장 시 제외합니다.
+ *
+ * 임시저장이 정상적으로 완료된 경우
+ * 부모 화면(EmployeePage)에서 등록 다이얼로그를 닫습니다.
  */
 function saveDraft() {
   clearValidation();
   emit('draft');
+}
+
+/**
+ * 전체 삭제 버튼을 눌렀을 때
+ * 부모 화면(EmployeePage)에 삭제 요청을 전달합니다.
+ *
+ * 이 컴포넌트에서는 직접 등록 양식을 초기화하거나
+ * Laravel Session의 임시저장 내용(draft)을 삭제하지 않습니다.
+ *
+ * 부모 화면(EmployeePage)에서
+ * Laravel 서버의 직원 관리 권한(employee.manage)을 다시 확인하고
+ * 임시저장 삭제가 정상적으로 완료된 경우에만
+ * 현재 화면의 등록 양식도 전체 초기화합니다.
+ *
+ * 실제 등록된 직원 데이터에는 영향을 주지 않습니다.
+ */
+function deleteDraft() {
+  clearValidation();
+  emit('delete');
 }
 
 /**
@@ -1021,6 +1065,9 @@ function handleDialogChange(value) {
 /**
  * 취소 버튼을 눌렀을 때
  * 부모 화면(EmployeePage)에 닫기 요청을 전달합니다.
+ *
+ * 취소는 현재 등록 화면만 닫으며
+ * Laravel Session에 이미 저장된 임시저장 내용은 삭제하지 않습니다.
  */
 function close() {
   emit('update:modelValue', false);
@@ -1092,7 +1139,7 @@ function close() {
 }
 
 /*
- * 기본 정보 / 계정 정보 / 소속 정보 / 근무 정보 영역입니다.
+ * 기본 정보 / 계정 정보 / 소속 정보 영역입니다.
  */
 .register-section {
   padding: 22px 20px;
@@ -1241,7 +1288,7 @@ function close() {
 }
 
 /*
- * 취소 / 임시저장 / 등록 버튼 영역입니다.
+ * 취소 / 전체 삭제 / 임시저장 / 등록 버튼 영역입니다.
  *
  * 스크롤 영역 밖에 있기 때문에
  * 항상 다이얼로그 하단에 표시됩니다.
@@ -1254,7 +1301,7 @@ function close() {
 }
 
 /*
- * 임시저장과 등록 버튼을
+ * 전체 삭제 / 임시저장 / 등록 버튼을
  * 오른쪽에 나란히 배치합니다.
  */
 .register-action-buttons {

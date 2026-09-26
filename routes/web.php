@@ -139,8 +139,46 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      *
      * 직원 등록 버튼을 누르면 등록 다이얼로그를 열기 전에
      * 직원 관리 권한(employee.manage)을 서버에서 확인합니다.
+     *
+     * 권한 확인이 완료되면 등록에 필요한 선택 목록과
+     * 현재 로그인 세션의 임시저장 내용(draft)을 반환합니다.
      */
     Route::get('/employees/create', [AdminController::class, 'employeeCreate']);
+
+    /**
+     * 직원 등록 내용 임시저장
+     *
+     * 작성 중인 직원 등록 내용을
+     * 현재 로그인 사용자의 Laravel Session에 저장합니다.
+     *
+     * 직원 관리 권한(employee.manage)을 서버에서 확인하며
+     * 비밀번호(password)는 임시저장하지 않습니다.
+     *
+     * /employees/{user}보다 위에 위치시켜
+     * "draft"가 직원 번호(user)로 해석되지 않도록 합니다.
+     */
+    Route::put('/employees/draft', [AdminController::class, 'employeeDraft']);
+
+    /**
+     * 직원 등록 임시저장 내용 전체 삭제
+     *
+     * 직원 등록 화면에서 "전체 삭제"를 선택했을 때
+     * 현재 로그인 사용자의 Laravel Session에 저장되어 있는
+     * 직원 등록 임시저장 내용(draft)을 삭제합니다.
+     *
+     * 실제 등록된 직원 데이터는 삭제하지 않으며
+     * 아직 등록되지 않은 작성 중인 내용만 삭제합니다.
+     *
+     * 직원 관리 권한(employee.manage)을
+     * Laravel 서버에서 다시 확인합니다.
+     *
+     * 비밀번호(password)는 원래 임시저장 대상이 아니므로
+     * 서버에서 삭제할 임시 비밀번호 데이터는 없습니다.
+     *
+     * /employees/{user}보다 위에 위치시켜
+     * "draft"가 직원 번호(user)로 해석되지 않도록 합니다.
+     */
+    Route::delete('/employees/draft', [AdminController::class, 'employeeDraftDelete']);
 
     /**
      * 직원 상세정보 조회
