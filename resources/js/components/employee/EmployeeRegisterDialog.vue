@@ -1,6 +1,7 @@
 <template>
   <v-dialog
     :model-value="modelValue"
+    :persistent="isProcessing"
     max-width="620"
     @update:model-value="handleDialogChange"
   >
@@ -45,18 +46,26 @@
         ref="scrollAreaRef"
         class="register-scroll-area"
       >
-        <!-- 등록 검증 알림 -->
+        <!--
+          등록 검증 공통 알림
+
+          직접 Vuetify Alert를 만들지 않고
+          애플리케이션 공통 알림(AppAlert)을 사용합니다.
+
+          모든 알림은 사용자가 직접 닫을 수 있습니다.
+
+          검증 알림을 닫더라도 입력칸의 오류 상태는 유지하여
+          어떤 입력값을 수정해야 하는지는 계속 확인할 수 있습니다.
+        -->
         <div
           v-if="validationMessage"
           class="validation-alert-wrap"
         >
-          <v-alert
+          <AppAlert
+            v-model="validationMessage"
             type="warning"
             variant="tonal"
-            density="compact"
-          >
-            {{ validationMessage }}
-          </v-alert>
+          />
         </div>
 
         <!-- 기본 정보 -->
@@ -386,16 +395,24 @@
         순서:
         취소 → 전체 삭제 → 임시저장 → 등록
 
-        전체 삭제는 실제 등록된 직원을 삭제하는 기능이 아닙니다.
+        loadingAction에는 현재 실행 중인 작업 하나만 저장합니다.
 
-        현재 작성 중인 등록 내용과
-        Laravel Session에 저장된 임시저장 내용(draft)을
-        삭제하기 위한 요청을 부모 화면(EmployeePage)에 전달합니다.
+        가능한 값:
+        - null
+        - delete
+        - draft
+        - submit
+
+        따라서 실제로 실행한 버튼에만
+        로딩 표시가 나타납니다.
+
+        다른 버튼은 처리 중에 비활성화만 하여
+        중복 요청을 방지합니다.
       -->
       <div class="register-actions">
         <v-btn
           variant="text"
-          :disabled="loading"
+          :disabled="isProcessing"
           @click="close"
         >
           취소
@@ -404,16 +421,12 @@
         <v-spacer />
 
         <div class="register-action-buttons">
-          <!--
-            직원 등록 내용 전체 삭제
-
-            실제 삭제 처리와 Laravel 서버 요청은
-            부모 화면(EmployeePage)에서 담당합니다.
-          -->
+          <!-- 직원 등록 내용 전체 삭제 -->
           <v-btn
             variant="text"
             prepend-icon="mdi-delete-outline"
-            :disabled="loading"
+            :loading="loadingAction === 'delete'"
+            :disabled="isProcessing"
             @click="deleteDraft"
           >
             전체 삭제
@@ -423,7 +436,8 @@
           <v-btn
             variant="flat"
             prepend-icon="mdi-content-save-outline"
-            :disabled="loading"
+            :loading="loadingAction === 'draft'"
+            :disabled="isProcessing"
             @click="saveDraft"
           >
             임시저장
@@ -433,7 +447,8 @@
           <v-btn
             variant="flat"
             prepend-icon="mdi-account-plus-outline"
-            :loading="loading"
+            :loading="loadingAction === 'submit'"
+            :disabled="isProcessing"
             @click="validateAndSubmit"
           >
             등록
@@ -446,10 +461,13 @@
 
 <script setup>
 import {
+  computed,
   nextTick,
   ref,
   watch,
 } from 'vue';
+
+import AppAlert from '../common/AppAlert.vue';
 
 /**
  * 직원 등록 다이얼로그(EmployeeRegisterDialog)
@@ -462,6 +480,9 @@ import {
  *
  * 실제 등록 권한과 최종 입력값 검사는
  * Laravel 서버에서 반드시 다시 수행합니다.
+ *
+ * API 요청과 공통 확인창(ConfirmDialog)은
+ * 부모 화면(EmployeePage)에서 관리합니다.
  */
 const props = defineProps({
   /**
@@ -512,11 +533,34 @@ const props = defineProps({
   },
 
   /**
-   * 직원 등록, 임시저장 또는 전체 삭제 요청 진행 상태입니다.
+   * 현재 실행 중인 직원 등록 관련 작업입니다.
+   *
+   * null:
+   * - 실행 중인 작업 없음
+   *
+   * delete:
+   * - 전체 삭제 진행 중
+   *
+   * draft:
+   * - 임시저장 진행 중
+   *
+   * submit:
+   * - 실제 직원 등록 진행 중
+   *
+   * 하나의 값으로 현재 작업을 관리하여
+   * 여러 버튼의 로딩 상태가 동시에 켜지는 것을 방지합니다.
    */
-  loading: {
-    type: Boolean,
-    default: false,
+  loadingAction: {
+    type: String,
+    default: null,
+    validator: (value) => (
+      value === null
+      || [
+        'delete',
+        'draft',
+        'submit',
+      ].includes(value)
+    ),
   },
 });
 
@@ -528,6 +572,18 @@ const emit = defineEmits([
   'delete',
   'close',
 ]);
+
+/**
+ * 현재 직원 등록 관련 요청이
+ * 하나라도 진행 중인지 확인합니다.
+ *
+ * 실행 중인 작업이 있으면
+ * 다른 버튼과 다이얼로그 닫기 동작을 막아
+ * 중복 요청을 방지합니다.
+ */
+const isProcessing = computed(
+  () => props.loadingAction !== null,
+);
 
 /**
  * 초기 비밀번호 표시 여부입니다.
@@ -778,6 +834,10 @@ function showValidationError(field, message) {
  * Laravel 서버에서도 동일하거나 더 엄격한 검사를 다시 수행합니다.
  */
 function validateAndSubmit() {
+  if (isProcessing.value) {
+    return;
+  }
+
   clearValidation();
 
   const name = String(props.form.name ?? '').trim();
@@ -1006,7 +1066,11 @@ function validateAndSubmit() {
 
   /**
    * 프론트 입력 검사를 모두 통과한 경우에만
-   * 부모 화면(EmployeePage)에 실제 등록 요청을 전달합니다.
+   * 부모 화면(EmployeePage)에 등록 확인 요청을 전달합니다.
+   *
+   * 여기에서 직접 API를 호출하지 않습니다.
+   * 부모 화면에서 공통 확인창(ConfirmDialog)을 표시한 뒤
+   * 사용자가 최종 확인한 경우에만 실제 등록 요청을 실행합니다.
    */
   emit('submit');
 }
@@ -1018,59 +1082,77 @@ function validateAndSubmit() {
  * 임시저장은 작성 중인 데이터를 보관하는 기능이므로
  * 필수 입력값 검사를 수행하지 않습니다.
  *
- * 실제 Laravel Session 저장은
- * 부모 화면(EmployeePage)의 API 요청에서 처리합니다.
- *
- * 비밀번호(password)는 서버 임시저장 시 제외합니다.
- *
- * 임시저장이 정상적으로 완료된 경우
- * 부모 화면(EmployeePage)에서 등록 다이얼로그를 닫습니다.
+ * 실제 저장 전 확인 여부와 Laravel Session 저장은
+ * 부모 화면(EmployeePage)에서 처리합니다.
  */
 function saveDraft() {
+  if (isProcessing.value) {
+    return;
+  }
+
   clearValidation();
   emit('draft');
 }
 
 /**
  * 전체 삭제 버튼을 눌렀을 때
- * 부모 화면(EmployeePage)에 삭제 요청을 전달합니다.
+ * 부모 화면(EmployeePage)에 삭제 확인 요청을 전달합니다.
  *
  * 이 컴포넌트에서는 직접 등록 양식을 초기화하거나
  * Laravel Session의 임시저장 내용(draft)을 삭제하지 않습니다.
  *
- * 부모 화면(EmployeePage)에서
- * Laravel 서버의 직원 관리 권한(employee.manage)을 다시 확인하고
- * 임시저장 삭제가 정상적으로 완료된 경우에만
- * 현재 화면의 등록 양식도 전체 초기화합니다.
- *
  * 실제 등록된 직원 데이터에는 영향을 주지 않습니다.
  */
 function deleteDraft() {
+  if (isProcessing.value) {
+    return;
+  }
+
   clearValidation();
   emit('delete');
 }
 
 /**
- * 다이얼로그 열림/닫힘 상태가 변경되었을 때
- * 부모 화면(EmployeePage)에 전달합니다.
+ * X / ESC / 바깥 영역 클릭으로
+ * Vuetify가 다이얼로그를 닫으려고 할 때 실행합니다.
+ *
+ * 여기에서는 modelValue를 직접 false로 변경하지 않습니다.
+ *
+ * 작성 내용이 있는 경우에는 부모 화면(EmployeePage)이
+ * 공통 확인창(ConfirmDialog)을 먼저 표시해야 하기 때문입니다.
+ *
+ * 부모 화면이 닫기를 승인한 경우에만
+ * registerDialog를 false로 변경하여 실제로 닫습니다.
+ *
+ * API 요청 처리 중에는 닫기 요청 자체를 무시합니다.
  */
 function handleDialogChange(value) {
-  emit('update:modelValue', value);
-
-  if (!value) {
-    emit('close');
+  if (value) {
+    return;
   }
+
+  if (isProcessing.value) {
+    return;
+  }
+
+  emit('close');
 }
 
 /**
  * 취소 버튼을 눌렀을 때
- * 부모 화면(EmployeePage)에 닫기 요청을 전달합니다.
+ * 부모 화면(EmployeePage)에 닫기 요청만 전달합니다.
  *
- * 취소는 현재 등록 화면만 닫으며
- * Laravel Session에 이미 저장된 임시저장 내용은 삭제하지 않습니다.
+ * 여기에서는 modelValue를 직접 변경하거나
+ * 작성 중인 내용을 삭제하지 않습니다.
+ *
+ * 부모 화면이 작성 여부를 확인한 뒤
+ * 바로 닫거나 공통 확인창(ConfirmDialog)을 표시합니다.
  */
 function close() {
-  emit('update:modelValue', false);
+  if (isProcessing.value) {
+    return;
+  }
+
   emit('close');
 }
 </script>
@@ -1136,6 +1218,15 @@ function close() {
  */
 .validation-alert-wrap {
   padding: 16px 20px 0;
+}
+
+/*
+ * 공통 Alert 자체에 기본 하단 여백이 있으므로
+ * 검증 알림 아래에 불필요한 공간이 생기지 않도록
+ * 이 영역에서 마지막 여백을 제거합니다.
+ */
+.validation-alert-wrap :deep(.v-alert) {
+  margin-bottom: 0 !important;
 }
 
 /*

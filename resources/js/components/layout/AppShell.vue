@@ -11,7 +11,7 @@
     - 사이드 메뉴 열림/닫힘 관리
     - 공통 페이지 카드 표시
     - 공통 헤더 표시
-    - 공통 오류 메시지 표시
+    - 애플리케이션 공통 알림 표시
     - 하위 페이지에 사용자 및 권한 정보 전달
     - 로그인 사용자 정보 준비 상태 전달
 
@@ -70,18 +70,26 @@
       </template>
 
       <!--
-        공통 오류 알림
+        Till White 공통 알림
 
-        사용자 정보 조회 또는 하위 페이지에서 전달된
-        오류 메시지를 카드 상단에 표시합니다.
+        성공, 오류, 경고, 안내 메시지를
+        하나의 공통 Alert에서 표시합니다.
+
+        alert.message가 빈 문자열이면 표시되지 않습니다.
+
+        모든 알림은 AppAlert 내부에서
+        사용자가 직접 닫을 수 있도록 처리합니다.
       -->
-      <AppAlert v-model="errorMessage" />
+      <AppAlert
+        v-model="alert.message"
+        :type="alert.type"
+      />
 
       <!--
         각 업무 페이지의 실제 내용
 
         AppShell을 사용하는 하위 페이지에
-        공통으로 필요한 사용자 및 권한 관련 기능을 전달합니다.
+        공통으로 필요한 사용자, 권한, 알림 기능을 전달합니다.
 
         user:
         - 현재 로그인한 사용자 정보
@@ -91,28 +99,33 @@
 
         sessionReady:
         - AppShell의 최초 사용자 정보 조회가 끝났는지 여부
-        - 성공/실패와 관계없이 최초 조회 처리가 끝나면 true
+
+        setAlert:
+        - 원하는 알림 종류(type)와 메시지를 직접 설정
 
         setError:
-        - 하위 페이지에서 AppShell의
-          공통 오류 메시지를 설정하는 함수
+        - 오류(error) 알림 표시
+
+        setSuccess:
+        - 성공(success) 알림 표시
+
+        setWarning:
+        - 경고(warning) 알림 표시
+
+        setInfo:
+        - 안내(info) 알림 표시
 
         전체 화면 로딩 기능은 slot으로 전달하지 않습니다.
-
-        각 업무 페이지에서는
-        자신의 최초 데이터 준비 상태와
-        AppShell의 사용자 정보 준비 상태(sessionReady)를 함께 확인한 뒤
-        completePageLoading()을 호출할 수 있습니다.
-
-        setError는 onMounted()처럼
-        slot 범위 밖에서 발생한 오류에서도 사용할 수 있도록
-        defineExpose()를 통해서도 공개합니다.
       -->
       <slot
         :user="user"
         :can="can"
         :session-ready="sessionReady"
+        :set-alert="setAlert"
         :set-error="setError"
+        :set-success="setSuccess"
+        :set-warning="setWarning"
+        :set-info="setInfo"
       />
     </AppPageCard>
   </AppPageContainer>
@@ -121,6 +134,7 @@
 <script setup>
 import {
   onMounted,
+  reactive,
   ref,
 } from 'vue';
 
@@ -152,20 +166,32 @@ defineProps({
  * drawer:
  * - 내비게이션 메뉴의 열림/닫힘 상태
  *
- * errorMessage:
- * - AppShell에서 표시할 공통 오류 메시지
- *
  * sessionReady:
  * - AppShell의 최초 로그인 사용자 조회 완료 여부
- * - 사용자 조회 성공/실패와 관계없이
- *   최초 요청 처리가 끝나면 true
  *
- * 전체 화면 로딩 상태는
- * AppShell에서 별도로 가지고 있지 않습니다.
+ * alert:
+ * - 현재 화면에 표시할 공통 알림 상태
+ *
+ * alert.type:
+ * - error   = 오류
+ * - success = 성공
+ * - warning = 경고
+ * - info    = 안내
+ *
+ * alert.message:
+ * - 실제 화면에 표시할 메시지
+ * - 빈 문자열이면 알림을 표시하지 않음
+ *
+ * 알림 종류별로 별도의 상태를 만들지 않고
+ * 하나의 공통 알림 상태만 관리합니다.
  */
 const drawer = ref(false);
-const errorMessage = ref('');
 const sessionReady = ref(false);
+
+const alert = reactive({
+  type: 'error',
+  message: '',
+});
 
 /**
  * 로그인 세션(Session) 공통 기능
@@ -186,38 +212,77 @@ const {
 } = useSession();
 
 /**
- * 공통 오류 메시지를 설정합니다.
+ * 공통 알림을 설정합니다.
  *
- * 하위 업무 페이지에서 오류가 발생했을 때
- * AppShell의 공통 오류 알림(AppAlert)에 표시합니다.
+ * type:
+ * - 표시할 알림 종류
  *
- * slot을 통해 하위 컴포넌트에 전달하며,
- * onMounted()처럼 slot 범위 밖에서 실행되는 코드에서도
- * 사용할 수 있도록 defineExpose()로 공개합니다.
+ * message:
+ * - 사용자에게 표시할 메시지
+ *
+ * 모든 알림을 이 함수 하나로 처리할 수 있으므로
+ * 새로운 알림 종류가 필요해도
+ * 별도의 상태를 추가할 필요가 없습니다.
+ */
+function setAlert(type, message) {
+  alert.type = type;
+  alert.message = message;
+}
+
+/**
+ * 오류(error) 알림을 표시합니다.
  */
 function setError(message) {
-  errorMessage.value = message;
+  setAlert('error', message);
+}
+
+/**
+ * 성공(success) 알림을 표시합니다.
+ */
+function setSuccess(message) {
+  setAlert('success', message);
+}
+
+/**
+ * 경고(warning) 알림을 표시합니다.
+ */
+function setWarning(message) {
+  setAlert('warning', message);
+}
+
+/**
+ * 안내(info) 알림을 표시합니다.
+ */
+function setInfo(message) {
+  setAlert('info', message);
 }
 
 /**
  * 하위 업무 페이지에서 사용할 수 있도록
  * AppShell의 공통 기능을 공개합니다.
  *
- * setError:
- * - 페이지 최초 조회처럼 slot 범위 밖에서 발생한 오류를
- *   AppShell의 공통 오류 알림에 표시
+ * 알림:
+ * - setAlert
+ * - setError
+ * - setSuccess
+ * - setWarning
+ * - setInfo
  *
- * sessionReady:
- * - AppShell의 로그인 사용자 정보가
- *   준비되었는지 확인할 때 사용
+ * 사용자 준비 상태:
+ * - sessionReady
  *
- * 페이지 로딩 기능은 AppShell에서 공개하지 않습니다.
+ * slot 내부에서는 slot props를 사용하고,
+ * onMounted()처럼 slot 범위 밖에서 실행되는 코드에서는
+ * defineExpose()로 공개된 기능을 사용할 수 있습니다.
  *
- * 전체 화면 로딩은
- * 애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
+ * 전체 화면 로딩은 AppShell에서 관리하지 않습니다.
  */
 defineExpose({
+  setAlert,
   setError,
+  setSuccess,
+  setWarning,
+  setInfo,
   sessionReady,
 });
 
@@ -228,28 +293,20 @@ defineExpose({
  * 현재 로그인한 사용자 정보를 불러옵니다.
  *
  * 사용자 정보 조회에 실패하면
- * 공통 오류 메시지를 표시합니다.
+ * 공통 오류(error) 알림을 표시합니다.
  *
  * 성공/실패와 관계없이 최초 사용자 조회가 끝나면
  * sessionReady를 true로 변경합니다.
  *
  * 여기에서는 공통 전체 화면 로딩을 직접 종료하지 않습니다.
- *
- * 이유:
- * AppShell의 사용자 정보 조회가 끝났더라도
- * 실제 업무 페이지의 최초 데이터 조회가
- * 아직 진행 중일 수 있기 때문입니다.
- *
- * 최종적인 페이지 준비 완료 여부는
- * 각 업무 페이지에서 자신의 데이터 준비 상태와
- * sessionReady를 함께 확인하여 결정합니다.
  */
 onMounted(async () => {
   try {
     await loadUser();
   } catch (error) {
-    errorMessage.value =
-      '사용자 정보를 불러오지 못했습니다.';
+    setError(
+      '사용자 정보를 불러오지 못했습니다.',
+    );
   } finally {
     sessionReady.value = true;
   }

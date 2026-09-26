@@ -185,6 +185,12 @@ class AdminController extends Controller
      * 임시저장은 작성 중인 내용을 보관하기 위한 기능이므로
      * 최종 등록과 달리 모든 입력값을 필수로 요구하지 않습니다.
      *
+     * 사원번호(employee_code)와 휴대폰 번호(phone)는
+     * 아직 입력 중인 값도 임시저장할 수 있습니다.
+     *
+     * 다만 임시저장 데이터라도 서버에서 기본적인 형식과
+     * 데이터베이스 참조값, 권한 관련 보안 검사는 수행합니다.
+     *
      * 비밀번호(password)는 보안을 위해
      * 임시저장 대상에 포함하지 않습니다.
      */
@@ -204,52 +210,107 @@ class AdminController extends Controller
         /**
          * 임시저장할 수 있는 입력값을 검사합니다.
          *
-         * 작성 중인 데이터이므로 모든 항목에 nullable을 사용합니다.
-         * 최종 등록에 필요한 필수 검사는 직원 등록(employeeStore)에서
-         * 다시 수행합니다.
+         * 임시저장은 작성 중인 내용을 보관하는 기능이므로
+         * 최종 등록처럼 완성된 값을 요구하지 않습니다.
+         *
+         * 사원번호(employee_code)
+         * - 비어 있어도 저장 가능
+         * - 입력 중인 숫자값 저장 가능
+         * - 숫자만 허용
+         * - 최대 20자리
+         *
+         * 휴대폰 번호(phone)
+         * - 비어 있어도 저장 가능
+         * - 01012 같은 입력 중인 값도 저장 가능
+         * - 숫자만 허용
+         * - 최대 11자리
+         *
+         * 날짜 값은 비어 있어도 되지만
+         * 값이 있다면 올바른 날짜여야 합니다.
+         *
+         * 실제 직원 등록 시에는 employeeStore()에서
+         * 완성된 값에 대한 엄격한 검증을 다시 수행합니다.
          */
-        $validated = $request->validate([
-            'employee_code' => [
-                'nullable',
-                'string',
-                'regex:/^\d{1,20}$/',
+        $validated = $request->validate(
+            [
+                'employee_code' => [
+                    'nullable',
+                    'string',
+                    'regex:/^\d{1,20}$/',
+                ],
+                'name' => [
+                    'nullable',
+                    'string',
+                    'max:50',
+                ],
+                'phone' => [
+                    'nullable',
+                    'string',
+                    'regex:/^\d{1,11}$/',
+                ],
+                'birth_date' => [
+                    'nullable',
+                    'date',
+                    'before_or_equal:today',
+                ],
+                'store_id' => [
+                    'nullable',
+                    'exists:stores,id',
+                ],
+                'department' => [
+                    'nullable',
+                    'in:kitchen,hall,head_office',
+                ],
+                'position_id' => [
+                    'nullable',
+                    'exists:positions,id',
+                ],
+                'role_id' => [
+                    'nullable',
+                    'exists:roles,id',
+                ],
+                'hired_at' => [
+                    'nullable',
+                    'date',
+                ],
             ],
-            'name' => [
-                'nullable',
-                'string',
-                'max:50',
+            [
+                'employee_code.string' =>
+                    '사원번호 형식이 올바르지 않습니다.',
+                'employee_code.regex' =>
+                    '사원번호는 숫자만 최대 20자리까지 입력할 수 있습니다.',
+
+                'name.string' =>
+                    '이름 형식이 올바르지 않습니다.',
+                'name.max' =>
+                    '이름은 최대 50자까지 입력할 수 있습니다.',
+
+                'phone.string' =>
+                    '휴대폰 번호 형식이 올바르지 않습니다.',
+                'phone.regex' =>
+                    '휴대폰 번호는 숫자만 최대 11자리까지 입력할 수 있습니다.',
+
+                'birth_date.date' =>
+                    '생년월일 형식이 올바르지 않습니다.',
+                'birth_date.before_or_equal' =>
+                    '생년월일은 오늘 이후 날짜를 선택할 수 없습니다.',
+
+                'store_id.exists' =>
+                    '선택한 점포를 찾을 수 없습니다.',
+
+                'department.in' =>
+                    '올바른 부서를 선택해주세요.',
+
+                'position_id.exists' =>
+                    '선택한 직급을 찾을 수 없습니다.',
+
+                'role_id.exists' =>
+                    '선택한 권한 역할을 찾을 수 없습니다.',
+
+                'hired_at.date' =>
+                    '입사일 형식이 올바르지 않습니다.',
             ],
-            'phone' => [
-                'nullable',
-                'string',
-                'regex:/^010\d{8}$/',
-            ],
-            'birth_date' => [
-                'nullable',
-                'date',
-                'before_or_equal:today',
-            ],
-            'store_id' => [
-                'nullable',
-                'exists:stores,id',
-            ],
-            'department' => [
-                'nullable',
-                'in:kitchen,hall,head_office',
-            ],
-            'position_id' => [
-                'nullable',
-                'exists:positions,id',
-            ],
-            'role_id' => [
-                'nullable',
-                'exists:roles,id',
-            ],
-            'hired_at' => [
-                'nullable',
-                'date',
-            ],
-        ]);
+        );
 
         /**
          * 권한 역할(role_id)이 입력되어 있다면
@@ -281,7 +342,9 @@ class AdminController extends Controller
          * 현재 사용 중인 직급인지 확인합니다.
          */
         if (! empty($validated['position_id'])) {
-            $selectedPosition = Position::find($validated['position_id']);
+            $selectedPosition = Position::find(
+                $validated['position_id']
+            );
 
             abort_if(
                 ! $selectedPosition || ! $selectedPosition->is_active,
@@ -301,7 +364,9 @@ class AdminController extends Controller
              * 점포(store_id)가 입력되어 있다면
              * 현재 운영 중인 점포인지 확인합니다.
              */
-            $selectedStore = Store::find($validated['store_id']);
+            $selectedStore = Store::find(
+                $validated['store_id']
+            );
 
             abort_if(
                 ! $selectedStore || $selectedStore->status !== 'active',

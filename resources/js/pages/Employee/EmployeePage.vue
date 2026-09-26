@@ -1,17 +1,12 @@
 <template>
   <!--
-    직원 관리 페이지에서
-    공통 레이아웃(AppShell)의 페이지 로딩 기능을 사용하기 위해
-    appShellRef를 연결합니다.
+    직원 관리 페이지의 공통 레이아웃(AppShell)입니다.
 
-    AppShell은 다음 페이지 로딩 함수를 외부에 공개합니다.
+    appShellRef는 최초 데이터 조회 오류 등에서
+    AppShell의 공통 알림을 호출하기 위해 사용합니다.
 
-    - startPageLoading()
-    - finishPageLoading()
-
-    직원 관리 페이지가 처음 열릴 때
-    이 함수들을 사용하여 직원 데이터가 준비될 때까지
-    공통 전체 화면 로딩 오버레이를 표시합니다.
+    페이지 이동 전체 화면 로딩은
+    애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
   -->
   <AppShell
     ref="appShellRef"
@@ -21,7 +16,8 @@
       #default="{
         user,
         can,
-        setError
+        setError,
+        setSuccess
       }"
     >
       <!--
@@ -98,9 +94,10 @@
         - 등록 가능한 점포 조회
         - 등록 가능한 직급 조회
         - 등록 가능한 권한 역할 조회
-        - 임시저장 요청 연결
-        - 임시저장 전체 삭제 요청 연결
-        - 실제 직원 등록 API 호출
+        - 등록 취소 확인
+        - 임시저장 확인 및 요청 연결
+        - 임시저장 전체 삭제 확인 및 요청 연결
+        - 실제 직원 등록 확인 및 API 호출
 
         프론트 화면의 검사는 사용자 편의를 위한 것이며
         실제 권한과 데이터 검증은 Laravel 서버에서 다시 수행합니다.
@@ -111,11 +108,35 @@
         :stores="data.stores"
         :positions="data.positions"
         :roles="data.roles"
-        :loading="registerLoading"
-        @close="closeRegisterDialog"
-        @delete="deleteDraft(setError)"
-        @draft="saveDraft(setError)"
-        @submit="saveEmployee(setError)"
+        :loading-action="registerLoadingAction"
+        @close="requestCloseRegisterDialog"
+        @delete="requestDeleteDraft"
+        @draft="requestSaveDraft"
+        @submit="requestSaveEmployee"
+      />
+
+      <!--
+        직원 등록 관련 공통 확인창
+
+        취소 / 전체 삭제 / 임시저장 / 등록에서
+        하나의 공통 확인창(ConfirmDialog)을 재사용합니다.
+
+        실제 API 요청이 진행되는 동안에는
+        확인 버튼에 로딩을 표시하고
+        취소 / X / ESC / 바깥 영역 클릭을 막습니다.
+      -->
+      <ConfirmDialog
+        v-model="confirmDialog.open"
+        :title="confirmDialog.title"
+        :message="confirmDialog.message"
+        :confirm-text="confirmDialog.confirmText"
+        :cancel-text="confirmDialog.cancelText"
+        :loading="isRegisterProcessing"
+        @confirm="handleConfirm(
+          setError,
+          setSuccess
+        )"
+        @cancel="clearConfirmDialog"
       />
 
       <!--
@@ -154,11 +175,14 @@
 
 <script setup>
 import {
+  computed,
   onMounted,
+  reactive,
   ref,
 } from 'vue';
 
 import AppShell from '../../components/layout/AppShell.vue';
+import ConfirmDialog from '../../components/common/ConfirmDialog.vue';
 import EmployeeCard from '../../components/employee/EmployeeCard.vue';
 import EmployeeDetailDialog from '../../components/employee/EmployeeDetailDialog.vue';
 import EmployeeRegisterDialog from '../../components/employee/EmployeeRegisterDialog.vue';
@@ -176,7 +200,7 @@ const pageTitle = '직원 관리';
  * 오류가 발생했을 때 AppShell의 공통 오류 알림(setError)을
  * 호출하기 위해 사용합니다.
  *
- * 전체 화면 로딩은 더 이상 AppShell에서 관리하지 않고
+ * 전체 화면 로딩은 AppShell에서 관리하지 않고
  * 애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
  */
 const appShellRef = ref(null);
@@ -201,16 +225,55 @@ const {
 const registerDialog = ref(false);
 
 /**
- * 직원 등록 요청 진행 상태입니다.
+ * 현재 실행 중인 직원 등록 관련 작업입니다.
  *
- * 등록, 임시저장 또는 전체 삭제 요청이 진행되는 동안
- * 등록 화면의 버튼을 로딩 상태로 표시하고
- * 중복 요청을 막습니다.
+ * 가능한 값:
  *
- * 페이지 최초 데이터 조회에 사용하는
- * 전체 화면 로딩(pageLoading)과는 별도로 관리합니다.
+ * - null: 실행 중인 작업 없음
+ * - delete: 전체 삭제
+ * - draft: 임시저장
+ * - submit: 실제 직원 등록
+ *
+ * 하나의 값으로 현재 작업을 관리하여
+ * 실제로 실행한 버튼에만 로딩 표시가 나타나도록 합니다.
+ *
+ * 다른 등록 관련 동작은 요청이 끝날 때까지 막아
+ * 중복 요청을 방지합니다.
  */
-const registerLoading = ref(false);
+const registerLoadingAction = ref(null);
+
+/**
+ * 직원 등록 관련 요청이 현재 진행 중인지 확인합니다.
+ *
+ * 등록 다이얼로그와 공통 확인창(ConfirmDialog)이
+ * 동일한 요청 진행 상태를 사용합니다.
+ */
+const isRegisterProcessing = computed(
+  () => registerLoadingAction.value !== null,
+);
+
+/**
+ * 직원 등록 관련 공통 확인창 상태입니다.
+ *
+ * action에는 사용자가 최종 확인했을 때
+ * 실행할 작업을 저장합니다.
+ *
+ * 가능한 값:
+ *
+ * - null
+ * - cancel
+ * - delete
+ * - draft
+ * - submit
+ */
+const confirmDialog = reactive({
+  open: false,
+  action: null,
+  title: '',
+  message: '',
+  confirmText: '확인',
+  cancelText: '취소',
+});
 
 /**
  * 직원 상세보기 창(detailDialog)의 열림/닫힘 상태입니다.
@@ -243,6 +306,32 @@ const data = ref({
  * 신규 직원 등록 양식(form)입니다.
  */
 const form = ref(createEmptyForm());
+
+/**
+ * 직원 등록 창을 열었을 때의 최초 양식 상태입니다.
+ *
+ * 단순히 모든 입력값이 비어 있는지 확인하면
+ * 기본 부서(department)인 주방(kitchen) 때문에
+ * 아무것도 입력하지 않은 상태도 작성된 것으로 잘못 판단할 수 있습니다.
+ *
+ * 따라서 등록 창을 열었을 때의 상태와
+ * 현재 상태를 비교하여 작성 내용 변경 여부를 판단합니다.
+ *
+ * Laravel Session에서 draft를 복원한 경우에도
+ * 해당 draft가 최초 상태가 됩니다.
+ */
+const initialRegisterForm = ref(createEmptyForm());
+
+/**
+ * 직원 등록 창을 열 때
+ * Laravel Session에서 임시저장 내용(draft)이
+ * 복원되었는지 기록합니다.
+ *
+ * 복원된 draft 자체도 사용자가 작성한 내용이므로
+ * 아무것도 수정하지 않았더라도
+ * 등록 창을 닫을 때 취소 확인창을 표시합니다.
+ */
+const hasLoadedDraft = ref(false);
 
 /**
  * 직원 재직 상태 변경 양식(statusForm)입니다.
@@ -280,6 +369,27 @@ function createEmptyForm() {
     position_id: null,
     role_id: null,
     hired_at: '',
+  };
+}
+
+/**
+ * 직원 등록 양식(form)의 현재 상태를 복사합니다.
+ *
+ * 등록 창을 연 시점의 상태와 현재 상태를
+ * 객체 참조가 아닌 실제 값으로 비교하기 위해 사용합니다.
+ */
+function copyRegisterForm(source) {
+  return {
+    employee_code: source.employee_code ?? '',
+    name: source.name ?? '',
+    phone: source.phone ?? '',
+    birth_date: source.birth_date ?? '',
+    password: source.password ?? '',
+    store_id: source.store_id ?? null,
+    department: source.department ?? 'kitchen',
+    position_id: source.position_id ?? null,
+    role_id: source.role_id ?? null,
+    hired_at: source.hired_at ?? '',
   };
 }
 
@@ -332,6 +442,26 @@ function createFormFromDraft(draft) {
     hired_at:
       draft.hired_at ?? '',
   };
+}
+
+/**
+ * 등록 창을 연 이후
+ * 사용자가 등록 양식을 변경했는지 확인합니다.
+ *
+ * 등록 창을 열었을 때의 최초 상태와
+ * 현재 상태를 각 필드별로 비교합니다.
+ *
+ * 비밀번호(password)도 비교 대상이므로
+ * 새 비밀번호를 입력한 상태에서 취소하는 경우에도
+ * 작성 내용 취소 확인창을 표시합니다.
+ */
+function hasRegisterFormChanges() {
+  const current = copyRegisterForm(form.value);
+  const initial = initialRegisterForm.value;
+
+  return Object.keys(current).some(
+    (key) => current[key] !== initial[key],
+  );
 }
 
 /**
@@ -395,6 +525,45 @@ function statusUnavailableMessage(employee, user, can) {
  */
 function errorMessage(error, fallback) {
   return error.response?.data?.message ?? fallback;
+}
+
+/**
+ * 직원 등록 관련 공통 확인창을 엽니다.
+ */
+function openConfirmDialog(
+  action,
+  title,
+  message,
+) {
+  if (isRegisterProcessing.value) {
+    return;
+  }
+
+  confirmDialog.action = action;
+  confirmDialog.title = title;
+  confirmDialog.message = message;
+  confirmDialog.confirmText = '확인';
+  confirmDialog.cancelText = '취소';
+  confirmDialog.open = true;
+}
+
+/**
+ * 직원 등록 관련 공통 확인창 상태를 초기화합니다.
+ *
+ * API 요청이 진행 중인 경우에는
+ * 확인창을 임의로 닫지 않습니다.
+ */
+function clearConfirmDialog() {
+  if (isRegisterProcessing.value) {
+    return;
+  }
+
+  confirmDialog.open = false;
+  confirmDialog.action = null;
+  confirmDialog.title = '';
+  confirmDialog.message = '';
+  confirmDialog.confirmText = '확인';
+  confirmDialog.cancelText = '취소';
 }
 
 /**
@@ -483,7 +652,7 @@ async function initialLoad() {
  * 함께 받아 등록 양식에 복원합니다.
  */
 async function openRegisterDialog(setError) {
-  if (registerLoading.value) {
+  if (isRegisterProcessing.value) {
     return;
   }
 
@@ -502,6 +671,12 @@ async function openRegisterDialog(setError) {
     data.value.positions = response.data.positions ?? [];
     data.value.roles = response.data.roles ?? [];
 
+    hasLoadedDraft.value = Boolean(
+      response.data.draft
+      && typeof response.data.draft === 'object'
+      && Object.keys(response.data.draft).length > 0
+    );
+
     /**
      * Laravel Session에 저장된 임시저장 데이터(draft)가 있다면
      * 해당 데이터를 등록 양식에 복원합니다.
@@ -514,6 +689,17 @@ async function openRegisterDialog(setError) {
      */
     form.value = createFormFromDraft(
       response.data.draft ?? null,
+    );
+
+    /**
+     * 등록 창을 연 시점의 상태를 별도로 복사합니다.
+     *
+     * 이후 취소 / X / ESC / 바깥 영역 클릭 시
+     * 이 상태와 현재 상태를 비교하여
+     * 작성 내용이 변경되었는지 확인합니다.
+     */
+    initialRegisterForm.value = copyRegisterForm(
+      form.value,
     );
 
     // 서버 권한 확인이 성공한 경우에만 등록 창을 엽니다.
@@ -531,20 +717,152 @@ async function openRegisterDialog(setError) {
 }
 
 /**
- * 직원 등록 창을 닫습니다.
+ * 직원 등록 창의 닫기를 요청합니다.
  *
- * 취소는 현재 화면을 닫는 동작만 수행합니다.
- * 이미 Laravel Session에 저장된 임시저장 내용은 삭제하지 않습니다.
+ * 등록 창을 연 이후 작성 내용이 변경되지 않았다면
+ * 확인창 없이 바로 닫습니다.
  *
- * 등록, 임시저장 또는 전체 삭제 요청이 진행 중일 때는
- * 중간에 등록 창을 닫지 않습니다.
+ * 작성 내용이 변경되었다면
+ * 실수로 입력 내용을 잃는 것을 방지하기 위해
+ * 공통 확인창(ConfirmDialog)을 표시합니다.
+ *
+ * 취소는 Laravel Session에 이미 저장된
+ * 임시저장 내용(draft)을 삭제하지 않습니다.
+ */
+function requestCloseRegisterDialog() {
+  if (isRegisterProcessing.value) {
+    return;
+  }
+
+  if (
+    !hasLoadedDraft.value
+    && !hasRegisterFormChanges()
+  ) {
+    closeRegisterDialog();
+    return;
+  }
+
+  openConfirmDialog(
+    'cancel',
+    '직원 등록 취소',
+    '입력 중인 내용을 취소하시겠습니까?',
+  );
+}
+
+/**
+ * 직원 등록 창을 실제로 닫습니다.
+ *
+ * 이 함수는 확인이 필요하지 않거나
+ * 사용자가 취소 확인창에서 최종 확인한 경우에만 호출합니다.
+ *
+ * Laravel Session의 임시저장 내용(draft)은 삭제하지 않습니다.
  */
 function closeRegisterDialog() {
-  if (registerLoading.value) {
+  if (isRegisterProcessing.value) {
     return;
   }
 
   registerDialog.value = false;
+}
+
+/**
+ * 전체 삭제 확인창을 표시합니다.
+ *
+ * 실제 등록된 직원 정보는 삭제하지 않습니다.
+ */
+function requestDeleteDraft() {
+  openConfirmDialog(
+    'delete',
+    '전체 삭제',
+    '입력된 값을 전체 삭제하시겠습니까?',
+  );
+}
+
+/**
+ * 임시저장 확인창을 표시합니다.
+ */
+function requestSaveDraft() {
+  openConfirmDialog(
+    'draft',
+    '임시저장',
+    '입력된 내용을 임시저장하시겠습니까?',
+  );
+}
+
+/**
+ * 직원 등록 확인창을 표시합니다.
+ *
+ * 이 함수는 EmployeeRegisterDialog의
+ * 프론트 입력 검사를 통과한 경우에만 호출됩니다.
+ */
+function requestSaveEmployee() {
+  openConfirmDialog(
+    'submit',
+    '직원 등록',
+    '입력된 내용으로 직원을 등록하시겠습니까?',
+  );
+}
+
+/**
+ * 공통 확인창에서 확인 버튼을 눌렀을 때
+ * 현재 action에 맞는 실제 작업을 실행합니다.
+ *
+ * action 값은 확인 버튼을 누르는 순간 별도로 보관합니다.
+ * API 처리 중에는 ConfirmDialog를 유지하여
+ * 요청 진행 상태와 결과를 명확하게 관리합니다.
+ */
+async function handleConfirm(
+  setError,
+  setSuccess,
+) {
+  if (isRegisterProcessing.value) {
+    return;
+  }
+
+  const action = confirmDialog.action;
+
+  if (!action) {
+    return;
+  }
+
+  /**
+   * 등록 취소는 서버 데이터를 변경하지 않으므로
+   * API 요청 없이 등록 창과 확인창을 닫습니다.
+   */
+  if (action === 'cancel') {
+    confirmDialog.open = false;
+    confirmDialog.action = null;
+    confirmDialog.title = '';
+    confirmDialog.message = '';
+
+    closeRegisterDialog();
+    return;
+  }
+
+  if (action === 'delete') {
+    await deleteDraft(
+      setError,
+      setSuccess,
+    );
+
+    return;
+  }
+
+  if (action === 'draft') {
+    await saveDraft(
+      setError,
+      setSuccess,
+    );
+
+    return;
+  }
+
+  if (action === 'submit') {
+    await saveEmployee(
+      setError,
+      setSuccess,
+    );
+  }
 }
 
 /**
@@ -570,21 +888,23 @@ function closeRegisterDialog() {
  * 임시저장 API 요청에도 포함하지 않습니다.
  *
  * 임시저장이 정상적으로 완료되면
- * 직원 등록 다이얼로그를 닫습니다.
+ * 요청 처리 상태를 먼저 해제한 뒤
+ * 확인창과 직원 등록 다이얼로그를 닫고 성공 알림을 표시합니다.
  *
  * 임시저장에 실패한 경우에는
- * 작성 중인 내용을 유지하고 다이얼로그도 닫지 않습니다.
+ * 작성 중인 내용을 유지하고 등록 다이얼로그도 닫지 않습니다.
  */
-async function saveDraft(setError) {
-  /**
-   * 등록, 임시저장 또는 전체 삭제 요청이 이미 진행 중이면
-   * 중복 요청을 보내지 않습니다.
-   */
-  if (registerLoading.value) {
+async function saveDraft(
+  setError,
+  setSuccess,
+) {
+  if (isRegisterProcessing.value) {
     return;
   }
 
-  registerLoading.value = true;
+  registerLoadingAction.value = 'draft';
+
+  let saved = false;
 
   try {
     /**
@@ -626,23 +946,18 @@ async function saveDraft(setError) {
     );
 
     /**
-     * Laravel Session 임시저장이
-     * 정상적으로 완료된 경우에만
-     * 직원 등록 다이얼로그를 닫습니다.
+     * 서버 저장이 성공한 시점의 내용을
+     * 현재 기준 상태로 갱신합니다.
      *
-     * 화면의 form은 초기화하지 않습니다.
-     *
-     * 다음에 직원 등록 버튼을 누르면
-     * Laravel Session의 draft를 다시 조회하여 복원합니다.
+     * 이후 다시 등록 창을 열 경우에는
+     * Laravel Session에서 저장된 draft를 다시 조회합니다.
      */
-    registerDialog.value = false;
+    initialRegisterForm.value = copyRegisterForm(
+      form.value,
+    );
+
+    saved = true;
   } catch (error) {
-    /**
-     * 직원 관리 권한(employee.manage) 오류,
-     * 입력값 오류 또는 서버 오류가 발생하면
-     * 등록 다이얼로그를 그대로 유지하고
-     * 공통 오류 알림을 표시합니다.
-     */
     setError(
       errorMessage(
         error,
@@ -650,8 +965,23 @@ async function saveDraft(setError) {
       ),
     );
   } finally {
-    registerLoading.value = false;
+    /**
+     * 다이얼로그를 닫기 전에 요청 처리 상태를 먼저 해제합니다.
+     *
+     * 직원 등록 다이얼로그는 요청 처리 중에는
+     * 닫기 동작을 막고 있으므로 처리 상태를 먼저 종료해야 합니다.
+     */
+    registerLoadingAction.value = null;
+    clearConfirmDialog();
   }
+
+  if (!saved) {
+    return;
+  }
+
+  registerDialog.value = false;
+
+  setSuccess('임시 저장 하였습니다.');
 }
 
 /**
@@ -664,39 +994,18 @@ async function saveDraft(setError) {
  * 직원 등록 임시저장 내용(draft)을 삭제하고,
  * 현재 화면에 입력되어 있는 등록 양식(form)도 초기화합니다.
  *
- * 실수로 작성 내용을 삭제하는 것을 방지하기 위해
- * 실제 삭제 요청 전에 사용자에게 한 번 확인합니다.
- *
  * 서버에서 삭제에 실패한 경우에는
  * 현재 화면의 작성 내용을 그대로 유지합니다.
  */
-async function deleteDraft(setError) {
-  /**
-   * 삭제 전에 사용자에게 확인합니다.
-   *
-   * 취소를 선택하면
-   * 서버 요청과 화면 초기화를 모두 수행하지 않습니다.
-   *
-   * 추후 공통 확인창(ConfirmDialog)을 적용할 때
-   * window.confirm은 공통 확인창으로 교체합니다.
-   */
-  const confirmed = window.confirm(
-    '작성 중인 직원 등록 내용을 모두 삭제하시겠습니까?',
-  );
-
-  if (!confirmed) {
+async function deleteDraft(
+  setError,
+  setSuccess,
+) {
+  if (isRegisterProcessing.value) {
     return;
   }
 
-  /**
-   * 등록, 임시저장 또는 전체 삭제 요청이 진행 중이면
-   * 중복 요청을 보내지 않습니다.
-   */
-  if (registerLoading.value) {
-    return;
-  }
-
-  registerLoading.value = true;
+  registerLoadingAction.value = 'delete';
 
   try {
     /**
@@ -713,25 +1022,34 @@ async function deleteDraft(setError) {
      * 정상적으로 삭제된 경우에만
      * 현재 화면의 등록 양식도 처음 상태로 초기화합니다.
      *
-     * 사원번호, 이름, 휴대폰 번호, 생년월일,
-     * 초기 비밀번호, 소속 정보, 입사일을 모두 초기화합니다.
+     * 초기 비밀번호(password)를 포함하여
+     * 현재 작성 중인 값도 모두 초기화합니다.
      */
     form.value = createEmptyForm();
+    hasLoadedDraft.value = false;
 
     /**
-     * 전체 삭제 후에는
-     * 직원 등록 다이얼로그를 닫지 않습니다.
+     * 전체 삭제가 성공했으므로
+     * 현재 빈 양식을 새로운 기준 상태로 사용합니다.
+     *
+     * 따라서 전체 삭제 직후 아무것도 입력하지 않은 상태에서
+     * 취소하면 추가 취소 확인창 없이 바로 닫힙니다.
+     */
+    initialRegisterForm.value = copyRegisterForm(
+      form.value,
+    );
+
+    setSuccess(
+      '입력된 내용을 전체 삭제했습니다.',
+    );
+
+    /**
+     * 전체 삭제 후에는 직원 등록 다이얼로그를 닫지 않습니다.
      *
      * 사용자가 바로 새로운 직원 정보를
      * 입력할 수 있도록 현재 화면을 유지합니다.
      */
   } catch (error) {
-    /**
-     * 직원 관리 권한(employee.manage) 오류 또는
-     * 서버 오류가 발생하면
-     * 현재 화면의 작성 내용은 삭제하지 않고
-     * 공통 오류 알림을 표시합니다.
-     */
     setError(
       errorMessage(
         error,
@@ -739,7 +1057,8 @@ async function deleteDraft(setError) {
       ),
     );
   } finally {
-    registerLoading.value = false;
+    registerLoadingAction.value = null;
+    clearConfirmDialog();
   }
 }
 
@@ -816,12 +1135,15 @@ function closeDetailDialog() {
  * 등록이 정상적으로 완료되면 Laravel 서버에서
  * 직원 등록 임시저장 데이터(draft)도 삭제합니다.
  */
-async function saveEmployee(setError) {
-  if (registerLoading.value) {
+async function saveEmployee(
+  setError,
+  setSuccess,
+) {
+  if (isRegisterProcessing.value) {
     return;
   }
 
-  registerLoading.value = true;
+  registerLoadingAction.value = 'submit';
 
   try {
     await window.axios.post(
@@ -829,8 +1151,17 @@ async function saveEmployee(setError) {
       form.value,
     );
 
+    /**
+     * 등록 성공 후 등록 창과 확인창을 닫고
+     * 현재 작성 양식을 초기화합니다.
+     */
     registerDialog.value = false;
+
     form.value = createEmptyForm();
+    hasLoadedDraft.value = false;
+    initialRegisterForm.value = copyRegisterForm(
+      form.value,
+    );
 
     /**
      * 등록된 직원을 목록에 반영하기 위해 다시 조회합니다.
@@ -839,6 +1170,8 @@ async function saveEmployee(setError) {
      * 공통 전체 화면 로딩은 사용하지 않습니다.
      */
     await load();
+
+    setSuccess('직원을 등록했습니다.');
   } catch (error) {
     setError(
       errorMessage(
@@ -847,7 +1180,8 @@ async function saveEmployee(setError) {
       ),
     );
   } finally {
-    registerLoading.value = false;
+    registerLoadingAction.value = null;
+    clearConfirmDialog();
   }
 }
 
