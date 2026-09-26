@@ -1,4 +1,12 @@
 <template>
+  <!--
+    Till White 생산·폐기 관리 화면
+
+    생산·폐기·로스 기록의 입력, 조회, 통계를 관리합니다.
+
+    페이지 최초 데이터 조회의 전체 화면 로딩은
+    애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
+  -->
   <AppShell :title="pageTitle">
     <template #default="{ can, setError }">
       <!--
@@ -110,7 +118,7 @@
             />
 
             <!--
-              production.create 권한이 있는 사용자에게만
+              생산 기록 등록 권한(production.create)이 있는 사용자에게만
               기록 저장 버튼을 표시합니다.
             -->
             <v-btn
@@ -128,7 +136,12 @@
         <v-window-item value="list">
           <!--
             특정 작업일의 기록만 조회하기 위한 날짜 필터입니다.
-            날짜를 변경하거나 초기화하면 서버에서 목록을 다시 조회합니다.
+
+            날짜를 변경하거나 초기화하면
+            서버에서 목록을 다시 조회합니다.
+
+            최초 페이지 로딩이 아닌 일반 재조회이므로
+            공통 전체 화면 로딩은 표시하지 않습니다.
           -->
           <v-text-field
             v-model="filterDate"
@@ -162,7 +175,7 @@
               </v-list-item-subtitle>
 
               <!--
-                production.delete 권한이 있는 사용자에게만
+                생산 기록 삭제 권한(production.delete)이 있는 사용자에게만
                 기록 삭제 버튼을 표시합니다.
               -->
               <template #append>
@@ -211,8 +224,29 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import {
+  computed,
+  onMounted,
+  ref,
+} from 'vue';
+
 import AppShell from '../../components/layout/AppShell.vue';
+
+import { useAppLoading } from '../../composables/useAppLoading';
+
+/**
+ * Till White 애플리케이션 공통 전체 화면 로딩입니다.
+ *
+ * 메뉴를 통해 생산·폐기 관리 화면으로 이동할 때
+ * 이미 시작된 공통 로딩을
+ * 최초 생산 데이터 조회가 완료된 뒤 종료합니다.
+ *
+ * 최소 1초 표시 시간은
+ * 공통 로딩(useAppLoading)에서 관리합니다.
+ */
+const {
+  completePageLoading,
+} = useAppLoading();
 
 // 현재 페이지 제목
 const pageTitle = '생산·폐기 관리';
@@ -261,7 +295,7 @@ const form = ref({
 });
 
 /**
- * 현재 records에 들어있는 기록을 기준으로
+ * 현재 생산 기록(records)을 기준으로
  * 생산, 폐기, 로스 수량의 합계를 계산합니다.
  *
  * 조회 탭에서 날짜 필터를 적용하면 records가 변경되므로
@@ -293,8 +327,13 @@ const totals = computed(() => {
  * 생산 기록과 입력용 선택 항목을 동시에 요청하여
  * records, products, workers에 각각 저장합니다.
  *
- * filterDate가 지정되어 있으면 해당 날짜의 기록만 요청하고,
+ * 날짜 필터(filterDate)가 지정되어 있으면
+ * 해당 날짜의 기록만 요청하고,
  * 지정되어 있지 않으면 date 파라미터를 전달하지 않습니다.
+ *
+ * 이 함수는 최초 조회뿐만 아니라
+ * 저장, 삭제, 날짜 필터 변경 후 재조회에도 사용하므로
+ * 공통 전체 화면 로딩을 직접 제어하지 않습니다.
  */
 async function load() {
   const [
@@ -320,6 +359,34 @@ async function load() {
 }
 
 /**
+ * 생산·폐기 관리 화면의 최초 데이터를 불러옵니다.
+ *
+ * 생산·폐기 관리 페이지에 처음 진입했을 때만 사용합니다.
+ *
+ * 처리 순서:
+ *
+ * 1. 생산 기록을 조회합니다.
+ * 2. 입력에 필요한 제품 목록을 조회합니다.
+ * 3. 입력에 필요한 작업자 목록을 조회합니다.
+ * 4. 조회한 데이터를 화면 상태에 저장합니다.
+ * 5. 성공 또는 실패와 관계없이 공통 페이지 로딩 완료를 알립니다.
+ *
+ * completePageLoading()은
+ * 화면 이동 시작 시점부터 최소 1초가 지났는지 확인한 뒤
+ * App.vue의 공통 전체 화면 로딩을 종료합니다.
+ *
+ * API 요청이 1초 이상 걸렸다면
+ * 추가 대기 없이 요청 완료 후 로딩을 종료합니다.
+ */
+async function initialLoad() {
+  try {
+    await load();
+  } finally {
+    await completePageLoading();
+  }
+}
+
+/**
  * 새로운 생산·폐기·로스 기록을 저장합니다.
  *
  * 저장 중에는 saving을 true로 변경하여
@@ -327,6 +394,9 @@ async function load() {
  *
  * 저장에 성공하면 수량을 초기화하고 데이터를 다시 조회한 뒤
  * 조회 탭으로 이동합니다.
+ *
+ * 저장 작업은 페이지 최초 조회가 아니므로
+ * 공통 전체 화면 로딩은 사용하지 않습니다.
  */
 async function save(setError) {
   saving.value = true;
@@ -362,6 +432,9 @@ async function save(setError) {
  *
  * 실제 삭제 요청을 보내기 전에 사용자에게 한 번 확인하고,
  * 삭제에 성공하면 목록을 다시 조회합니다.
+ *
+ * 삭제 작업 역시 페이지 최초 조회가 아니므로
+ * 공통 전체 화면 로딩은 사용하지 않습니다.
  */
 async function remove(record, setError) {
   // 사용자가 취소하면 삭제하지 않음
@@ -383,6 +456,19 @@ async function remove(record, setError) {
   }
 }
 
-// 화면이 처음 열릴 때 생산·폐기 관리 데이터 조회
-onMounted(load);
+/**
+ * 생산·폐기 관리 페이지 최초 진입 처리입니다.
+ *
+ * 페이지가 마운트되면
+ * 생산 기록, 제품 목록, 작업자 목록을 조회합니다.
+ *
+ * 메뉴 이동 전에 시작된 애플리케이션 공통 로딩은
+ * initialLoad()에서 최초 데이터 조회가 끝난 뒤 완료 처리합니다.
+ *
+ * 저장, 삭제, 날짜 필터 변경 후의 재조회는
+ * load()만 사용하므로 전체 화면 로딩을 다시 표시하지 않습니다.
+ */
+onMounted(() => {
+  initialLoad();
+});
 </script>

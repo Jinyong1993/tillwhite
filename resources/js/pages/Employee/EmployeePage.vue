@@ -1,6 +1,29 @@
 <template>
-  <AppShell :title="pageTitle">
-    <template #default="{ user, can, setError }">
+  <!--
+    직원 관리 페이지에서
+    공통 레이아웃(AppShell)의 페이지 로딩 기능을 사용하기 위해
+    appShellRef를 연결합니다.
+
+    AppShell은 다음 페이지 로딩 함수를 외부에 공개합니다.
+
+    - startPageLoading()
+    - finishPageLoading()
+
+    직원 관리 페이지가 처음 열릴 때
+    이 함수들을 사용하여 직원 데이터가 준비될 때까지
+    공통 전체 화면 로딩 오버레이를 표시합니다.
+  -->
+  <AppShell
+    ref="appShellRef"
+    :title="pageTitle"
+  >
+    <template
+      #default="{
+        user,
+        can,
+        setError
+      }"
+    >
       <!--
         직원 등록 버튼
 
@@ -139,11 +162,38 @@ import AppShell from '../../components/layout/AppShell.vue';
 import EmployeeCard from '../../components/employee/EmployeeCard.vue';
 import EmployeeDetailDialog from '../../components/employee/EmployeeDetailDialog.vue';
 import EmployeeRegisterDialog from '../../components/employee/EmployeeRegisterDialog.vue';
+import { useAppLoading } from '../../composables/useAppLoading';
 
 /**
  * 현재 페이지 제목입니다.
  */
 const pageTitle = '직원 관리';
+
+/**
+ * 공통 레이아웃(AppShell) 참조입니다.
+ *
+ * 직원 관리 페이지의 최초 데이터 조회에서
+ * 오류가 발생했을 때 AppShell의 공통 오류 알림(setError)을
+ * 호출하기 위해 사용합니다.
+ *
+ * 전체 화면 로딩은 더 이상 AppShell에서 관리하지 않고
+ * 애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
+ */
+const appShellRef = ref(null);
+
+/**
+ * Till White 애플리케이션 공통 전체 화면 로딩입니다.
+ *
+ * 내비게이션 메뉴에서 화면 이동 전에 시작한 로딩을
+ * 직원 관리 페이지의 최초 데이터 조회가 끝난 뒤
+ * completePageLoading()으로 완료 처리합니다.
+ *
+ * 최소 1초 표시 시간은 useAppLoading에서 공통으로 계산하므로
+ * EmployeePage에서 별도의 타이머를 관리하지 않습니다.
+ */
+const {
+  completePageLoading,
+} = useAppLoading();
 
 /**
  * 직원 등록 창(registerDialog)의 열림/닫힘 상태입니다.
@@ -156,6 +206,9 @@ const registerDialog = ref(false);
  * 등록, 임시저장 또는 전체 삭제 요청이 진행되는 동안
  * 등록 화면의 버튼을 로딩 상태로 표시하고
  * 중복 요청을 막습니다.
+ *
+ * 페이지 최초 데이터 조회에 사용하는
+ * 전체 화면 로딩(pageLoading)과는 별도로 관리합니다.
  */
 const registerLoading = ref(false);
 
@@ -349,6 +402,12 @@ function errorMessage(error, fallback) {
  *
  * 직원 조회 권한(employee.view)은
  * Laravel 서버에서 최종적으로 확인합니다.
+ *
+ * 이 함수는 순수하게 직원 관리 데이터를 다시 조회하는 역할만 담당합니다.
+ *
+ * 따라서 직원 등록 완료 또는 재직 상태 변경 후
+ * 직원 목록을 새로고침할 때는
+ * 전체 화면 페이지 로딩을 발생시키지 않습니다.
  */
 async function load() {
   const response = await window.axios.get(
@@ -356,6 +415,61 @@ async function load() {
   );
 
   data.value = response.data;
+}
+
+/**
+ * 직원 관리 화면의 최초 데이터를 불러옵니다.
+ *
+ * 직원 관리 페이지에 처음 진입했을 때만 사용합니다.
+ *
+ * 처리 순서:
+ *
+ * 1. Laravel 서버에서 직원 목록과 필요한 데이터를 조회합니다.
+ * 2. 조회한 데이터를 화면 상태(data)에 저장합니다.
+ * 3. 오류가 발생하면 AppShell의 공통 오류 알림에 표시합니다.
+ * 4. 성공 또는 실패와 관계없이 공통 페이지 로딩 완료를 알립니다.
+ *
+ * 전체 화면 로딩 자체는 메뉴 이동 전에
+ * 공통 로딩(useAppLoading)에서 이미 시작되어 있습니다.
+ *
+ * completePageLoading()은
+ * 화면 이동 시작 시점부터 최소 1초가 지났는지 확인한 뒤
+ * App.vue의 공통 전체 화면 로딩을 종료합니다.
+ *
+ * 따라서 API 요청이 빠르게 끝나더라도
+ * 로딩 화면이 순간적으로 깜빡이지 않습니다.
+ *
+ * 반대로 API 요청이 1초 이상 걸렸다면
+ * 추가 대기 없이 요청 완료 후 로딩 화면을 종료합니다.
+ */
+async function initialLoad() {
+  try {
+    await load();
+  } catch (error) {
+    /**
+     * 직원 목록 조회 실패 시
+     * AppShell의 공통 오류 알림을 사용합니다.
+     *
+     * appShellRef는 로딩 제어가 아니라
+     * 오류 알림(setError)을 위해서만 사용합니다.
+     */
+    appShellRef.value?.setError?.(
+      errorMessage(
+        error,
+        '직원 정보를 불러오지 못했습니다.',
+      ),
+    );
+  } finally {
+    /**
+     * 직원 목록 조회 성공 또는 실패와 관계없이
+     * 현재 페이지의 최초 데이터 준비가 끝났음을
+     * 애플리케이션 공통 로딩에 전달합니다.
+     *
+     * 최소 1초 표시 시간은
+     * useAppLoading에서 공통으로 처리합니다.
+     */
+    await completePageLoading();
+  }
 }
 
 /**
@@ -562,6 +676,9 @@ async function deleteDraft(setError) {
    *
    * 취소를 선택하면
    * 서버 요청과 화면 초기화를 모두 수행하지 않습니다.
+   *
+   * 추후 공통 확인창(ConfirmDialog)을 적용할 때
+   * window.confirm은 공통 확인창으로 교체합니다.
    */
   const confirmed = window.confirm(
     '작성 중인 직원 등록 내용을 모두 삭제하시겠습니까?',
@@ -715,6 +832,12 @@ async function saveEmployee(setError) {
     registerDialog.value = false;
     form.value = createEmptyForm();
 
+    /**
+     * 등록된 직원을 목록에 반영하기 위해 다시 조회합니다.
+     *
+     * 최초 페이지 진입이 아니므로
+     * 공통 전체 화면 로딩은 사용하지 않습니다.
+     */
     await load();
   } catch (error) {
     setError(
@@ -755,7 +878,12 @@ async function saveStatus(setError) {
 
     closeDetailDialog();
 
-    // 변경된 재직 상태를 직원 카드에도 반영합니다.
+    /**
+     * 변경된 재직 상태를 직원 카드에도 반영합니다.
+     *
+     * 최초 페이지 진입이 아니므로
+     * 공통 전체 화면 로딩은 사용하지 않습니다.
+     */
     await load();
   } catch (error) {
     setError(
@@ -767,6 +895,19 @@ async function saveStatus(setError) {
   }
 }
 
-// 화면이 처음 열릴 때 직원 목록을 조회합니다.
-onMounted(load);
+/**
+ * 직원 관리 페이지 최초 진입 처리입니다.
+ *
+ * EmployeePage가 마운트되면
+ * 최초 직원 데이터를 불러옵니다.
+ *
+ * 메뉴 이동 전에 시작된 애플리케이션 공통 로딩은
+ * initialLoad()에서 직원 데이터 조회가 끝난 뒤 완료 처리합니다.
+ *
+ * 직원 등록 완료 또는 재직 상태 변경 후의 재조회는
+ * load()만 사용하므로 전체 화면 로딩은 다시 발생하지 않습니다.
+ */
+onMounted(() => {
+  initialLoad();
+});
 </script>

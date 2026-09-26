@@ -1,8 +1,17 @@
 <template>
+  <!--
+    Till White 제품 관리 화면
+
+    제품 목록 조회, 제품 등록, 제품 사용 상태 변경,
+    제품별 레시피 등록 기능을 관리합니다.
+
+    페이지 최초 데이터 조회의 전체 화면 로딩은
+    애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
+  -->
   <AppShell :title="pageTitle">
     <template #default="{ can, setError }">
       <!--
-        product.manage 권한이 있는 사용자에게만
+        제품 관리 권한(product.manage)이 있는 사용자에게만
         제품 등록 버튼을 표시합니다.
       -->
       <v-btn
@@ -44,7 +53,7 @@
             </div>
 
             <!--
-              product.manage 권한이 있는 사용자에게만
+              제품 관리 권한(product.manage)이 있는 사용자에게만
               제품의 사용/중지 상태 변경 버튼을 표시합니다.
             -->
             <v-btn
@@ -214,9 +223,11 @@
 
             <!--
               재료 입력 형식:
+
               한 줄에 "재료명,수량,단위" 형식으로 입력합니다.
 
               예:
+
               강력분,100,g
               버터,20,g
             -->
@@ -230,6 +241,7 @@
               제조 공정을 한 줄에 한 단계씩 입력합니다.
 
               예:
+
               재료를 계량한다.
               반죽하고 발효한다.
             -->
@@ -260,8 +272,29 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import {
+  computed,
+  onMounted,
+  ref,
+} from 'vue';
+
 import AppShell from '../../components/layout/AppShell.vue';
+
+import { useAppLoading } from '../../composables/useAppLoading';
+
+/**
+ * Till White 애플리케이션 공통 전체 화면 로딩입니다.
+ *
+ * 메뉴를 통해 제품 관리 화면으로 이동할 때
+ * 이미 시작된 공통 로딩을
+ * 최초 제품 데이터 조회가 완료된 뒤 종료합니다.
+ *
+ * 최소 1초 표시 시간은
+ * 공통 로딩(useAppLoading)에서 관리합니다.
+ */
+const {
+  completePageLoading,
+} = useAppLoading();
 
 // 현재 페이지 제목
 const pageTitle = '제품 관리';
@@ -371,14 +404,47 @@ function latestPrice(product) {
 /**
  * 제품 관리 화면에 필요한 데이터를 서버에서 조회합니다.
  *
- * products   : 제품 및 레시피 등의 제품 정보
- * categories : 제품 카테고리 정보
+ * products:
+ * - 제품 및 레시피 등의 제품 정보
+ *
+ * categories:
+ * - 제품 카테고리 정보
  */
 async function load() {
-  const response = await window.axios.get('/tillwhite/api/products');
+  const response =
+    await window.axios.get('/tillwhite/api/products');
 
   products.value = response.data.products;
   categories.value = response.data.categories;
+}
+
+/**
+ * 제품 관리 화면의 최초 데이터를 불러옵니다.
+ *
+ * 제품 관리 페이지에 처음 진입했을 때만 사용합니다.
+ *
+ * 처리 순서:
+ *
+ * 1. Laravel 서버에서 제품과 카테고리 정보를 조회합니다.
+ * 2. 조회한 데이터를 화면 상태에 저장합니다.
+ * 3. 성공 또는 실패와 관계없이 공통 페이지 로딩 완료를 알립니다.
+ *
+ * load()에서 발생한 오류는 여기에서 별도로 처리하지 않고
+ * 기존 동작과 동일하게 유지합니다.
+ *
+ * completePageLoading()은
+ * 화면 이동 시작 시점부터 최소 1초가 지났는지 확인한 뒤
+ * App.vue의 공통 전체 화면 로딩을 종료합니다.
+ *
+ * API 요청이 1초 이상 걸렸다면
+ * 추가 대기 없이 요청 완료 후 로딩을 종료합니다.
+ */
+async function initialLoad() {
+  try {
+    await load();
+  } finally {
+    await completePageLoading();
+  }
 }
 
 /**
@@ -500,6 +566,18 @@ async function saveRecipe(setError) {
   }
 }
 
-// 화면이 처음 열릴 때 제품 관리 데이터 조회
-onMounted(load);
+/**
+ * 제품 관리 페이지 최초 진입 처리입니다.
+ *
+ * 페이지가 마운트되면 제품과 카테고리 데이터를 조회합니다.
+ *
+ * 메뉴 이동 전에 시작된 애플리케이션 공통 로딩은
+ * initialLoad()에서 최초 데이터 조회가 끝난 뒤 완료 처리합니다.
+ *
+ * 제품 등록, 상태 변경, 레시피 등록 후의 재조회는
+ * load()만 사용하므로 전체 화면 로딩을 다시 표시하지 않습니다.
+ */
+onMounted(() => {
+  initialLoad();
+});
 </script>

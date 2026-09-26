@@ -23,10 +23,10 @@
         시스템 이름 / 메인 이동
 
         Drawer 상단의 Till White를 클릭하면
-        메인 화면으로 이동하고 Drawer를 닫습니다.
+        Vue Router를 통해 메인 화면으로 이동합니다.
 
-        상단 공통 헤더의 Till White와 동일하게
-        시스템 이름 자체를 홈 링크처럼 사용할 수 있습니다.
+        업무 화면 이동용 공통 로딩 시작은
+        Vue Router 전역 페이지 이동 가드에서 처리합니다.
       -->
       <v-list-subheader
         class="font-weight-black cursor-pointer"
@@ -40,7 +40,8 @@
 
         일반 메뉴:
         - 필요한 권한(Permission)이 있으면 표시
-        - 클릭하면 해당 화면으로 이동
+        - 클릭하면 Vue Router로 해당 화면 이동
+        - 공통 전체 화면 로딩은 Router에서 자동 시작
 
         개발 중 메뉴:
         - 필요한 권한이 있으면 표시
@@ -48,12 +49,20 @@
         - 클릭 불가
 
         직원 관리 메뉴:
-        - employee.view 권한과 관계없이 항상 표시
+        - 직원 조회 권한(employee.view)과 관계없이 항상 표시
         - 권한이 있으면 정상적으로 이용 가능
         - 권한이 없으면 오른쪽에 '권한 없음' 표시
         - 권한이 없어도 클릭 자체는 가능
         - 클릭 후 Vue Router에서 권한을 검사
         - 권한이 없으면 메인으로 이동하면서 안내 메시지 표시
+
+        자동 라우팅(:to)은 사용하지 않습니다.
+
+        Drawer에서는 화면 이동 자체만 요청하며
+        업무 화면 이동용 공통 로딩은 직접 제어하지 않습니다.
+
+        공통 로딩의 시작은 Vue Router,
+        종료는 목적지 업무 페이지가 담당합니다.
       -->
       <template
         v-for="item in visibleItems"
@@ -62,7 +71,6 @@
         <v-list-item
           :prepend-icon="item.icon"
           :title="item.title"
-          :to="item.developing ? undefined : item.to"
           :disabled="item.developing"
           @click="handleMenuClick(item)"
         >
@@ -111,8 +119,12 @@ import {
   ref,
 } from 'vue';
 
-import { useRouter } from 'vue-router';
+import {
+  useRoute,
+  useRouter,
+} from 'vue-router';
 
+import { useAppLoading } from '../../composables/useAppLoading';
 import { useSession } from '../../composables/useSession';
 
 /**
@@ -137,17 +149,44 @@ const props = defineProps({
  * error:
  * - 오류 메시지 전달
  *
- * loading:
- * - 공통 로딩 상태 전달
+ * 일반 업무 화면 이동용 공통 로딩은
+ * Drawer가 직접 관리하지 않습니다.
+ *
+ * 화면 이동용 로딩 시작은
+ * Vue Router 전역 페이지 이동 가드에서 처리합니다.
  */
 const emit = defineEmits([
   'update:modelValue',
   'error',
-  'loading',
 ]);
 
-// 화면 이동을 처리하는 Vue Router
+// 현재 경로 확인 및 화면 이동을 처리하는 Vue Router
+const route = useRoute();
 const router = useRouter();
+
+/**
+ * Till White 공통 전체 화면 로딩
+ *
+ * 일반 업무 화면 이동:
+ * - Drawer에서는 로딩을 직접 시작하지 않음
+ * - Vue Router가 공통 로딩 시작
+ * - 목적지 페이지가 최초 데이터 준비 후 로딩 완료
+ *
+ * 로그아웃:
+ * - 화면 이동 전에 Laravel 로그아웃 API 요청이 먼저 필요함
+ * - 따라서 로그아웃 요청을 가리기 위해
+ *   Drawer에서 직접 공통 로딩을 시작
+ *
+ * cancelLoading:
+ * - 로그아웃 실패
+ * - 로그인 화면 이동 완료
+ *
+ * 위 상황에서 공통 로딩을 즉시 종료할 때 사용합니다.
+ */
+const {
+  beginNavigationLoading,
+  cancelLoading,
+} = useAppLoading();
 
 /**
  * 로그인 세션(Session) 공통 기능
@@ -166,6 +205,9 @@ const {
 
 // 로그아웃 처리 중인지 여부
 const isLoggingOut = ref(false);
+
+// 메뉴 화면 이동 처리 중인지 여부
+const isNavigating = ref(false);
 
 /**
  * 부모의 modelValue와 현재 Drawer 상태를 연결합니다.
@@ -345,57 +387,144 @@ function hasNoPermission(item) {
 }
 
 /**
- * Drawer 상단의 Till White 클릭 처리
+ * 메뉴를 통해 다른 업무 화면으로 이동합니다.
  *
- * Till White를 클릭하면 Drawer를 닫고
- * 메인 화면으로 이동합니다.
+ * 처리 순서:
+ *
+ * 1. 현재 페이지와 같은 메뉴인지 확인
+ * 2. Drawer 닫기
+ * 3. Vue Router 화면 이동
+ * 4. Router 전역 페이지 이동 가드에서 공통 로딩 시작
+ *
+ * Drawer는 화면 이동을 요청하는 역할만 담당합니다.
+ *
+ * 공통 전체 화면 로딩의 시작은 Router,
+ * 종료는 목적지 업무 페이지가 담당합니다.
+ *
+ * 이렇게 하면 Drawer뿐만 아니라
+ * 메인 빠른 메뉴나 다른 router.push() 이동도
+ * 동일한 공통 로딩 구조를 사용하게 됩니다.
  */
-async function goToMain() {
+async function navigateTo(to) {
+  if (isNavigating.value) {
+    return;
+  }
+
+  /**
+   * 현재 보고 있는 페이지를 다시 선택한 경우
+   * 새로운 화면 이동이나 로딩이 필요하지 않습니다.
+   */
+  if (route.path === to) {
+    drawer.value = false;
+    return;
+  }
+
+  isNavigating.value = true;
+
+  // 화면 이동 전에 Drawer 닫기
   drawer.value = false;
 
-  await router.push({
-    name: 'main',
-  });
+  try {
+    /**
+     * Vue Router에 화면 이동을 요청합니다.
+     *
+     * 공통 전체 화면 로딩은
+     * Router 전역 페이지 이동 가드에서 시작됩니다.
+     */
+    await router.push(to);
+  } catch (error) {
+    /**
+     * 화면 이동 자체가 실패한 경우
+     * 사용자에게 오류 메시지를 표시합니다.
+     *
+     * Router에서 시작된 공통 로딩이 남을 수 있으므로
+     * 안전하게 즉시 취소합니다.
+     */
+    cancelLoading();
+
+    emit(
+      'error',
+      '화면을 이동하지 못했습니다.',
+    );
+
+    isNavigating.value = false;
+  }
+}
+
+/**
+ * Drawer 상단의 Till White 클릭 처리
+ *
+ * Till White를 클릭하면
+ * Vue Router를 통해 메인 화면으로 이동합니다.
+ *
+ * 공통 전체 화면 로딩은
+ * Router 전역 페이지 이동 가드에서 시작됩니다.
+ */
+async function goToMain() {
+  await navigateTo('/tillwhite/main');
 }
 
 /**
  * 내비게이션 메뉴 클릭 처리
  *
  * 정상 메뉴:
- * - Drawer를 닫음
- * - v-list-item의 to 속성을 통해 화면 이동
+ * - Drawer 닫기
+ * - Vue Router 화면 이동
+ * - Router에서 공통 로딩 시작
  *
  * 권한 없음 메뉴:
  * - 클릭 가능
- * - Drawer를 닫음
- * - 해당 화면으로 이동을 시도
- * - Vue Router의 권한 검사에서 접근 차단
- * - 메인 화면으로 이동하면서 권한 안내 표시
+ * - Vue Router에서 공통 로딩 시작
+ * - Vue Router에서 권한 검사
+ * - 권한이 없으면 메인 화면으로 이동
  *
  * 개발 중 메뉴:
  * - disabled 상태이므로 클릭할 수 없음
  */
-function handleMenuClick(item) {
+async function handleMenuClick(item) {
   if (item.developing) {
     return;
   }
 
-  drawer.value = false;
+  await navigateTo(item.to);
 }
 
 /**
  * 로그아웃을 처리합니다.
  *
- * 로그아웃 요청 중에는 중복 클릭을 방지하고,
- * 성공하면 세션 정보를 초기화한 뒤 로그인 화면으로 이동합니다.
+ * 일반 업무 화면 이동과 달리
+ * 로그아웃은 Vue Router 이동 전에
+ * Laravel 로그아웃 API 요청이 먼저 실행됩니다.
  *
- * 실패하면 부모 컴포넌트에 오류 메시지를 전달합니다.
+ * 따라서 로그아웃 API 요청이 시작되는 순간부터
+ * 화면을 가리기 위해 여기에서 공통 로딩을 직접 시작합니다.
+ *
+ * 처리 순서:
+ *
+ * 1. 공통 전체 화면 로딩 시작
+ * 2. Drawer 닫기
+ * 3. Laravel 로그아웃 요청
+ * 4. 프론트 로그인 세션 초기화
+ * 5. 로그인 화면으로 이동
+ * 6. 공통 전체 화면 로딩 종료
+ *
+ * 로그인 화면은 업무 페이지처럼
+ * 최초 데이터 조회 후 completePageLoading()을 호출하지 않으므로
+ * 로그인 화면 이동이 완료되면 직접 로딩을 종료합니다.
+ *
+ * 로그아웃 실패 시에도
+ * 공통 로딩을 즉시 종료하고 오류 메시지를 표시합니다.
  */
 async function logout() {
+  if (isLoggingOut.value) {
+    return;
+  }
+
   isLoggingOut.value = true;
   drawer.value = false;
 
-  emit('loading', true);
+  // 로그아웃 API 요청을 가리기 위해 공통 전체 화면 로딩 시작
+  beginNavigationLoading();
 
   try {
     await window.axios.post('/tillwhite/logout');
@@ -407,9 +536,16 @@ async function logout() {
     await router.push({
       name: 'login',
     });
+
+    /**
+     * 로그인 화면은 업무 페이지의
+     * completePageLoading()을 사용하지 않으므로
+     * 공통 로딩을 즉시 종료합니다.
+     */
+    cancelLoading();
   } catch (error) {
-    // 로그아웃 실패 시 전체 화면 로딩 해제
-    emit('loading', false);
+    // 로그아웃 실패 시 공통 전체 화면 로딩 즉시 종료
+    cancelLoading();
 
     // 서버에서 전달된 메시지가 없으면 기본 오류 메시지 사용
     emit(
