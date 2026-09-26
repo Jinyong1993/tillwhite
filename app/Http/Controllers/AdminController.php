@@ -73,18 +73,14 @@ class AdminController extends Controller
         /**
          * 직원 등록 화면에서 사용할 시스템 역할(role) 목록을 조회합니다.
          *
-         * 최고 관리자(super_admin)가 아닌 사용자는
-         * 최고 관리자 역할(super_admin)을 다른 직원에게
-         * 부여할 수 없으므로 목록에서도 제외합니다.
+         * 최고 관리자(super_admin)는 일반 직원 등록 기능으로 생성하지 않고
+         * 개발 단계의 별도 관리 절차로 생성하므로 목록에서 항상 제외합니다.
          *
          * 화면에서 목록을 숨기는 것과 별개로
          * 실제 직원 등록 시 서버에서도 다시 검사합니다.
          */
-        $roleQuery = Role::where('is_active', true);
-
-        if ($user->role?->code !== 'super_admin') {
-            $roleQuery->where('code', '!=', 'super_admin');
-        }
+        $roleQuery = Role::where('is_active', true)
+            ->where('code', '!=', 'super_admin');
 
         // 직원 관리 화면과 직원 상세보기에 필요한 정보를 반환합니다.
         return response()->json([
@@ -136,15 +132,11 @@ class AdminController extends Controller
         /**
          * 직원 등록 화면에서 사용할 권한 역할(role) 목록을 조회합니다.
          *
-         * 최고 관리자(super_admin)가 아닌 사용자는
-         * 최고 관리자 역할(super_admin)을 부여할 수 없으므로
-         * 선택 목록에서도 제외합니다.
+         * 최고 관리자(super_admin)는 일반 직원 등록 기능으로 생성하지 않고
+         * 개발 단계의 별도 관리 절차로 생성하므로 선택 목록에서 항상 제외합니다.
          */
-        $roleQuery = Role::where('is_active', true);
-
-        if ($user->role?->code !== 'super_admin') {
-            $roleQuery->where('code', '!=', 'super_admin');
-        }
+        $roleQuery = Role::where('is_active', true)
+            ->where('code', '!=', 'super_admin');
 
         return response()->json([
             'message' => '직원 등록 권한이 확인되었습니다.',
@@ -326,14 +318,13 @@ class AdminController extends Controller
             );
 
             /**
-             * 최고 관리자(super_admin)가 아닌 사용자는
-             * 임시저장 단계에서도 최고 관리자 역할을 지정할 수 없습니다.
+             * 임시저장 단계에서도 최고 관리자(super_admin)는 지정할 수 없으며,
+             * 부서(department)가 입력되어 있다면 해당 부서에서
+             * 사용할 수 있는 권한 역할인지 서버에서 확인합니다.
              */
-            abort_if(
-                $selectedRole->code === 'super_admin'
-                    && $user->role?->code !== 'super_admin',
-                403,
-                '최고 관리자 역할을 부여할 권한이 없습니다.'
+            $this->ensureEmployeeRoleMatchesDepartment(
+                $validated['department'] ?? null,
+                $selectedRole
             );
         }
 
@@ -655,7 +646,8 @@ class AdminController extends Controller
      * - 점포 직원인데 소속 점포(store_id)를 지정하지 않는 요청
      * - 사용 중지된 직급(position_id) 지정
      * - 사용 중지된 권한 역할(role_id) 지정
-     * - 일반 관리자의 최고 관리자(super_admin) 역할 부여
+     * - 일반 직원 등록을 통한 최고 관리자(super_admin) 역할 지정
+     * - 소속 부서(department)에서 허용되지 않는 권한 역할(role_id) 지정
      *
      * 신규 직원은 기본적으로
      * 재직 상태(employment_status)를 재직(active)으로 등록하고
@@ -838,19 +830,15 @@ class AdminController extends Controller
         );
 
         /**
-         * 최고 관리자(super_admin) 역할은
-         * 현재 로그인한 사용자 역시 최고 관리자(super_admin)인 경우에만
-         * 다른 직원에게 부여할 수 있습니다.
+         * 최고 관리자(super_admin)는 일반 직원 등록 기능으로 생성하지 않습니다.
          *
-         * 본사 관리자(head_office_manager)가 요청 내용을 조작하여
-         * 최고 관리자(super_admin)의 역할 번호(role_id)를
-         * 직접 전송하는 경우에도 서버에서 차단합니다.
+         * 또한 화면을 조작하거나 API를 직접 호출하여
+         * 현재 소속 부서(department)에서 사용할 수 없는 권한 역할(role_id)을
+         * 전송하는 경우에도 서버에서 차단합니다.
          */
-        abort_if(
-            $selectedRole->code === 'super_admin'
-                && $user->role?->code !== 'super_admin',
-            403,
-            '최고 관리자 역할을 부여할 권한이 없습니다.'
+        $this->ensureEmployeeRoleMatchesDepartment(
+            $validated['department'],
+            $selectedRole
         );
 
         /**
@@ -955,6 +943,55 @@ class AdminController extends Controller
         return response()->json([
             'message' => '직원이 등록되었습니다.',
         ], 201);
+    }
+
+    /**
+     * 직원 등록에서 소속 부서(department)와 권한 역할(role)의 조합을 확인합니다.
+     *
+     * 최고 관리자(super_admin)는 일반 직원 등록 기능으로 생성하지 않으므로
+     * 어떤 부서에서도 허용하지 않습니다.
+     *
+     * 임시저장에서는 부서가 아직 입력되지 않을 수 있으므로
+     * 부서가 NULL이면 부서별 역할 검사를 나중으로 미룹니다.
+     */
+    private function ensureEmployeeRoleMatchesDepartment(
+        ?string $department,
+        Role $role
+    ): void {
+        abort_if(
+            $role->code === 'super_admin',
+            422,
+            '최고 관리자 역할은 직원 등록에서 사용할 수 없습니다.'
+        );
+
+        if ($department === null) {
+            return;
+        }
+
+        $departmentRoleCodes = [
+            'kitchen' => [
+                'staff',
+                'kitchen_head',
+            ],
+            'hall' => [
+                'staff',
+                'hall_manager',
+            ],
+            'head_office' => [
+                'head_office_staff',
+                'head_office_manager',
+            ],
+        ];
+
+        abort_if(
+            ! in_array(
+                $role->code,
+                $departmentRoleCodes[$department] ?? [],
+                true
+            ),
+            422,
+            '선택한 부서에서 사용할 수 없는 권한 역할입니다.'
+        );
     }
 
     /**

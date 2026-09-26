@@ -358,12 +358,13 @@
             >
               <v-select
                 :model-value="form.role_id"
-                :items="roles"
+                :items="filteredRoles"
                 item-title="name"
                 item-value="id"
                 label="권한 역할"
                 variant="outlined"
                 prepend-inner-icon="mdi-shield-account-outline"
+                :disabled="!form.department"
                 :error-messages="fieldError('role_id')"
                 @update:model-value="updateField('role_id', $event)"
               />
@@ -637,6 +638,50 @@ const departments = [
 ];
 
 /**
+ * 소속 부서(department)별로 선택할 수 있는
+ * 권한 역할(role) 코드를 정의합니다.
+ *
+ * 화면에서는 현재 선택한 부서에 맞는 역할만 표시하지만,
+ * 실제 권한 역할 지정 가능 여부는 Laravel 서버에서도
+ * 동일한 기준으로 다시 검사해야 합니다.
+ */
+const departmentRoleCodes = {
+  kitchen: [
+    'staff',
+    'kitchen_head',
+  ],
+  hall: [
+    'staff',
+    'hall_manager',
+  ],
+  head_office: [
+    'head_office_staff',
+    'head_office_manager',
+  ],
+};
+
+/**
+ * 현재 선택한 소속 부서(department)에 맞는
+ * 권한 역할(role)만 화면에 표시합니다.
+ *
+ * 부서를 아직 선택하지 않았다면
+ * 권한 역할을 선택할 수 없도록 빈 목록을 반환합니다.
+ */
+const filteredRoles = computed(() => {
+  const allowedCodes = departmentRoleCodes[
+    props.form.department
+  ];
+
+  if (!allowedCodes) {
+    return [];
+  }
+
+  return props.roles.filter(
+    (role) => allowedCodes.includes(role.code),
+  );
+});
+
+/**
  * 생년월일에서 미래 날짜를 선택하지 못하도록
  * 오늘 날짜를 YYYY-MM-DD 형식으로 만듭니다.
  */
@@ -739,11 +784,18 @@ function updateNumericField(field, value, maxLength) {
  *
  * 본사(head_office)를 선택하면
  * 소속 점포(store_id)는 반드시 null로 초기화합니다.
+ *
+ * 기존에 선택한 권한 역할(role_id)이
+ * 새로 선택한 부서에서 사용할 수 없는 역할이라면
+ * 잘못된 조합이 남지 않도록 null로 초기화합니다.
  */
 function updateDepartment(value) {
   clearFieldValidation('department');
 
-  if (invalidField.value === 'store_id') {
+  if (
+    invalidField.value === 'store_id'
+    || invalidField.value === 'role_id'
+  ) {
     clearValidation();
   }
 
@@ -754,6 +806,26 @@ function updateDepartment(value) {
 
   if (value === 'head_office') {
     nextForm.store_id = null;
+  }
+
+  const allowedCodes = departmentRoleCodes[value];
+
+  if (!allowedCodes) {
+    nextForm.role_id = null;
+  } else if (!isEmpty(nextForm.role_id)) {
+    const selectedRole = props.roles.find(
+      (role) => (
+        String(role.id)
+        === String(nextForm.role_id)
+      ),
+    );
+
+    if (
+      !selectedRole
+      || !allowedCodes.includes(selectedRole.code)
+    ) {
+      nextForm.role_id = null;
+    }
   }
 
   emit('update:form', nextForm);
@@ -1054,11 +1126,39 @@ function validateAndSubmit() {
 
   /**
    * 10. 권한 역할(role_id)
+   *
+   * 권한 역할이 선택되어 있는지만 확인하지 않고,
+   * 실제 서버에서 받은 역할인지와 현재 선택한
+   * 소속 부서(department)에서 사용할 수 있는 역할인지도 확인합니다.
    */
   if (isEmpty(roleId)) {
     showValidationError(
       'role_id',
       '권한 역할을 선택해주세요.',
+    );
+
+    return;
+  }
+
+  const selectedRole = props.roles.find(
+    (role) => (
+      String(role.id)
+      === String(roleId)
+    ),
+  );
+
+  const allowedRoleCodes = departmentRoleCodes[
+    department
+  ];
+
+  if (
+    !selectedRole
+    || !allowedRoleCodes
+    || !allowedRoleCodes.includes(selectedRole.code)
+  ) {
+    showValidationError(
+      'role_id',
+      '선택한 부서에서 사용할 수 없는 권한 역할입니다.',
     );
 
     return;
