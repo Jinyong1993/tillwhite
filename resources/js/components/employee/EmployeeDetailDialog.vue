@@ -31,10 +31,10 @@
 
           <v-chip
             size="small"
-            :color="employmentStatusColor(employee.employment_status)"
+            :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
             variant="tonal"
           >
-            {{ employmentStatus(employee.employment_status) }}
+            {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
           </v-chip>
         </div>
       </div>
@@ -51,6 +51,17 @@
         아래의 버튼 영역에는 스크롤을 적용하지 않습니다.
       -->
       <div class="detail-scroll-area">
+        <v-alert
+          v-if="employee.deleted_at"
+          class="ma-5 mb-0"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          icon="mdi-delete-clock-outline"
+        >
+          삭제된 직원입니다. 정보와 기존 재직 상태는 보존되며 복구 후 다시 관리할 수 있습니다.
+        </v-alert>
+
         <!-- 기본 정보 -->
         <section class="detail-section">
           <div class="detail-section-title">
@@ -268,7 +279,7 @@
 
           실제 권한 검사는 Laravel 서버에서 다시 수행합니다.
         -->
-        <section class="detail-section">
+        <section v-if="!employee.deleted_at" class="detail-section">
           <div class="d-flex align-center justify-space-between ga-3 mb-4">
             <div>
               <div class="detail-section-title mb-0">
@@ -342,14 +353,52 @@
 
         <v-spacer />
 
+        <!-- 삭제 직원은 일반 관리 동작 대신 복구만 제공합니다. -->
         <v-btn
+          v-if="employee.deleted_at"
           variant="flat"
-          prepend-icon="mdi-content-save-outline"
-          :disabled="!canChangeStatus"
-          @click="$emit('save')"
+          prepend-icon="mdi-restore"
+          :disabled="!canManage"
+          @click="$emit('restore')"
         >
-          상태 저장
+          복구
         </v-btn>
+
+        <template v-else>
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-lock-reset"
+            :disabled="!canManage"
+            @click="$emit('password-reset')"
+          >
+            비밀번호
+          </v-btn>
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-pencil-outline"
+            :disabled="!canManage"
+            @click="$emit('edit')"
+          >
+            수정
+          </v-btn>
+          <v-btn
+            color="error"
+            variant="text"
+            prepend-icon="mdi-delete-outline"
+            :disabled="!canManage"
+            @click="$emit('delete')"
+          >
+            삭제
+          </v-btn>
+          <v-btn
+            variant="flat"
+            prepend-icon="mdi-content-save-outline"
+            :disabled="!canChangeStatus"
+            @click="$emit('save')"
+          >
+            상태 저장
+          </v-btn>
+        </template>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -417,6 +466,15 @@ const props = defineProps({
   },
 
   /**
+   * 수정/삭제/복구/비밀번호 초기화 버튼의 화면 표시용 관리 권한입니다.
+   * 실제 권한과 대상 범위는 각 Laravel API에서 다시 검사합니다.
+   */
+  canManage: {
+    type: Boolean,
+    default: false,
+  },
+
+  /**
    * 재직 상태를 변경할 수 없는 경우
    * 화면에 표시할 안내 메시지입니다.
    */
@@ -430,6 +488,10 @@ const emit = defineEmits([
   'update:modelValue',
   'update:employmentStatusValue',
   'save',
+  'edit',
+  'delete',
+  'restore',
+  'password-reset',
   'close',
 ]);
 

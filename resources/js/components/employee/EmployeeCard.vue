@@ -9,6 +9,7 @@
   -->
   <v-card
     class="employee-card"
+    :class="{ 'employee-card--deleted': employee.deleted_at }"
     variant="outlined"
     rounded="lg"
   >
@@ -30,14 +31,19 @@
           </div>
         </div>
 
-        <!-- 재직 상태(employment_status) -->
+        <!--
+          삭제 상태는 재직/휴직/퇴사와 별개의 상태입니다.
+          Soft Delete된 직원은 재직 상태 대신 삭제됨을 우선 표시하여
+          사용자가 비활성/퇴사와 삭제를 혼동하지 않도록 합니다.
+        -->
         <v-chip
           class="flex-shrink-0"
           size="small"
-          :color="employmentStatusColor(employee.employment_status)"
+          :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
+          :prepend-icon="employee.deleted_at ? 'mdi-delete-clock-outline' : undefined"
           variant="tonal"
         >
-          {{ employmentStatus(employee.employment_status) }}
+          {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
         </v-chip>
       </div>
 
@@ -256,6 +262,22 @@ function employmentStatusColor(value) {
  */
 .employee-card {
   overflow: hidden;
+  transition: opacity 160ms ease, background-color 160ms ease;
+}
+
+/*
+ * Soft Delete된 직원 카드입니다.
+ *
+ * 카드 구조와 상세보기 접근은 유지하면서 전체 톤을 흐리게 하여
+ * 일반 비활성/퇴사 직원과 삭제 직원을 시각적으로 구분합니다.
+ */
+.employee-card--deleted {
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  opacity: 0.58;
+}
+
+.employee-card--deleted:hover {
+  opacity: 0.76;
 }
 
 /*

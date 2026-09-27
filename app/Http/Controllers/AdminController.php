@@ -54,7 +54,7 @@ class AdminController extends Controller
          *
          * 직원 상세보기에서도 이 정보를 사용합니다.
          */
-        $query = User::with([
+        $query = User::withTrashed()->with([
             'store:id,name',
             'position:id,name',
             'role:id,code,name',
@@ -85,12 +85,19 @@ class AdminController extends Controller
         $roleQuery = Role::where('is_active', true)
             ->where('code', '!=', 'super_admin');
 
+        $storeQuery = Store::where('status', 'active');
+
+        if (! $user->isHeadOffice() && $user->role?->code !== 'super_admin') {
+            $storeQuery->whereKey($user->store_id);
+            $roleQuery->whereNotIn('code', ['head_office_staff', 'head_office_manager']);
+        }
+
         // 직원 관리 화면과 직원 상세보기에 필요한 정보를 반환합니다.
         return response()->json([
             'employees' => $query->get(),
 
-            // 현재 운영 중인 점포(status = active)만 반환합니다.
-            'stores' => Store::where('status', 'active')
+            // 현재 사용자가 관리할 수 있는 운영 점포만 반환합니다.
+            'stores' => $storeQuery
                 ->orderBy('sort_order')
                 ->get(['id', 'name']),
 
@@ -691,6 +698,7 @@ class AdminController extends Controller
 
                 'created_at' => $user->created_at?->toISOString(),
                 'updated_at' => $user->updated_at?->toISOString(),
+                'deleted_at' => $user->deleted_at?->toISOString(),
             ],
         ]);
     }
@@ -1151,36 +1159,207 @@ class AdminController extends Controller
     }
 
     /**
+     * 직원 기본정보 및 소속정보를 수정합니다.
+     *
+     * 화면의 입력값을 그대로 신뢰하지 않고 직원 관리 권한, 점포 범위,
+     * 역할/부서 조합, 보호 대상 계정을 서버에서 다시 검증합니다.
+     * 비밀번호와 재직 상태는 각각 별도 기능에서 관리하므로 이 요청에서는 받지 않습니다.
+     */
+    public function employeeUpdate(Request $request, User $user)
+    {
+        $actor = $request->user();
+        $this->access->requirePermission($actor, 'employee.manage');
+
+        abort_if($user->trashed(), 409, '삭제된 직원은 정보를 수정할 수 없습니다. 먼저 복구해주세요.');
+        $user->loadMissing('role');
+        abort_if($user->role?->code === 'super_admin', 403, '최고 관리자 정보는 직원 관리에서 수정할 수 없습니다.');
+
+        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+            abort_if($user->store_id !== $actor->store_id, 403, '해당 직원 정보를 수정할 권한이 없습니다.');
+        }
+
+        $validated = $request->validate([
+            'employee_code' => ['required', 'string', 'regex:/^\\d{1,20}$/', 'unique:users,employee_code,' . $user->id],
+            'name' => ['required', 'string', 'max:50'],
+            'phone' => ['required', 'string', 'regex:/^010\\d{8}$/'],
+            'birth_date' => ['required', 'date', 'before_or_equal:today'],
+            'store_id' => ['nullable', 'exists:stores,id'],
+            'department' => ['required', 'in:kitchen,hall,head_office'],
+            'position_id' => ['required', 'exists:positions,id'],
+            'role_id' => ['required', 'exists:roles,id'],
+            'hired_at' => ['required', 'date'],
+        ], [
+            'employee_code.required' => '사원번호를 입력해주세요.',
+            'employee_code.regex' => '사원번호는 숫자만 최대 20자리까지 입력할 수 있습니다.',
+            'employee_code.unique' => '이미 사용 중인 사원번호입니다.',
+            'name.required' => '이름을 입력해주세요.',
+            'name.max' => '이름은 최대 50자까지 입력할 수 있습니다.',
+            'phone.required' => '휴대폰 번호를 입력해주세요.',
+            'phone.regex' => '휴대폰 번호는 010으로 시작하는 숫자 11자리로 입력해주세요.',
+            'birth_date.required' => '생년월일을 입력해주세요.',
+            'birth_date.date' => '생년월일 형식이 올바르지 않습니다.',
+            'birth_date.before_or_equal' => '생년월일은 오늘 이후 날짜를 선택할 수 없습니다.',
+            'store_id.exists' => '선택한 점포를 찾을 수 없습니다.',
+            'department.required' => '부서를 선택해주세요.',
+            'department.in' => '올바른 부서를 선택해주세요.',
+            'position_id.required' => '직급을 선택해주세요.',
+            'position_id.exists' => '선택한 직급을 찾을 수 없습니다.',
+            'role_id.required' => '권한 역할을 선택해주세요.',
+            'role_id.exists' => '선택한 권한 역할을 찾을 수 없습니다.',
+            'hired_at.required' => '입사일을 입력해주세요.',
+            'hired_at.date' => '입사일 형식이 올바르지 않습니다.',
+        ]);
+
+        $selectedRole = Role::findOrFail($validated['role_id']);
+        abort_if(! $selectedRole->is_active, 422, '현재 사용할 수 없는 권한 역할입니다.');
+        $this->ensureEmployeeRoleMatchesDepartment($validated['department'], $selectedRole);
+
+        if ($validated['department'] === 'head_office') {
+            abort_if($validated['store_id'] !== null, 422, '본사 직원은 소속 점포를 선택할 수 없습니다.');
+        } else {
+            abort_if($validated['store_id'] === null, 422, '점포 직원은 소속 점포를 선택해주세요.');
+        }
+
+        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+            abort_if($validated['department'] === 'head_office', 403, '본사 직원으로 변경할 권한이 없습니다.');
+            abort_if((int) $validated['store_id'] !== (int) $actor->store_id, 403, '다른 점포로 직원을 변경할 권한이 없습니다.');
+            abort_if(in_array($selectedRole->code, ['head_office_staff', 'head_office_manager'], true), 403, '본사 직원용 권한 역할을 부여할 수 없습니다.');
+        }
+
+        $changed = DB::transaction(function () use ($actor, $user, $validated) {
+            $lockedUser = User::query()->with('role')->whereKey($user->id)->lockForUpdate()->firstOrFail();
+            abort_if($lockedUser->role?->code === 'super_admin', 403, '최고 관리자 정보는 직원 관리에서 수정할 수 없습니다.');
+            if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+                abort_if($lockedUser->store_id !== $actor->store_id, 403, '해당 직원 정보를 수정할 권한이 없습니다.');
+            }
+
+            $fields = ['employee_code', 'name', 'phone', 'birth_date', 'store_id', 'department', 'position_id', 'role_id', 'hired_at'];
+            $before = collect($fields)->mapWithKeys(fn ($field) => [$field => $lockedUser->{$field} instanceof \DateTimeInterface ? $lockedUser->{$field}->format('Y-m-d') : $lockedUser->{$field}])->all();
+            $lockedUser->fill($validated);
+            if (! $lockedUser->isDirty($fields)) {
+                return false;
+            }
+            $lockedUser->save();
+            $after = collect($fields)->mapWithKeys(fn ($field) => [$field => $lockedUser->{$field} instanceof \DateTimeInterface ? $lockedUser->{$field}->format('Y-m-d') : $lockedUser->{$field}])->all();
+            $this->audit->log($actor, 'employee', 'update', User::class, $lockedUser->id, $before, $after, '직원 정보 수정');
+            return true;
+        });
+
+        return response()->json(['message' => $changed ? '직원 정보가 수정되었습니다.' : '변경된 직원 정보가 없습니다.']);
+    }
+
+    /** 직원 로그인 비밀번호를 관리자가 새 비밀번호로 초기화합니다. */
+    public function employeePasswordReset(Request $request, User $user)
+    {
+        $actor = $request->user();
+        $this->access->requirePermission($actor, 'employee.manage');
+        abort_if($user->trashed(), 409, '삭제된 직원의 비밀번호는 초기화할 수 없습니다.');
+        $user->loadMissing('role');
+        abort_if($user->role?->code === 'super_admin', 403, '최고 관리자 비밀번호는 직원 관리에서 초기화할 수 없습니다.');
+        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+            abort_if($user->store_id !== $actor->store_id, 403, '해당 직원의 비밀번호를 초기화할 권한이 없습니다.');
+        }
+        $validated = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'max:72', 'confirmed'],
+        ], [
+            'password.required' => '새 비밀번호를 입력해주세요.',
+            'password.min' => '비밀번호는 최소 8자 이상이어야 합니다.',
+            'password.max' => '비밀번호는 최대 72자까지 입력할 수 있습니다.',
+            'password.confirmed' => '비밀번호 확인이 일치하지 않습니다.',
+        ]);
+
+        DB::transaction(function () use ($actor, $user, $validated) {
+            $lockedUser = User::query()->with('role')->whereKey($user->id)->lockForUpdate()->firstOrFail();
+            abort_if($lockedUser->role?->code === 'super_admin', 403, '최고 관리자 비밀번호는 직원 관리에서 초기화할 수 없습니다.');
+            if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+                abort_if($lockedUser->store_id !== $actor->store_id, 403, '해당 직원의 비밀번호를 초기화할 권한이 없습니다.');
+            }
+            $lockedUser->password = $validated['password'];
+            $lockedUser->password_changed_at = now();
+            $lockedUser->save();
+            // 비밀번호 원문과 해시값은 감사 로그에 절대 기록하지 않습니다.
+            $this->audit->log($actor, 'employee', 'password_reset', User::class, $lockedUser->id, null, ['password_changed_at' => $lockedUser->password_changed_at->toISOString()], '직원 비밀번호 초기화');
+        });
+
+        return response()->json(['message' => '직원 비밀번호를 초기화했습니다.']);
+    }
+
+    /** 직원을 영구 삭제하지 않고 deleted_at만 기록하여 복구 가능 상태로 전환합니다. */
+    public function employeeDelete(Request $request, User $user)
+    {
+        $actor = $request->user();
+        $this->access->requirePermission($actor, 'employee.manage');
+        abort_if($actor->id === $user->id, 403, '현재 로그인한 자기 자신은 삭제할 수 없습니다.');
+        $user->loadMissing('role');
+        abort_if($user->role?->code === 'super_admin', 403, '최고 관리자는 직원 관리에서 삭제할 수 없습니다.');
+        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+            abort_if($user->store_id !== $actor->store_id, 403, '해당 직원을 삭제할 권한이 없습니다.');
+        }
+        if ($user->trashed()) {
+            return response()->json(['message' => '이미 삭제된 직원입니다.']);
+        }
+
+        DB::transaction(function () use ($actor, $user) {
+            $lockedUser = User::withTrashed()->with('role')->whereKey($user->id)->lockForUpdate()->firstOrFail();
+
+            // 중복 삭제 요청이면 감사로그를 다시 남기지 않고 정상 종료합니다.
+            if ($lockedUser->trashed()) {
+                return;
+            }
+
+            abort_if($actor->id === $lockedUser->id, 403, '현재 로그인한 자기 자신은 삭제할 수 없습니다.');
+            abort_if($lockedUser->role?->code === 'super_admin', 403, '최고 관리자는 직원 관리에서 삭제할 수 없습니다.');
+            if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+                abort_if($lockedUser->store_id !== $actor->store_id, 403, '해당 직원을 삭제할 권한이 없습니다.');
+            }
+            $before = $this->employeeAuditSnapshot($lockedUser);
+            $lockedUser->delete();
+            $this->audit->log($actor, 'employee', 'delete', User::class, $lockedUser->id, $before, ['deleted_at' => $lockedUser->deleted_at?->toISOString()], '직원 삭제');
+        });
+
+        return response()->json(['message' => '직원을 삭제했습니다.']);
+    }
+
+    /** Soft Delete된 직원을 복구합니다. 기존 재직/계정 상태는 변경하지 않습니다. */
+    public function employeeRestore(Request $request, User $user)
+    {
+        $actor = $request->user();
+        $this->access->requirePermission($actor, 'employee.manage');
+        abort_unless($user->trashed(), 409, '삭제되지 않은 직원입니다.');
+        $user->loadMissing('role');
+        abort_if($user->role?->code === 'super_admin', 403, '최고 관리자는 직원 관리 복구 대상이 아닙니다.');
+        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+            abort_if($user->store_id !== $actor->store_id, 403, '해당 직원을 복구할 권한이 없습니다.');
+        }
+
+        DB::transaction(function () use ($actor, $user) {
+            $lockedUser = User::withTrashed()->with('role')->whereKey($user->id)->lockForUpdate()->firstOrFail();
+            if (! $lockedUser->trashed()) {
+                return;
+            }
+            abort_if($lockedUser->role?->code === 'super_admin', 403, '최고 관리자는 직원 관리 복구 대상이 아닙니다.');
+            if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
+                abort_if($lockedUser->store_id !== $actor->store_id, 403, '해당 직원을 복구할 권한이 없습니다.');
+            }
+            $before = ['deleted_at' => $lockedUser->deleted_at?->toISOString()];
+            $lockedUser->restore();
+            $this->audit->log($actor, 'employee', 'restore', User::class, $lockedUser->id, $before, ['deleted_at' => null], '직원 복구');
+        });
+
+        return response()->json(['message' => '직원을 복구했습니다.']);
+    }
+
+    /**
      * 직원의 재직 상태를 변경합니다.
      *
-     * 직원 관리 권한(employee.manage)이 있는 사용자만
-     * 직원의 재직 상태를 변경할 수 있습니다.
+     * 직원 관리 권한(employee.manage)이 있는 사용자만 변경할 수 있으며
+     * 서버에서 대상 점포 범위와 최고 관리자 보호를 다시 확인합니다.
      *
-     * 화면에서 상태 변경 버튼을 강제로 활성화하거나
-     * API를 직접 호출하더라도
-     * Laravel 서버에서 권한과 변경 가능 범위를 다시 확인합니다.
-     *
-     * 허용되는 재직 상태:
-     *
-     * - active: 재직
-     * - leave: 휴직
-     * - resigned: 퇴사
-     *
-     * 재직(active) 또는 휴직(leave) 상태에서는
-     * 계정을 활성 상태(is_active = true)로 유지하고
-     * 퇴사일(resigned_at)을 NULL로 초기화합니다.
-     *
-     * 퇴사(resigned) 상태에서는
-     * 계정을 비활성 상태(is_active = false)로 변경하고
-     * 기존 퇴사일(resigned_at)이 없는 경우에만
-     * 현재 날짜를 퇴사일로 기록합니다.
-     *
-     * 이미 퇴사일이 기록되어 있는 경우에는
-     * 기존 퇴사일을 그대로 유지합니다.
-     *
-     * 직원 상태 변경과 감사 로그 기록은
+     * active(재직)만 계정을 활성화하고, leave(휴직)와 resigned(퇴사)는
+     * 계정을 비활성화하여 로그인 정책(User::canLogin)과 동일하게 유지합니다.
+     * 퇴사 상태로 처음 변경할 때만 퇴사일을 기록하며, 상태 변경과 감사로그는
      * 하나의 데이터베이스 트랜잭션으로 처리합니다.
-    */
+     */
     public function employeeStatus(Request $request, User $user)
     {
         // 실제 직원 상태 변경을 요청한 로그인 사용자를 가져옵니다.
@@ -1352,7 +1531,13 @@ class AdminController extends Controller
                 }
             } else {
                 $lockedUser->employment_status = $employmentStatus;
-                $lockedUser->is_active = true;
+
+                /*
+                 * 재직(active)만 로그인 가능한 활성 계정으로 둡니다.
+                 * 휴직(leave)은 재직 상태와 별개로 계정을 비활성화하여
+                 * User::canLogin()의 정책과 데이터 자체도 일치시킵니다.
+                 */
+                $lockedUser->is_active = $employmentStatus === 'active';
                 $lockedUser->resigned_at = null;
             }
 
@@ -1414,6 +1599,26 @@ class AdminController extends Controller
      * 임시저장에서는 부서가 아직 입력되지 않을 수 있으므로
      * 부서가 NULL이면 부서별 역할 검사를 나중으로 미룹니다.
      */
+    /** 감사 로그에 기록할 직원의 안전한 필드만 반환합니다. */
+    private function employeeAuditSnapshot(User $user): array
+    {
+        return [
+            'employee_code' => $user->employee_code,
+            'name' => $user->name,
+            'phone' => $user->phone,
+            'birth_date' => $user->birth_date?->format('Y-m-d'),
+            'store_id' => $user->store_id,
+            'department' => $user->department,
+            'position_id' => $user->position_id,
+            'role_id' => $user->role_id,
+            'employment_status' => $user->employment_status,
+            'hired_at' => $user->hired_at?->format('Y-m-d'),
+            'resigned_at' => $user->resigned_at?->format('Y-m-d'),
+            'is_active' => $user->is_active,
+            'deleted_at' => $user->deleted_at?->toISOString(),
+        ];
+    }
+
     private function ensureEmployeeRoleMatchesDepartment(
         ?string $department,
         Role $role

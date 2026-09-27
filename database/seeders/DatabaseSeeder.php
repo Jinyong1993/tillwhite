@@ -66,6 +66,14 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
 
             /**
+             * 직원 관리 화면 검증용 테스트 직원 100명
+             *
+             * 검색/필터/페이징/삭제 및 복구 UI를 검증하기 위한 데이터입니다.
+             * 테스트 계정 비밀번호는 모두 test1234입니다.
+             */
+            EmployeeTestSeeder::class,
+
+            /**
              * 데모 업무 데이터
              *
              * 제품, 생산 기록, 근무 코드 등 화면 확인용 데이터를 생성한다.

@@ -189,7 +189,7 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      *
      * 검사가 통과하면 해당 직원의 최신 정보를 반환합니다.
      */
-    Route::get('/employees/{user}', [AdminController::class, 'employeeShow']);
+    Route::get('/employees/{user}', [AdminController::class, 'employeeShow'])->withTrashed();
 
     // 신규 직원 등록
     Route::post('/employees', [AdminController::class, 'employeeStore']);
@@ -201,6 +201,16 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * Laravel 서버에서 다시 확인합니다.
      */
     Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
+
+    // 직원 기본정보 및 소속정보 수정
+    Route::put('/employees/{user}', [AdminController::class, 'employeeUpdate']);
+
+    // 직원 비밀번호 초기화
+    Route::put('/employees/{user}/password', [AdminController::class, 'employeePasswordReset']);
+
+    // 직원 Soft Delete 및 복구
+    Route::delete('/employees/{user}', [AdminController::class, 'employeeDelete'])->withTrashed();
+    Route::put('/employees/{user}/restore', [AdminController::class, 'employeeRestore'])->withTrashed();
 
 
     /**
