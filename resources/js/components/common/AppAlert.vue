@@ -1,4 +1,5 @@
 <template>
+  <Teleport to="body">
   <!--
     Till White 애플리케이션 공통 알림
 
@@ -14,7 +15,7 @@
   -->
   <v-alert
     v-if="modelValue"
-    class="mb-4"
+    class="app-global-alert"
     :type="type"
     :variant="variant"
     closable
@@ -22,6 +23,7 @@
   >
     {{ modelValue }}
   </v-alert>
+  </Teleport>
 </template>
 
 <script setup>
@@ -86,3 +88,17 @@ function close() {
   emit('update:modelValue', '');
 }
 </script>
+
+<style scoped>
+/* 모든 Dialog/Overlay보다 위에서 보이는 애플리케이션 공통 알림 레이어입니다. */
+.app-global-alert {
+  position: fixed;
+  z-index: 10050;
+  top: calc(env(safe-area-inset-top, 0px) + 12px);
+  left: 50%;
+  width: min(calc(100vw - 24px), 420px);
+  margin: 0;
+  transform: translateX(-50%);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+}
+</style>

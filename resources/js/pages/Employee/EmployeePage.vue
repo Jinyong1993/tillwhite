@@ -57,10 +57,11 @@
         이후 검색, 상태 필터, 페이지 이동은 브라우저의 Vue 상태만 사용하므로
         키보드 입력마다 서버 요청이나 별도 로딩이 발생하지 않습니다.
       -->
-      <v-card class="employee-toolbar mb-5" variant="outlined" rounded="lg">
+      <v-card class="employee-toolbar mb-5" variant="flat" rounded="lg">
         <v-card-text>
           <div class="employee-toolbar-grid">
             <v-text-field
+              class="employee-search-field"
               v-model="searchQuery"
               prepend-inner-icon="mdi-magnify"
               label="직원 검색"
@@ -72,6 +73,7 @@
             />
 
             <v-select
+              class="employee-status-filter"
               v-model="statusFilter"
               :items="statusFilterItems"
               label="상태"
@@ -81,6 +83,7 @@
             />
 
             <v-select
+              class="employee-page-size"
               v-model="itemsPerPage"
               :items="itemsPerPageOptions"
               label="페이지당"
@@ -134,8 +137,11 @@
         variant="outlined"
         rounded="lg"
       >
-        <v-card-text class="text-center text-medium-emphasis py-8">
-          검색 조건에 맞는 직원이 없습니다.
+        <v-card-text class="text-center py-8">
+          <v-icon icon="mdi-account-search-outline" size="36" class="mb-3 text-medium-emphasis" />
+          <div class="font-weight-medium">검색 결과가 없습니다.</div>
+          <div class="text-caption text-medium-emphasis mt-1">다른 이름이나 연락처로 검색해보세요.</div>
+          <v-btn v-if="searchQuery || statusFilter !== 'all'" class="mt-4" size="small" variant="tonal" prepend-icon="mdi-filter-remove-outline" @click="resetEmployeeFilters">검색/필터 초기화</v-btn>
         </v-card-text>
       </v-card>
 
@@ -152,7 +158,8 @@
         <v-pagination
           v-model="currentPage"
           :length="totalPages"
-          :total-visible="7"
+          :total-visible="5"
+          class="employee-pagination"
           rounded="circle"
         />
         <div class="text-caption text-medium-emphasis">
@@ -228,23 +235,13 @@
         - Laravel 상세조회 API 호출
         - 직원 관리 권한(employee.manage) 판단
         - 최고 관리자(super_admin) 보호
-        - 재직 상태 저장 API 호출
+        - 직원 수정/삭제/복구/비밀번호 초기화 API 호출
       -->
       <EmployeeDetailDialog
         v-model="detailDialog"
-        v-model:employment-status-value="statusForm.employment_status"
         :employee="selectedEmployee"
-        :can-change-status="canChangeEmployeeStatus(
-          selectedEmployee,
-          can
-        )"
-        :status-unavailable-message="statusUnavailableMessage(
-          selectedEmployee,
-          can
-        )"
         :can-manage="can('employee.manage') && selectedEmployee?.role?.code !== 'super_admin'"
         @close="closeDetailDialog"
-        @save="saveStatus(setError)"
         @edit="openEditDialog"
         @password-reset="openPasswordResetDialog"
         @delete="requestEmployeeAction('delete')"
@@ -260,7 +257,7 @@
         :roles="data.roles"
         :loading="employeeActionLoading === 'edit'"
         @close="editDialog = false"
-        @save="saveEmployeeEdit($event, setError, setSuccess)"
+        @save="requestEmployeeEditSave($event, setError, setSuccess)"
       />
 
       <!-- 비밀번호는 일반 직원 정보 수정과 분리하고 화면 상태에도 평문을 보관하지 않습니다. -->
@@ -419,6 +416,7 @@ const employeeConfirm = reactive({
   title: '',
   message: '',
   confirmText: '확인',
+  payload: null,
 });
 
 function clearEmployeeConfirm() {
@@ -428,6 +426,7 @@ function clearEmployeeConfirm() {
   employeeConfirm.title = '';
   employeeConfirm.message = '';
   employeeConfirm.confirmText = '확인';
+  employeeConfirm.payload = null;
 }
 
 
@@ -462,9 +461,9 @@ const statusFilterItems = [
 ];
 
 const itemsPerPageOptions = [
-  { title: '5개', value: 5 },
-  { title: '10개', value: 10 },
-  { title: '30개', value: 30 },
+  { title: '5명', value: 5 },
+  { title: '10명', value: 10 },
+  { title: '30명', value: 30 },
 ];
 
 /** 이름, 사번, 연락처를 한 검색창에서 즉시 검색합니다. */
@@ -546,15 +545,6 @@ const initialRegisterForm = ref(createEmptyForm());
  */
 const hasLoadedDraft = ref(false);
 
-/**
- * 직원 재직 상태 변경 양식(statusForm)입니다.
- *
- * 계정 활성 상태(is_active)는 화면에서 관리하지 않습니다.
- * Laravel 서버가 재직 상태(employment_status)를 기준으로 결정합니다.
- */
-const statusForm = ref({
-  employment_status: 'active',
-});
 
 /**
  * 비어 있는 신규 직원 등록 양식(form)을 만듭니다.
@@ -691,30 +681,6 @@ function hasRegisterFormChanges() {
  * 현재 로그인 사용자의 역할과 관계없이
  * 일반 직원 관리 화면에서 재직 상태를 변경하지 않습니다.
  */
-function canChangeEmployeeStatus(employee, can) {
-  if (!employee) {
-    return false;
-  }
-
-  if (!can('employee.manage')) {
-    return false;
-  }
-
-  /**
-   * 최고 관리자(super_admin)는
-   * 일반 직원 관리 기능의 재직 상태 변경 대상에서 제외합니다.
-   *
-   * 현재 로그인한 사용자 역시 최고 관리자이더라도
-   * 이 화면에서는 최고 관리자 계정의 상태를 변경하지 않습니다.
-   *
-   * 실제 보호는 Laravel 서버에서도 동일하게 적용합니다.
-   */
-  if (employee?.role?.code === 'super_admin') {
-    return false;
-  }
-
-  return true;
-}
 
 /**
  * 재직 상태를 변경할 수 없는 이유를 표시합니다.
@@ -722,26 +688,6 @@ function canChangeEmployeeStatus(employee, can) {
  * 실제 변경 가능 여부는 Laravel 서버에서 다시 검사하며,
  * 이 함수는 사용자에게 화면상 이유를 안내하기 위해 사용합니다.
  */
-function statusUnavailableMessage(employee, can) {
-  if (!employee) {
-    return '';
-  }
-
-  if (!can('employee.manage')) {
-    return '직원의 재직 상태를 변경할 권한이 없습니다.';
-  }
-
-  /**
-   * 최고 관리자(super_admin)는
-   * 현재 로그인 사용자의 역할과 관계없이
-   * 일반 직원 관리 화면에서 재직 상태를 변경하지 않습니다.
-   */
-  if (employee?.role?.code === 'super_admin') {
-    return '최고 관리자 계정의 재직 상태는 직원 관리에서 변경할 수 없습니다.';
-  }
-
-  return '';
-}
 
 /**
  * Laravel 서버에서 전달한 오류 메시지를 우선 사용하고,
@@ -1308,10 +1254,6 @@ async function openDetailDialog(employee, setError) {
 
     selectedEmployee.value = latestEmployee;
 
-    statusForm.value = {
-      employment_status:
-        latestEmployee.employment_status ?? 'active',
-    };
 
     /**
      * Laravel 서버의 직원 상세조회가 성공한 경우에만
@@ -1341,9 +1283,6 @@ function closeDetailDialog() {
   passwordResetDialog.value = false;
   selectedEmployee.value = null;
 
-  statusForm.value = {
-    employment_status: 'active',
-  };
 }
 
 /** 직원 상세에서 수정 다이얼로그를 엽니다. */
@@ -1370,6 +1309,36 @@ function requestEmployeeAction(action) {
   employeeConfirm.open = true;
 }
 
+/**
+ * 직원 수정 저장을 요청합니다.
+ * 소속/역할/재직 상태처럼 영향이 큰 값이 변경되면 실제 API 호출 전에 변경 내용을 확인합니다.
+ */
+function requestEmployeeEditSave(payload, setError, setSuccess) {
+  if (!selectedEmployee.value || employeeActionLoading.value) return;
+
+  const employee = selectedEmployee.value;
+  const changes = [];
+  const statusNames = { active: '재직', leave: '휴직', resigned: '퇴사' };
+  const storeName = (id) => data.value.stores.find((store) => Number(store.id) === Number(id))?.name ?? '본사';
+  const roleName = (id) => data.value.roles.find((role) => Number(role.id) === Number(id))?.name ?? '-';
+
+  if (Number(payload.store_id ?? 0) !== Number(employee.store?.id ?? 0)) changes.push(`소속 점포: ${employee.store?.name ?? '본사'} → ${storeName(payload.store_id)}`);
+  if (Number(payload.role_id) !== Number(employee.role?.id)) changes.push(`권한 역할: ${employee.role?.name ?? '-'} → ${roleName(payload.role_id)}`);
+  if (payload.employment_status !== employee.employment_status) changes.push(`재직 상태: ${statusNames[employee.employment_status] ?? employee.employment_status} → ${statusNames[payload.employment_status] ?? payload.employment_status}`);
+
+  if (changes.length > 0) {
+    employeeConfirm.action = 'edit';
+    employeeConfirm.payload = payload;
+    employeeConfirm.title = '직원 정보를 수정하시겠습니까?';
+    employeeConfirm.message = `중요 정보가 변경됩니다.\n${changes.join('\n')}`;
+    employeeConfirm.confirmText = '저장';
+    employeeConfirm.open = true;
+    return;
+  }
+
+  saveEmployeeEdit(payload, setError, setSuccess);
+}
+
 /** 직원 수정 요청과 이후 목록/상세 재조회는 서로 분리해서 처리합니다. */
 async function saveEmployeeEdit(payload, setError, setSuccess) {
   if (!selectedEmployee.value || employeeActionLoading.value) return;
@@ -1383,6 +1352,7 @@ async function saveEmployeeEdit(payload, setError, setSuccess) {
   }
   editDialog.value = false;
   employeeActionLoading.value = null;
+  clearEmployeeConfirm();
   setSuccess('직원 정보를 수정했습니다.');
   await refreshEmployeeData(setError, '직원 정보 수정은 완료되었지만 화면을 새로고침하지 못했습니다.');
 }
@@ -1408,6 +1378,14 @@ async function saveEmployeePassword(payload, setError, setSuccess) {
 async function executeEmployeeAction(setError, setSuccess) {
   if (!selectedEmployee.value || !employeeConfirm.action || employeeActionLoading.value) return;
   const action = employeeConfirm.action;
+
+  if (action === 'edit') {
+    const payload = employeeConfirm.payload;
+    if (!payload) return;
+    await saveEmployeeEdit(payload, setError, setSuccess);
+    return;
+  }
+
   employeeActionLoading.value = action;
   try {
     if (action === 'delete') {
@@ -1435,7 +1413,6 @@ async function refreshEmployeeData(setError, failureMessage) {
     if (employeeId && detailDialog.value) {
       const response = await window.axios.get(`/tillwhite/api/employees/${employeeId}`);
       selectedEmployee.value = response.data.employee;
-      statusForm.value.employment_status = selectedEmployee.value.employment_status ?? 'active';
     }
   } catch (error) {
     setError(failureMessage);
@@ -1604,97 +1581,6 @@ async function saveEmployee(
 }
 
 /**
- * 선택한 직원의 재직 상태를 서버에 저장합니다.
- *
- * 화면에서는 재직 상태(employment_status)만 전송합니다.
- *
- * 계정 활성 상태(is_active)와 퇴사일(resigned_at)은
- * Laravel 서버가 재직 상태를 기준으로 결정합니다.
- *
- * 실제 직원 관리 권한(employee.manage)은
- * Laravel 서버에서 다시 확인합니다.
- */
-async function saveStatus(setError) {
-  if (!selectedEmployee.value) {
-    return;
-  }
-
-  /**
-   * 재직 상태 변경 요청 자체와
-   * 변경 완료 후 직원 목록 새로고침을 분리해서 처리합니다.
-   *
-   * 상태 변경은 서버에서 이미 완료되었는데
-   * 이후 목록 새로고침만 실패한 경우까지
-   * "재직 상태 변경 실패"로 표시하면 안 되기 때문입니다.
-   */
-  try {
-    await window.axios.put(
-      `/tillwhite/api/employees/${selectedEmployee.value.id}/status`,
-      {
-        employment_status:
-          statusForm.value.employment_status,
-      },
-    );
-  } catch (error) {
-    /**
-     * Laravel 서버가 실제 오류 응답을 반환한 경우에는
-     * 서버가 전달한 오류 내용을 표시합니다.
-     *
-     * 예:
-     * - 직원 관리 권한 없음
-     * - 변경할 수 없는 직원
-     * - 잘못된 재직 상태
-     */
-    if (error.response) {
-      setError(
-        errorMessage(
-          error,
-          '직원 재직 상태 변경에 실패했습니다.',
-        ),
-      );
-    } else {
-      /**
-       * 서버 응답 자체를 확인하지 못한 경우에는
-       * 실제 변경 성공 여부를 확정할 수 없습니다.
-       *
-       * 서버에서는 변경이 완료되었지만
-       * 응답을 받는 과정에서 네트워크가 끊겼을 수도 있으므로
-       * 단순한 "변경 실패"로 표시하지 않습니다.
-       *
-       * 사용자가 같은 요청을 바로 반복하기 전에
-       * 직원 정보를 다시 확인하도록 안내합니다.
-       */
-      setError(
-        '서버 응답을 확인하지 못했습니다. 재직 상태가 이미 변경되었을 수 있으므로 직원 정보를 다시 확인해주세요.',
-      );
-    }
-
-    return;
-  }
-
-  /**
-   * 서버에서 재직 상태 변경 성공 응답을 받은 경우에만
-   * 직원 상세 다이얼로그를 닫습니다.
-   */
-  closeDetailDialog();
-
-  /**
-   * 재직 상태 변경이 완료된 뒤
-   * 직원 목록을 서버에서 다시 조회합니다.
-   *
-   * 이 작업은 이미 완료된 상태 변경과 별개의 작업이므로
-   * 목록 새로고침 실패를 상태 변경 실패로 처리하지 않습니다.
-   */
-  try {
-    await load();
-  } catch (error) {
-    setError(
-      '재직 상태 변경은 완료되었지만 직원 목록을 새로고침하지 못했습니다.',
-    );
-  }
-}
-
-/**
  * 직원 관리 페이지 최초 진입 처리입니다.
  *
  * EmployeePage가 마운트되면
@@ -1703,7 +1589,7 @@ async function saveStatus(setError) {
  * 메뉴 이동 전에 시작된 애플리케이션 공통 로딩은
  * initialLoad()에서 직원 데이터 조회가 끝난 뒤 완료 처리합니다.
  *
- * 직원 등록 완료 또는 재직 상태 변경 후의 재조회는
+ * 직원 등록 완료 또는 직원 정보 수정 후의 재조회는
  * load()만 사용하므로 전체 화면 로딩은 다시 발생하지 않습니다.
  */
 onMounted(() => {
@@ -1714,15 +1600,49 @@ onMounted(() => {
 <style scoped>
 .employee-toolbar {
   overflow: hidden;
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  border: 1px solid rgba(var(--v-border-color), 0.14);
 }
+
+/* 모바일 기준: 검색은 한 줄 전체, 상태/표시 인원은 그 아래 두 칸으로 배치합니다. */
 .employee-toolbar-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 0.24fr) minmax(130px, 0.2fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "search search" "status page-size";
+  gap: 10px;
 }
-@media (max-width: 720px) {
-  .employee-toolbar-grid {
-    grid-template-columns: 1fr;
+.employee-search-field { grid-area: search; }
+.employee-status-filter { grid-area: status; }
+.employee-page-size { grid-area: page-size; }
+
+/* 직원 카드와 비슷한 옅은 경계만 사용하고 포커스 시에도 과한 흰색 테두리를 만들지 않습니다. */
+.employee-toolbar :deep(.v-field) {
+  --v-field-border-opacity: 0.18;
+}
+.employee-toolbar :deep(.v-field--focused) {
+  --v-field-border-opacity: 0.34;
+}
+
+/* 페이지 번호가 많아져도 모바일 앱 너비 밖으로 잘리지 않도록 터치 영역을 유지하며 압축합니다. */
+.employee-pagination {
+  max-width: 100%;
+}
+.employee-pagination :deep(.v-pagination__list) {
+  width: 100%;
+  justify-content: center;
+  gap: 2px;
+}
+.employee-pagination :deep(.v-btn) {
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
+}
+
+@media (max-width: 340px) {
+  .employee-pagination :deep(.v-btn) {
+    min-width: 34px;
+    width: 34px;
+    height: 34px;
   }
 }
 </style>

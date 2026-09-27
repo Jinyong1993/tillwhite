@@ -3,11 +3,9 @@
     <v-card rounded="lg">
       <v-card-title class="pa-5 pb-2">비밀번호 초기화</v-card-title>
       <v-card-text class="px-5 pb-5">
-        <div class="text-body-2 text-medium-emphasis mb-5">
-          {{ employee?.name }} 직원의 새 비밀번호를 설정합니다. 비밀번호 값은 감사로그에 기록하지 않습니다.
-        </div>
-        <v-text-field v-model="password" label="새 비밀번호" type="password" variant="outlined" autocomplete="new-password" />
-        <v-text-field v-model="confirmation" label="새 비밀번호 확인" type="password" variant="outlined" autocomplete="new-password" hide-details />
+        <div class="text-body-2 text-medium-emphasis mb-5">{{ employee?.name }}님의 새로운 비밀번호를 입력해주세요.</div>
+        <v-text-field v-model="password" label="새 비밀번호" placeholder="8자 이상 입력" :type="showPassword ? 'text' : 'password'" variant="outlined" prepend-inner-icon="mdi-lock-outline" :append-inner-icon="showPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" autocomplete="new-password" maxlength="72" hint="8자 이상 72자 이하로 입력해주세요." persistent-hint @click:append-inner="showPassword = !showPassword" />
+        <v-text-field v-model="confirmation" class="mt-2" label="비밀번호 확인" placeholder="새 비밀번호를 다시 입력" :type="showConfirmation ? 'text' : 'password'" variant="outlined" prepend-inner-icon="mdi-lock-check-outline" :append-inner-icon="showConfirmation ? 'mdi-eye-off-outline' : 'mdi-eye-outline'" autocomplete="new-password" maxlength="72" :error-messages="confirmation && password !== confirmation ? ['비밀번호가 일치하지 않습니다.'] : []" @click:append-inner="showConfirmation = !showConfirmation" />
       </v-card-text>
       <v-divider />
       <v-card-actions class="pa-4 px-5">
@@ -25,6 +23,8 @@ const props = defineProps({ modelValue: { type: Boolean, default: false }, emplo
 defineEmits(['update:modelValue', 'close', 'save']);
 const password = ref('');
 const confirmation = ref('');
-/** 다이얼로그를 새로 열 때 이전에 입력했던 비밀번호를 남기지 않습니다. */
-watch(() => props.modelValue, (open) => { if (open) { password.value = ''; confirmation.value = ''; } });
+const showPassword = ref(false);
+const showConfirmation = ref(false);
+/** 다이얼로그를 새로 열 때 이전 입력값과 표시 상태를 모두 초기화합니다. */
+watch(() => props.modelValue, (open) => { if (open) { password.value = ''; confirmation.value = ''; showPassword.value = false; showConfirmation.value = false; } });
 </script>

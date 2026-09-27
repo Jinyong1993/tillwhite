@@ -265,6 +265,7 @@ const router = createRouter({
  */
 const {
   beginNavigationLoading,
+  completePageLoading,
   cancelLoading,
 } = useAppLoading();
 
@@ -460,6 +461,17 @@ router.beforeEach(async (to) => {
     return {
       name: 'login',
     };
+  }
+});
+
+/**
+ * 권한이 없는 화면에서 현재 메인 화면으로 다시 리다이렉트되는 경우에는
+ * 같은 MainPage 인스턴스가 재사용되어 페이지 초기화 훅이 다시 실행되지 않을 수 있습니다.
+ * 이 경우에도 최초 메뉴 클릭부터 최소 1초간 표시한 공통 로딩을 확실하게 종료합니다.
+ */
+router.afterEach(async (to) => {
+  if (to.name === 'main' && typeof to.query.accessDenied === 'string') {
+    await completePageLoading();
   }
 });
 

@@ -133,6 +133,7 @@
 
 <script setup>
 import {
+  onBeforeUnmount,
   onMounted,
   reactive,
   ref,
@@ -224,9 +225,23 @@ const {
  * 새로운 알림 종류가 필요해도
  * 별도의 상태를 추가할 필요가 없습니다.
  */
+let alertTimer = null;
+
 function setAlert(type, message) {
+  if (alertTimer) {
+    window.clearTimeout(alertTimer);
+    alertTimer = null;
+  }
+
   alert.type = type;
   alert.message = message;
+
+  // 성공/안내 메시지는 자동으로 사라지고 오류/경고는 사용자가 충분히 확인할 수 있게 더 오래 유지합니다.
+  const timeout = type === 'success' ? 3200 : (type === 'info' ? 4500 : 7000);
+  alertTimer = window.setTimeout(() => {
+    if (alert.message === message) alert.message = '';
+    alertTimer = null;
+  }, timeout);
 }
 
 /**
@@ -310,5 +325,8 @@ onMounted(async () => {
   } finally {
     sessionReady.value = true;
   }
+});
+onBeforeUnmount(() => {
+  if (alertTimer) window.clearTimeout(alertTimer);
 });
 </script>

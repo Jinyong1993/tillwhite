@@ -29,13 +29,25 @@
             </div>
           </div>
 
-          <v-chip
+          <div class="d-flex align-center ga-1">
+            <!-- 자주 쓰지 않는 관리 기능은 상단 관리 메뉴에 모읍니다. -->
+            <v-menu v-if="!employee.deleted_at && canManage" location="bottom end">
+              <template #activator="{ props: menuProps }">
+                <v-btn v-bind="menuProps" icon="mdi-dots-vertical" size="small" variant="text" aria-label="직원 관리 메뉴" />
+              </template>
+              <v-list density="compact" min-width="190">
+                <v-list-item prepend-icon="mdi-lock-reset" title="비밀번호 초기화" @click="$emit('password-reset')" />
+              </v-list>
+            </v-menu>
+
+            <v-chip
             size="small"
             :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
             variant="tonal"
           >
             {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
           </v-chip>
+          </div>
         </div>
       </div>
 
@@ -269,71 +281,6 @@
           </div>
         </section>
 
-        <v-divider />
-
-        <!--
-          재직 상태 관리
-
-          직원 관리 권한(employee.manage)이 있는 경우에만
-          재직 상태를 변경할 수 있습니다.
-
-          실제 권한 검사는 Laravel 서버에서 다시 수행합니다.
-        -->
-        <section v-if="!employee.deleted_at" class="detail-section">
-          <div class="d-flex align-center justify-space-between ga-3 mb-4">
-            <div>
-              <div class="detail-section-title mb-0">
-                <v-icon
-                  icon="mdi-account-cog-outline"
-                  size="small"
-                />
-
-                재직 상태 관리
-              </div>
-
-              <div class="text-caption text-medium-emphasis mt-2">
-                재직, 휴직, 퇴사 상태를 변경합니다.
-              </div>
-            </div>
-
-            <v-chip
-              v-if="!canChangeStatus"
-              size="x-small"
-              variant="tonal"
-            >
-              변경 권한 없음
-            </v-chip>
-          </div>
-
-          <!--
-            재직 상태(employment_status)
-
-            계정 활성 상태(is_active)는 직접 변경하지 않습니다.
-
-            재직(active) → 계정 활성
-            휴직(leave) → 계정 비활성
-            퇴사(resigned) → 계정 비활성
-          -->
-          <v-select
-            :model-value="employmentStatusValue"
-            :items="employmentStatuses"
-            label="재직 상태"
-            variant="outlined"
-            hide-details
-            :disabled="!canChangeStatus"
-            @update:model-value="updateEmploymentStatus"
-          />
-
-          <v-alert
-            v-if="!canChangeStatus && statusUnavailableMessage"
-            class="mt-4"
-            type="info"
-            variant="tonal"
-            density="compact"
-          >
-            {{ statusUnavailableMessage }}
-          </v-alert>
-        </section>
       </div>
 
       <v-divider />
@@ -365,14 +312,7 @@
         </v-btn>
 
         <template v-else>
-          <v-btn
-            variant="text"
-            prepend-icon="mdi-lock-reset"
-            :disabled="!canManage"
-            @click="$emit('password-reset')"
-          >
-            비밀번호
-          </v-btn>
+          <!-- 상세 하단은 핵심 동작인 닫기 / 수정 / 삭제만 유지합니다. -->
           <v-btn
             variant="text"
             prepend-icon="mdi-pencil-outline"
@@ -390,14 +330,6 @@
           >
             삭제
           </v-btn>
-          <v-btn
-            variant="flat"
-            prepend-icon="mdi-content-save-outline"
-            :disabled="!canChangeStatus"
-            @click="$emit('save')"
-          >
-            상태 저장
-          </v-btn>
         </template>
       </v-card-actions>
     </v-card>
@@ -406,88 +338,17 @@
 
 <script setup>
 /**
- * 직원 상세보기 다이얼로그(EmployeeDetailDialog)
- *
- * 이 컴포넌트는 직원 상세정보 표시와
- * 재직 상태 변경 화면만 담당합니다.
- *
- * 직원 상세조회 API와 상태 저장 API는
- * 직원 관리 화면(EmployeePage)에서 담당합니다.
- *
- * 즉:
- *
- * EmployeePage
- * - Laravel API 호출
- * - 최신 직원 정보 조회
- * - 상태 저장
- *
- * EmployeeDetailDialog
- * - 직원 상세정보 표시
- * - 재직 상태 선택
- * - 닫기 / 저장 이벤트 전달
+ * 직원 상세보기 다이얼로그입니다.
+ * 상세 정보 표시와 관리 동작 진입만 담당하며 실제 API 요청은 EmployeePage가 처리합니다.
  */
-
-const props = defineProps({
-  /**
-   * 다이얼로그 열림/닫힘 상태입니다.
-   */
-  modelValue: {
-    type: Boolean,
-    default: false,
-  },
-
-  /**
-   * Laravel 서버에서 다시 조회한
-   * 최신 직원 정보입니다.
-   */
-  employee: {
-    type: Object,
-    default: null,
-  },
-
-  /**
-   * 현재 선택된 재직 상태(employment_status)입니다.
-   */
-  employmentStatusValue: {
-    type: String,
-    default: 'active',
-  },
-
-  /**
-   * 현재 사용자가 해당 직원의
-   * 재직 상태를 변경할 수 있는지 나타냅니다.
-   *
-   * 화면 표시용 권한이며
-   * 실제 보안 검사는 Laravel에서 다시 수행합니다.
-   */
-  canChangeStatus: {
-    type: Boolean,
-    default: false,
-  },
-
-  /**
-   * 수정/삭제/복구/비밀번호 초기화 버튼의 화면 표시용 관리 권한입니다.
-   * 실제 권한과 대상 범위는 각 Laravel API에서 다시 검사합니다.
-   */
-  canManage: {
-    type: Boolean,
-    default: false,
-  },
-
-  /**
-   * 재직 상태를 변경할 수 없는 경우
-   * 화면에 표시할 안내 메시지입니다.
-   */
-  statusUnavailableMessage: {
-    type: String,
-    default: '',
-  },
+defineProps({
+  modelValue: { type: Boolean, default: false },
+  employee: { type: Object, default: null },
+  canManage: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   'update:modelValue',
-  'update:employmentStatusValue',
-  'save',
   'edit',
   'delete',
   'restore',
@@ -495,51 +356,14 @@ const emit = defineEmits([
   'close',
 ]);
 
-/**
- * 직원의 재직 상태(employment_status) 목록입니다.
- */
-const employmentStatuses = [
-  {
-    title: '재직',
-    value: 'active',
-  },
-  {
-    title: '휴직',
-    value: 'leave',
-  },
-  {
-    title: '퇴사',
-    value: 'resigned',
-  },
-];
-
-/**
- * 다이얼로그 상태가 변경되었을 때
- * 부모 화면(EmployeePage)에 전달합니다.
- */
 function handleDialogChange(value) {
   emit('update:modelValue', value);
-
-  if (!value) {
-    emit('close');
-  }
+  if (!value) emit('close');
 }
 
-/**
- * 닫기 버튼을 눌렀을 때
- * 부모 화면(EmployeePage)에 닫기 요청을 전달합니다.
- */
 function close() {
   emit('update:modelValue', false);
   emit('close');
-}
-
-/**
- * 재직 상태 선택값을
- * 부모 화면(EmployeePage)에 전달합니다.
- */
-function updateEmploymentStatus(value) {
-  emit('update:employmentStatusValue', value);
 }
 
 /**
@@ -714,7 +538,7 @@ function formatDateTime(value) {
 
 /*
  * 기본 정보 / 소속 정보 / 재직 정보 /
- * 시스템 정보 / 재직 상태 관리 영역입니다.
+ * 시스템 정보 영역입니다.
  */
 .detail-section {
   padding: 20px;
@@ -764,7 +588,7 @@ function formatDateTime(value) {
 }
 
 /*
- * 닫기 / 상태 저장 버튼 영역입니다.
+ * 상세보기 고정 하단 버튼 영역입니다.
  *
  * 스크롤 영역과 분리되어 항상 하단에 표시됩니다.
  */

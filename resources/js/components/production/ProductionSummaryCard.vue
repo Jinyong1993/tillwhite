@@ -42,7 +42,7 @@
     <!-- 현황 조회 완료 -->
     <v-row
       v-else
-      dense
+      density="compact"
     >
       <!-- 생산 수량 -->
       <v-col cols="4">

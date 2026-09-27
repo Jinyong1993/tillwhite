@@ -1163,7 +1163,7 @@ class AdminController extends Controller
      *
      * 화면의 입력값을 그대로 신뢰하지 않고 직원 관리 권한, 점포 범위,
      * 역할/부서 조합, 보호 대상 계정을 서버에서 다시 검증합니다.
-     * 비밀번호와 재직 상태는 각각 별도 기능에서 관리하므로 이 요청에서는 받지 않습니다.
+     * 비밀번호는 별도 기능에서 관리하고, 재직 상태는 직원 정보와 함께 한 번에 수정합니다.
      */
     public function employeeUpdate(Request $request, User $user)
     {
@@ -1179,24 +1179,29 @@ class AdminController extends Controller
         }
 
         $validated = $request->validate([
-            'employee_code' => ['required', 'string', 'regex:/^\\d{1,20}$/', 'unique:users,employee_code,' . $user->id],
+            // 기존 레거시 사원번호를 유지하는 수정은 허용하되 새 값으로 바꿀 때는 현재 숫자 규칙을 적용합니다.
+            'employee_code' => array_values(array_filter([
+                'required',
+                'string',
+                $request->input('employee_code') === $user->employee_code ? null : 'regex:/^\\d{1,20}$/',
+                'unique:users,employee_code,' . $user->id,
+            ])),
             'name' => ['required', 'string', 'max:50'],
-            'phone' => ['required', 'string', 'regex:/^010\\d{8}$/'],
-            'birth_date' => ['required', 'date', 'before_or_equal:today'],
+            'phone' => ['nullable', 'string', 'regex:/^010\\d{8}$/'],
+            'birth_date' => ['nullable', 'date', 'before_or_equal:today'],
             'store_id' => ['nullable', 'exists:stores,id'],
             'department' => ['required', 'in:kitchen,hall,head_office'],
             'position_id' => ['required', 'exists:positions,id'],
             'role_id' => ['required', 'exists:roles,id'],
-            'hired_at' => ['required', 'date'],
+            'hired_at' => ['nullable', 'date'],
+            'employment_status' => ['required', 'string', 'in:active,leave,resigned'],
         ], [
             'employee_code.required' => '사원번호를 입력해주세요.',
             'employee_code.regex' => '사원번호는 숫자만 최대 20자리까지 입력할 수 있습니다.',
             'employee_code.unique' => '이미 사용 중인 사원번호입니다.',
             'name.required' => '이름을 입력해주세요.',
             'name.max' => '이름은 최대 50자까지 입력할 수 있습니다.',
-            'phone.required' => '휴대폰 번호를 입력해주세요.',
             'phone.regex' => '휴대폰 번호는 010으로 시작하는 숫자 11자리로 입력해주세요.',
-            'birth_date.required' => '생년월일을 입력해주세요.',
             'birth_date.date' => '생년월일 형식이 올바르지 않습니다.',
             'birth_date.before_or_equal' => '생년월일은 오늘 이후 날짜를 선택할 수 없습니다.',
             'store_id.exists' => '선택한 점포를 찾을 수 없습니다.',
@@ -1206,8 +1211,9 @@ class AdminController extends Controller
             'position_id.exists' => '선택한 직급을 찾을 수 없습니다.',
             'role_id.required' => '권한 역할을 선택해주세요.',
             'role_id.exists' => '선택한 권한 역할을 찾을 수 없습니다.',
-            'hired_at.required' => '입사일을 입력해주세요.',
             'hired_at.date' => '입사일 형식이 올바르지 않습니다.',
+            'employment_status.required' => '재직 상태를 선택해주세요.',
+            'employment_status.in' => '올바른 재직 상태를 선택해주세요.',
         ]);
 
         $selectedRole = Role::findOrFail($validated['role_id']);
@@ -1233,9 +1239,23 @@ class AdminController extends Controller
                 abort_if($lockedUser->store_id !== $actor->store_id, 403, '해당 직원 정보를 수정할 권한이 없습니다.');
             }
 
-            $fields = ['employee_code', 'name', 'phone', 'birth_date', 'store_id', 'department', 'position_id', 'role_id', 'hired_at'];
+            $fields = ['employee_code', 'name', 'phone', 'birth_date', 'store_id', 'department', 'position_id', 'role_id', 'hired_at', 'employment_status', 'is_active', 'resigned_at'];
             $before = collect($fields)->mapWithKeys(fn ($field) => [$field => $lockedUser->{$field} instanceof \DateTimeInterface ? $lockedUser->{$field}->format('Y-m-d') : $lockedUser->{$field}])->all();
-            $lockedUser->fill($validated);
+            // 일반 직원 정보와 재직 상태를 같은 트랜잭션에서 반영합니다.
+            // 재직 상태에 따라 로그인 가능 여부와 퇴사일도 서버가 일관되게 결정합니다.
+            $employmentStatus = $validated['employment_status'];
+            $lockedUser->fill(collect($validated)->except('employment_status')->all());
+            $lockedUser->employment_status = $employmentStatus;
+            $lockedUser->is_active = $employmentStatus === 'active';
+
+            if ($employmentStatus === 'resigned') {
+                if ($lockedUser->resigned_at === null) {
+                    $lockedUser->resigned_at = now()->toDateString();
+                }
+            } else {
+                $lockedUser->resigned_at = null;
+            }
+
             if (! $lockedUser->isDirty($fields)) {
                 return false;
             }
@@ -1349,257 +1369,6 @@ class AdminController extends Controller
         return response()->json(['message' => '직원을 복구했습니다.']);
     }
 
-    /**
-     * 직원의 재직 상태를 변경합니다.
-     *
-     * 직원 관리 권한(employee.manage)이 있는 사용자만 변경할 수 있으며
-     * 서버에서 대상 점포 범위와 최고 관리자 보호를 다시 확인합니다.
-     *
-     * active(재직)만 계정을 활성화하고, leave(휴직)와 resigned(퇴사)는
-     * 계정을 비활성화하여 로그인 정책(User::canLogin)과 동일하게 유지합니다.
-     * 퇴사 상태로 처음 변경할 때만 퇴사일을 기록하며, 상태 변경과 감사로그는
-     * 하나의 데이터베이스 트랜잭션으로 처리합니다.
-     */
-    public function employeeStatus(Request $request, User $user)
-    {
-        // 실제 직원 상태 변경을 요청한 로그인 사용자를 가져옵니다.
-        $actor = $request->user();
-
-        /**
-         * 직원 관리 권한(employee.manage)을 확인합니다.
-         *
-         * 직원 조회 권한(employee.view)만 있는 사용자가
-         * API를 직접 호출하더라도 상태 변경을 차단합니다.
-         */
-        $this->access->requirePermission(
-            $actor,
-            'employee.manage'
-        );
-
-        /**
-         * 점포 사용자의 직원 관리 범위를 확인합니다.
-         *
-         * 점포 사용자는 자신의 소속 점포에 속한 직원만
-         * 재직 상태를 변경할 수 있습니다.
-         *
-         * 본사 사용자와 최고 관리자(super_admin)는
-         * 이 점포 범위 제한을 적용하지 않습니다.
-         */
-        if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
-            abort_if(
-                $user->store_id !== $actor->store_id,
-                403,
-                '해당 직원의 재직 상태를 변경할 권한이 없습니다.'
-            );
-        }
-
-        /**
-         * 최고 관리자(super_admin)의 재직 상태는
-         * 일반 직원 관리 기능에서 변경하지 않습니다.
-         *
-         * 화면을 조작하거나 API를 직접 호출하더라도
-         * 서버에서 다시 차단합니다.
-         */
-        $user->loadMissing('role');
-
-        abort_if(
-            $user->role?->code === 'super_admin',
-            403,
-            '최고 관리자의 재직 상태는 직원 관리에서 변경할 수 없습니다.'
-        );
-
-        /**
-         * 변경할 재직 상태를 검사합니다.
-         */
-        $validated = $request->validate(
-            [
-                'employment_status' => [
-                    'required',
-                    'string',
-                    'in:active,leave,resigned',
-                ],
-            ],
-            [
-                'employment_status.required' =>
-                    '변경할 재직 상태를 선택해주세요.',
-
-                'employment_status.string' =>
-                    '재직 상태 형식이 올바르지 않습니다.',
-
-                'employment_status.in' =>
-                    '올바른 재직 상태를 선택해주세요.',
-            ],
-        );
-
-        /**
-         * 직원 상태 변경과 감사 로그 기록을
-         * 하나의 트랜잭션으로 처리합니다.
-         *
-         * 같은 요청이 중복으로 전달되더라도
-         * 이미 원하는 상태라면 다시 저장하거나
-         * 감사 로그를 중복 기록하지 않습니다.
-         *
-         * Route Model Binding으로 전달된 기존 객체를 그대로 사용하지 않고
-         * 트랜잭션 안에서 해당 직원의 최신 데이터베이스 상태를 다시 조회합니다.
-         *
-         * lockForUpdate()도 함께 사용하지만 현재 SQLite 환경에서는
-         * MySQL이나 PostgreSQL과 같은 행 단위 잠금을 보장하지 않으므로
-         * 실제 동시성 제어 수준은 사용하는 데이터베이스에 따라 달라질 수 있습니다.
-         */
-        $changed = DB::transaction(function () use (
-            $user,
-            $actor,
-            $validated
-        ) {
-            /**
-             * Route Model Binding으로 전달된 기존 객체를 그대로 사용하지 않고
-             * 트랜잭션 안에서 해당 직원의 최신 데이터베이스 상태를 다시 조회합니다.
-             *
-             * lockForUpdate()를 함께 사용하여 이를 지원하는 데이터베이스에서는
-             * 해당 직원 행에 대한 잠금을 요청합니다.
-             *
-             * 현재 사용하는 SQLite에서는 행 단위 잠금을 보장하지 않으므로
-             * 이 코드만으로 동시 상태 변경을 완전히 직렬화한다고 가정하지 않습니다.
-             */
-            $lockedUser = User::query()
-                ->with('role')
-                ->whereKey($user->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            /**
-             * 트랜잭션 안에서 다시 조회한 최신 직원 정보를 기준으로
-             * 점포 사용자의 직원 관리 범위를 다시 확인합니다.
-             *
-             * 상태 변경 요청을 처음 받은 이후 실제 변경을 수행하기 전까지
-             * 대상 직원의 소속 점포(store_id)가 변경될 가능성을 고려하여
-             * 최초 Route Model Binding 객체만 신뢰하지 않습니다.
-             *
-             * 점포 사용자는 자신의 소속 점포에 속한 직원만 변경할 수 있으며
-             * 본사 사용자와 최고 관리자(super_admin)는
-             * 이 점포 범위 제한을 적용하지 않습니다.
-             */
-            if (! $actor->isHeadOffice() && $actor->role?->code !== 'super_admin') {
-                abort_if(
-                    $lockedUser->store_id !== $actor->store_id,
-                    403,
-                    '해당 직원의 재직 상태를 변경할 권한이 없습니다.'
-                );
-            }
-
-            /**
-             * 최고 관리자(super_admin)의 재직 상태는
-             * 일반 직원 관리 기능에서 변경하지 않습니다.
-             *
-             * 대상 직원의 역할(role)이 요청 처리 도중 변경된 경우에도
-             * 최신 데이터베이스 상태를 기준으로 다시 확인하여 차단합니다.
-             */
-            abort_if(
-                $lockedUser->role?->code === 'super_admin',
-                403,
-                '최고 관리자의 재직 상태는 직원 관리에서 변경할 수 없습니다.'
-            );
-
-            $employmentStatus = $validated['employment_status'];
-
-            /**
-             * 감사 로그에는 직원 상태 변경과 관련된 정보만 기록합니다.
-             *
-             * users 테이블의 전체 원시 속성(getAttributes)을 그대로 기록하면
-             * 비밀번호(password)와 같은 민감 정보까지 감사 로그에 저장될 수 있으므로
-             * 재직 상태 변경에 필요한 필드만 명시적으로 기록합니다.
-             */
-            $before = [
-                'employment_status' => $lockedUser->employment_status,
-                'is_active' => $lockedUser->is_active,
-                'resigned_at' => $lockedUser->resigned_at?->format('Y-m-d'),
-            ];
-
-            /**
-             * 선택한 재직 상태에 맞춰
-             * 계정 활성 상태와 퇴사일을 함께 정리합니다.
-             *
-             * 이미 퇴사 상태이고 퇴사일이 존재한다면
-             * 기존 퇴사일을 그대로 유지합니다.
-             */
-            if ($employmentStatus === 'resigned') {
-                $lockedUser->employment_status = 'resigned';
-                $lockedUser->is_active = false;
-
-                if ($lockedUser->resigned_at === null) {
-                    $lockedUser->resigned_at = now()->toDateString();
-                }
-            } else {
-                $lockedUser->employment_status = $employmentStatus;
-
-                /*
-                 * 재직(active)만 로그인 가능한 활성 계정으로 둡니다.
-                 * 휴직(leave)은 재직 상태와 별개로 계정을 비활성화하여
-                 * User::canLogin()의 정책과 데이터 자체도 일치시킵니다.
-                 */
-                $lockedUser->is_active = $employmentStatus === 'active';
-                $lockedUser->resigned_at = null;
-            }
-
-            /**
-             * 상태를 적용한 결과 실제 데이터 변경이 없다면
-             * 저장과 감사 로그 기록을 생략합니다.
-             *
-             * 네트워크 오류 등으로 동일한 요청이 다시 전달되어도
-             * 같은 변경 기록이 반복해서 생성되지 않습니다.
-             */
-            if (! $lockedUser->isDirty([
-                'employment_status',
-                'is_active',
-                'resigned_at',
-            ])) {
-                return false;
-            }
-
-            $lockedUser->save();
-
-            /**
-             * 직원 재직 상태 변경 내용을
-             * 감사 로그(audit log)에 기록합니다.
-             *
-             * 감사 로그 기록 중 오류가 발생하면
-             * 같은 트랜잭션 안의 직원 상태 변경도 함께 롤백됩니다.
-             */
-            $this->audit->log(
-                $actor,
-                'employee',
-                'status',
-                User::class,
-                $lockedUser->id,
-                $before,
-                [
-                    'employment_status' => $lockedUser->employment_status,
-                    'is_active' => $lockedUser->is_active,
-                    'resigned_at' => $lockedUser->resigned_at?->format('Y-m-d'),
-                ],
-                '직원 재직 상태 변경'
-            );
-
-            return true;
-        });
-
-        return response()->json([
-            'message' => $changed
-                ? '직원 재직 상태가 변경되었습니다.'
-                : '이미 동일한 재직 상태입니다.',
-        ]);
-    }
-
-    /**
-     * 직원 등록에서 소속 부서(department)와 권한 역할(role)의 조합을 확인합니다.
-     *
-     * 최고 관리자(super_admin)는 일반 직원 등록 기능으로 생성하지 않으므로
-     * 어떤 부서에서도 허용하지 않습니다.
-     *
-     * 임시저장에서는 부서가 아직 입력되지 않을 수 있으므로
-     * 부서가 NULL이면 부서별 역할 검사를 나중으로 미룹니다.
-     */
-    /** 감사 로그에 기록할 직원의 안전한 필드만 반환합니다. */
     private function employeeAuditSnapshot(User $user): array
     {
         return [

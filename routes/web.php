@@ -200,7 +200,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 실제 저장 시 직원 관리 권한(employee.manage)을
      * Laravel 서버에서 다시 확인합니다.
      */
-    Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
 
     // 직원 기본정보 및 소속정보 수정
     Route::put('/employees/{user}', [AdminController::class, 'employeeUpdate']);

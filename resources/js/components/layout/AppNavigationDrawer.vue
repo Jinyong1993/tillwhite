@@ -447,6 +447,9 @@ async function navigateTo(to) {
       '화면을 이동하지 못했습니다.',
     );
 
+  } finally {
+    // 같은 화면으로 권한 리다이렉트되어 컴포넌트가 재사용되는 경우에도
+    // 다음 메뉴 클릭이 영구적으로 막히지 않도록 이동 상태를 항상 정리합니다.
     isNavigating.value = false;
   }
 }

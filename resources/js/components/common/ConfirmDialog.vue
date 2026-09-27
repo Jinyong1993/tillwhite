@@ -228,3 +228,6 @@ function handleModelValue(value) {
   cancel();
 }
 </script>
+<style scoped>
+.v-card-text { white-space: pre-line; }
+</style>

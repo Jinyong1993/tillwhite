@@ -305,6 +305,13 @@ async function tryCompletePageLoading() {
 async function handleSessionReady() {
   sessionIsReady.value = true;
 
+  // 권한 리다이렉트 직후에는 이전 화면에서 보유하던 권한 상태를 기준으로
+  // summaryIsReady가 초기화되어 있을 수 있습니다. 최신 세션 기준으로 생산 조회 권한이
+  // 없다면 기다릴 API가 없으므로 즉시 준비 완료로 처리하여 무한 로딩을 방지합니다.
+  if (!can('production.view')) {
+    summaryIsReady.value = true;
+  }
+
   await tryCompletePageLoading();
 }
 

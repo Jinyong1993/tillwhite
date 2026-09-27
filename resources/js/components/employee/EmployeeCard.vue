@@ -448,4 +448,11 @@ function employmentStatusColor(value) {
     text-align: right;
   }
 }
+
+/* 모바일에서는 카드 내부 여백과 정보 간격을 줄여 많은 직원을 빠르게 훑을 수 있게 합니다. */
+@media (max-width: 480px) {
+  .employee-card-header { padding: 14px 14px 10px; }
+  .employee-info-area { padding: 12px 14px; }
+  .employee-info-grid { gap: 10px; }
+}
 </style>
