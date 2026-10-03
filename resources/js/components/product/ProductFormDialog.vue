@@ -268,7 +268,7 @@
           variant="text"
           @click="discardDialog = false"
         >
-          계속 작성
+          아니오
         </v-btn>
 
         <v-spacer />
@@ -277,7 +277,7 @@
           variant="flat"
           @click="discardChanges"
         >
-          나가기
+          예
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -291,6 +291,8 @@ import {
   ref,
   watch,
 } from 'vue';
+
+import { sortByDisplayName } from '../../utils/naturalSort';
 
 const props = defineProps({
   modelValue: {
@@ -367,10 +369,13 @@ const lockedStoreName = computed(() => props.user?.store?.name ?? '-');
 
 /** 현재 선택한 점포에서 사용 가능한 카테고리만 표시합니다. */
 const availableCategories = computed(() => {
-  return props.categories.filter((category) => {
+  const categories = props.categories.filter((category) => {
     return Number(category.store_id) === Number(form.store_id)
       && category.is_active !== false;
   });
+
+  // 선택 드롭다운은 관리용 sort_order와 분리하여 이름으로 찾기 쉽게 정렬합니다.
+  return sortByDisplayName(categories);
 });
 
 /** 최초 상태와 현재 입력값을 비교하여 실제 변경 여부를 판단합니다. */
@@ -691,7 +696,6 @@ function createPayload() {
 .min-width-0 {
   min-width: 0;
 }
-
 
 .product-form-description,
 .required-guide-alert :deep(.v-alert__content) {

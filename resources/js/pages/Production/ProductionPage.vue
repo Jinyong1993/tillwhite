@@ -219,6 +219,15 @@
           </v-card>
         </v-window-item>
       </v-window>
+
+      <ConfirmDialog
+        v-model="deleteConfirmOpen"
+        title="생산 기록을 삭제하시겠습니까?"
+        message="선택한 생산·폐기 기록을 삭제합니다."
+        :loading="deleteLoading"
+        @confirm="confirmRemove"
+        @cancel="clearRemoveConfirm"
+      />
     </template>
   </AppShell>
 </template>
@@ -231,6 +240,7 @@ import {
 } from 'vue';
 
 import AppShell from '../../components/layout/AppShell.vue';
+import ConfirmDialog from '../../components/common/ConfirmDialog.vue';
 
 import { useAppLoading } from '../../composables/useAppLoading';
 
@@ -265,6 +275,12 @@ const workers = ref([]);
 
 // 생산 기록 저장 처리 중 여부
 const saving = ref(false);
+
+// 삭제 확인창에서 대상과 오류 표시 함수를 잠시 보관합니다.
+const deleteConfirmOpen = ref(false);
+const deleteLoading = ref(false);
+const pendingDeleteRecord = ref(null);
+const pendingDeleteSetError = ref(null);
 
 // 조회 탭에서 사용하는 작업일 필터
 const filterDate = ref('');
@@ -436,24 +452,48 @@ async function save(setError) {
  * 삭제 작업 역시 페이지 최초 조회가 아니므로
  * 공통 전체 화면 로딩은 사용하지 않습니다.
  */
-async function remove(record, setError) {
-  // 사용자가 취소하면 삭제하지 않음
-  if (!confirm('이 기록을 삭제할까요?')) {
-    return;
-  }
+/** 삭제 대상을 보관하고 공통 예/아니오 확인창을 엽니다. */
+function remove(record, setError) {
+  if (deleteLoading.value) return;
+
+  pendingDeleteRecord.value = record;
+  pendingDeleteSetError.value = setError;
+  deleteConfirmOpen.value = true;
+}
+
+/** 삭제 요청 중이 아닐 때만 확인 상태를 안전하게 초기화합니다. */
+function clearRemoveConfirm() {
+  if (deleteLoading.value) return;
+
+  deleteConfirmOpen.value = false;
+  pendingDeleteRecord.value = null;
+  pendingDeleteSetError.value = null;
+}
+
+/** 사용자가 예를 선택한 경우에만 실제 삭제 API를 호출합니다. */
+async function confirmRemove() {
+  const record = pendingDeleteRecord.value;
+  const setError = pendingDeleteSetError.value;
+
+  if (!record || deleteLoading.value) return;
+
+  deleteLoading.value = true;
 
   try {
-    await window.axios.delete(
-      `/tillwhite/api/production/${record.id}`,
-    );
-
-    // 삭제된 기록을 반영하기 위해 목록 다시 조회
+    await window.axios.delete(`/tillwhite/api/production/${record.id}`);
     await load();
+    clearRemoveConfirmAfterRequest();
   } catch (e) {
-    setError(
-      e.response?.data?.message ?? '삭제에 실패했습니다.',
-    );
+    setError?.(e.response?.data?.message ?? '삭제에 실패했습니다.');
+  } finally {
+    deleteLoading.value = false;
   }
+}
+
+function clearRemoveConfirmAfterRequest() {
+  deleteConfirmOpen.value = false;
+  pendingDeleteRecord.value = null;
+  pendingDeleteSetError.value = null;
 }
 
 /**

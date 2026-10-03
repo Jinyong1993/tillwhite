@@ -1,4 +1,3 @@
-```vue
 <template>
   <v-dialog
     :model-value="modelValue"
@@ -119,6 +118,7 @@
 
         <div class="category-result-count text-caption text-medium-emphasis">
           검색 결과 {{ filteredCategories.length }}개
+          <span v-if="!canReorderCategories"> · 순서 변경은 검색/상태 필터 해제 후 가능합니다.</span>
         </div>
       </div>
 
@@ -155,6 +155,30 @@
             </div>
 
             <div class="category-row-actions">
+              <!--
+                관리 화면의 순서는 sort_order를 사용합니다.
+                첫/마지막 항목은 이동할 곳이 없으므로 해당 방향 버튼만 비활성화합니다.
+              -->
+              <v-btn
+                icon="mdi-chevron-up"
+                size="small"
+                variant="text"
+                :disabled="loading || !canMoveCategory(category, -1)"
+                aria-label="카테고리 위로 이동"
+                title="위로 이동"
+                @click="requestMoveCategory(category, -1)"
+              />
+
+              <v-btn
+                icon="mdi-chevron-down"
+                size="small"
+                variant="text"
+                :disabled="loading || !canMoveCategory(category, 1)"
+                aria-label="카테고리 아래로 이동"
+                title="아래로 이동"
+                @click="requestMoveCategory(category, 1)"
+              />
+
               <v-btn
                 size="small"
                 variant="text"
@@ -315,7 +339,7 @@
           variant="text"
           @click="discardDialog = false"
         >
-          계속 작성
+          아니오
         </v-btn>
 
         <v-spacer />
@@ -324,7 +348,7 @@
           variant="flat"
           @click="discardChanges"
         >
-          나가기
+          예
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -414,16 +438,21 @@ watch([storeId, searchQuery, statusFilter], () => {
  * 현재 선택한 점포의 카테고리만 가져온 뒤
  * 카테고리명 검색과 사용 상태 필터를 함께 적용합니다.
  */
+const orderedStoreCategories = computed(() => {
+  return props.categories
+    .filter((category) => Number(category.store_id) === Number(storeId.value))
+    .sort((left, right) => {
+      const orderDifference = Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0);
+      return orderDifference || Number(left.id ?? 0) - Number(right.id ?? 0);
+    });
+});
+
 const filteredCategories = computed(() => {
   const query = searchQuery.value
     .trim()
     .toLocaleLowerCase('ko-KR');
 
-  return props.categories.filter((category) => {
-    if (Number(category.store_id) !== Number(storeId.value)) {
-      return false;
-    }
-
+  return orderedStoreCategories.value.filter((category) => {
     const categoryName = String(category.name ?? '')
       .toLocaleLowerCase('ko-KR');
 
@@ -488,6 +517,10 @@ watch(totalPages, (value) => {
   if (currentPage.value > value) {
     currentPage.value = value;
   }
+});
+
+const canReorderCategories = computed(() => {
+  return !searchQuery.value.trim() && statusFilter.value === 'all';
 });
 
 const canCreateCategory = computed(() => {
@@ -629,6 +662,27 @@ function discardChanges() {
  * 등록 요청 직후에는 입력값을 유지합니다.
  * API 성공이 categories에 반영된 것이 확인된 경우에만 입력값을 비웁니다.
  */
+function canMoveCategory(category, direction) {
+  if (!canReorderCategories.value) return false;
+
+  const index = orderedStoreCategories.value.findIndex((item) => {
+    return Number(item.id) === Number(category.id);
+  });
+
+  if (index < 0) return false;
+  return direction < 0
+    ? index > 0
+    : index < orderedStoreCategories.value.length - 1;
+}
+
+function requestMoveCategory(category, direction) {
+  if (props.loading || !canMoveCategory(category, direction)) {
+    return;
+  }
+
+  emit('reorder', { category, direction });
+}
+
 function add() {
   const name = newName.value.trim();
 
@@ -886,16 +940,21 @@ function submitRename() {
   }
 
   /*
-   * 수정/중단 버튼이 카테고리명을 과도하게 압축하지 않도록
-   * 좁은 화면에서는 액션 버튼을 세로로 배치합니다.
+   * 순서/수정/상태 버튼이 카테고리명을 압축하지 않도록
+   * 좁은 화면에서는 본문 아래에서 필요한 만큼 줄바꿈합니다.
    */
-  .category-row-actions {
+  .category-row {
     flex-direction: column;
-    align-items: stretch;
+  }
+
+  .category-row-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .category-row-actions .v-btn {
-    justify-content: flex-start;
+    flex: 0 0 auto;
   }
 }
 
@@ -933,4 +992,3 @@ function submitRename() {
   }
 }
 </style>
-```

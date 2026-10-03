@@ -522,6 +522,13 @@ class ProductController extends Controller
         $this->access->requirePermission($user, 'recipe.manage');
         $this->assertProductManageableByUser($user, $product);
 
+        // 삭제된 제품은 과거 레시피를 보존하되 복구 전에는 새 변경을 허용하지 않습니다.
+        if ($product->trashed()) {
+            throw ValidationException::withMessages([
+                'product' => '삭제된 제품입니다. 복구 후 레시피를 관리해주세요.',
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => [
                 'required',
@@ -597,6 +604,13 @@ class ProductController extends Controller
 
         $this->access->requirePermission($user, 'recipe.manage');
         $this->assertProductManageableByUser($user, $product);
+
+        // 삭제 상태에서는 상세 조회만 허용하고 레시피 변경은 복구 후 진행합니다.
+        if ($product->trashed()) {
+            throw ValidationException::withMessages([
+                'product' => '삭제된 제품입니다. 복구 후 레시피를 관리해주세요.',
+            ]);
+        }
 
         abort_unless(
             $recipe->product_id === $product->id
@@ -701,9 +715,14 @@ class ProductController extends Controller
             (int) $validated['store_id']
         );
 
+        $lastSortOrder = ProductCategory::query()
+            ->where('store_id', $validated['store_id'])
+            ->max('sort_order');
+
         $category = ProductCategory::create([
             ...$validated,
-            'sort_order' => 0,
+            // 10 단위 간격을 두면 중간 삽입이나 재정렬 시 순서를 관리하기 쉽습니다.
+            'sort_order' => ((int) $lastSortOrder) + 10,
             'is_active' => true,
         ]);
 
@@ -805,6 +824,71 @@ class ProductController extends Controller
             'message' => $category->is_active
                 ? '카테고리를 다시 사용합니다.'
                 : '카테고리 사용을 중단했습니다.',
+        ]);
+    }
+
+    /**
+     * 카테고리를 한 칸 위/아래로 이동합니다.
+     *
+     * 관리 화면의 수동 순서는 sort_order를 사용하고, 사용자 선택 드롭다운의
+     * 가나다/ABC 자연 정렬과는 분리하여 두 목적이 서로 충돌하지 않도록 합니다.
+     */
+    public function categoryReorder(Request $request, ProductCategory $category)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+        $this->access->assertStoreDepartment($user, (int) $category->store_id);
+
+        $validated = $request->validate([
+            'direction' => ['required', 'integer', Rule::in([-1, 1])],
+        ]);
+
+        $categories = ProductCategory::query()
+            ->where('store_id', $category->store_id)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get();
+
+        $currentIndex = $categories->search(
+            fn (ProductCategory $item) => $item->id === $category->id
+        );
+        $targetIndex = $currentIndex + (int) $validated['direction'];
+
+        if ($currentIndex === false || ! $categories->has($targetIndex)) {
+            throw ValidationException::withMessages([
+                'direction' => '더 이상 해당 방향으로 이동할 수 없습니다.',
+            ]);
+        }
+
+        $oldData = $category->toArray();
+        $orderedIds = $categories->pluck('id')->all();
+        [$orderedIds[$currentIndex], $orderedIds[$targetIndex]] = [
+            $orderedIds[$targetIndex],
+            $orderedIds[$currentIndex],
+        ];
+
+        DB::transaction(function () use ($orderedIds) {
+            foreach ($orderedIds as $index => $categoryId) {
+                ProductCategory::whereKey($categoryId)->update([
+                    'sort_order' => ($index + 1) * 10,
+                ]);
+            }
+        });
+
+        $this->audit->log(
+            $user,
+            'product_category',
+            'update',
+            ProductCategory::class,
+            $category->id,
+            $oldData,
+            $category->fresh()->toArray(),
+            '제품 카테고리 순서 변경'
+        );
+
+        return response()->json([
+            'message' => '카테고리 순서를 변경했습니다.',
         ]);
     }
 

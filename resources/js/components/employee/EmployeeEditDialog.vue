@@ -157,9 +157,9 @@
       <v-card-text class="px-5 pb-5 text-body-2">수정한 내용이 저장되지 않습니다.</v-card-text>
       <v-divider />
       <v-card-actions class="pa-4 px-5">
-        <v-btn variant="text" @click="discardDialog = false">계속 수정</v-btn>
+        <v-btn variant="text" @click="discardDialog = false">아니오</v-btn>
         <v-spacer />
-        <v-btn variant="flat" @click="discardChanges">나가기</v-btn>
+        <v-btn variant="flat" @click="discardChanges">예</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>

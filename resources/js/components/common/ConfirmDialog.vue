@@ -53,10 +53,8 @@
 
       <!-- 확인창 버튼 -->
       <v-card-actions class="px-4 pb-4">
-        <v-spacer />
-
         <!--
-          취소 버튼
+          아니오 버튼
 
           처리 중에는 비활성화하지만
           로딩 아이콘은 표시하지 않습니다.
@@ -66,11 +64,13 @@
           :disabled="loading"
           @click="cancel"
         >
-          {{ cancelText }}
+          아니오
         </v-btn>
 
+        <v-spacer />
+
         <!--
-          확인 버튼
+          예 버튼
 
           실제 작업을 실행하는 버튼이므로
           처리 중에는 이 버튼에만 로딩을 표시합니다.
@@ -81,7 +81,7 @@
           :disabled="loading"
           @click="confirm"
         >
-          {{ confirmText }}
+          예
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -101,11 +101,9 @@
  * message:
  * - 사용자에게 확인할 내용
  *
- * confirmText:
- * - 확인 버튼 문구
- *
- * cancelText:
- * - 취소 버튼 문구
+ * confirmText / cancelText:
+ * - 기존 호출부와의 호환성을 위해 속성은 유지합니다.
+ * - 실제 버튼 문구는 시스템 전체에서 헷갈리지 않도록 `예 / 아니오`로 통일합니다.
  *
  * loading:
  * - 확인 후 실제 작업이 진행 중인지 여부
@@ -130,12 +128,12 @@ const props = defineProps({
 
   confirmText: {
     type: String,
-    default: '확인',
+    default: '예',
   },
 
   cancelText: {
     type: String,
-    default: '취소',
+    default: '아니오',
   },
 
   loading: {

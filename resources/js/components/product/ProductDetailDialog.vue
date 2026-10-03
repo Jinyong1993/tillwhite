@@ -277,47 +277,37 @@
             </span>
           </div>
 
+          <!--
+            등록/수정/삭제 정보는 각각 한 줄만 표시합니다.
+            감사 로그의 작업자와 작업 시각을 함께 보여 중복된 시스템 일시를 만들지 않습니다.
+          -->
           <div class="detail-grid">
             <InfoItem
-              label="제품 등록 일시"
+              label="등록일시"
               :value="
-                formatDateTime(
+                historyText(
+                  product.management_history?.created,
                   product.created_at,
                 )
               "
             />
 
             <InfoItem
-              label="마지막 수정 일시"
+              label="수정일시"
               :value="
-                formatDateTime(
+                historyText(
+                  product.management_history?.updated,
                   product.updated_at,
                 )
               "
             />
 
             <InfoItem
-              label="등록"
-              :value="historyText(product.management_history?.created)"
-            />
-
-            <InfoItem
-              label="수정"
-              :value="historyText(product.management_history?.updated)"
-            />
-
-            <InfoItem
               v-if="product.deleted_at"
-              label="삭제"
-              :value="historyText(product.management_history?.deleted)"
-            />
-
-            <!-- 삭제된 제품만 삭제 일시 표시 -->
-            <InfoItem
-              v-if="product.deleted_at"
-              label="삭제 일시"
+              label="삭제일시"
               :value="
-                formatDateTime(
+                historyText(
+                  product.management_history?.deleted,
                   product.deleted_at,
                 )
               "
@@ -436,7 +426,6 @@
   </v-dialog>
 </template>
 
-
 <script setup>
 import {
   computed,
@@ -446,7 +435,6 @@ import {
 } from 'vue';
 
 import ProductRecipeCard from './ProductRecipeCard.vue';
-
 
 /*
  * Props
@@ -478,7 +466,6 @@ const props = defineProps({
   },
 });
 
-
 /*
  * Events
  */
@@ -494,13 +481,11 @@ const emit = defineEmits([
   'recipe-part',
 ]);
 
-
 /*
  * 상태 변경 다이얼로그
  */
 const statusDialog = ref(false);
 const nextActive = ref(true);
-
 
 /*
  * 직원 상세보기와 동일한 라벨 / 값 구조를
@@ -543,14 +528,12 @@ const InfoItem = defineComponent({
   },
 });
 
-
 /*
  * 현재 적용 중인 판매가
  */
 const currentPrice = computed(() => {
   return props.product?.prices?.[0]?.price ?? null;
 });
-
 
 /*
  * 레시피 등록 여부
@@ -560,7 +543,6 @@ const hasRecipe = computed(() => {
     props.product?.recipes?.length,
   );
 });
-
 
 /*
  * 제품 상태 표시 문구
@@ -575,7 +557,6 @@ const statusText = computed(() => {
     : '취급중단';
 });
 
-
 /*
  * 제품 상태 칩 색상
  */
@@ -589,7 +570,6 @@ const statusChipColor = computed(() => {
     : 'warning';
 });
 
-
 /*
  * 상태 칩을 통한 상태 변경 가능 여부
  */
@@ -601,7 +581,6 @@ const canChangeStatus = computed(() => {
     && !props.loading
   );
 });
-
 
 /*
  * 상태 변경 버튼 활성화 여부
@@ -623,7 +602,6 @@ const canSubmitStatus = computed(() => {
   );
 });
 
-
 /*
  * 상태 변경 다이얼로그 열기
  */
@@ -639,7 +617,6 @@ function openStatusDialog() {
   statusDialog.value = true;
 }
 
-
 /*
  * 상태 변경 다이얼로그 닫기
  */
@@ -650,7 +627,6 @@ function closeStatusDialog() {
 
   statusDialog.value = false;
 }
-
 
 /*
  * 제품 상태 변경
@@ -668,7 +644,6 @@ function submitStatus() {
   emit('toggle');
 }
 
-
 /*
  * 제품 상세보기 닫기
  */
@@ -680,7 +655,6 @@ function close() {
   emit('update:modelValue', false);
   emit('close');
 }
-
 
 /*
  * v-dialog에서 직접 닫힘 상태가 변경된 경우 처리
@@ -696,7 +670,6 @@ function handleDialogChange(value) {
     emit('close');
   }
 }
-
 
 /*
  * 원화 가격 표시
@@ -714,7 +687,6 @@ function formatPrice(value) {
 
   return `${Number(value).toLocaleString('ko-KR')}원`;
 }
-
 
 /*
  * 날짜 표시 형식 변환
@@ -738,15 +710,13 @@ function formatDate(value) {
   return `${dateOnly[1]}.${dateOnly[2]}.${dateOnly[3]}`;
 }
 
-
 /*
  * 등록 / 수정 / 삭제 일시 표시
  */
-function historyText(entry) {
-  if (!entry) return '-';
+function historyText(entry, fallbackAt = null) {
+  const actor = entry?.user?.name ?? '알 수 없음';
+  const at = formatDateTime(entry?.at ?? fallbackAt);
 
-  const actor = entry.user?.name ?? '알 수 없음';
-  const at = formatDateTime(entry.at);
   return at === '-' ? actor : `${actor} · ${at}`;
 }
 
@@ -774,7 +744,6 @@ function formatDateTime(value) {
   ).format(date);
 }
 
-
 /*
  * 부서 코드 표시명 변환
  */
@@ -788,7 +757,6 @@ function departmentName(value) {
 }
 </script>
 
-
 <style scoped>
 /* 제품 상세보기 다이얼로그 */
 .product-detail-dialog {
@@ -799,13 +767,11 @@ function departmentName(value) {
   overflow: hidden;
 }
 
-
 /* 상세보기 상단 영역 */
 .detail-header {
   flex: 0 0 auto;
   padding: 20px;
 }
-
 
 /* 제품명과 관리 기능을 양쪽에 배치 */
 .detail-header-content {
@@ -816,13 +782,11 @@ function departmentName(value) {
   gap: 16px;
 }
 
-
 /* 긴 제품명은 다른 요소를 밀어내지 않고 개행 */
 .detail-product-name {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-
 
 /* 헤더 상태 / 관리 버튼 */
 .detail-product-category {
@@ -843,19 +807,16 @@ function departmentName(value) {
   margin-left: auto;
 }
 
-
 /* 상세 내용 스크롤 영역 */
 .detail-scroll-area {
   min-height: 0;
   overflow-y: auto;
 }
 
-
 /* 각 상세 정보 영역 */
 .detail-section {
   padding: 20px;
 }
-
 
 /* 상세 정보 제목 */
 .detail-section-title {
@@ -869,12 +830,10 @@ function departmentName(value) {
   font-weight: 700;
 }
 
-
 /* 레시피 제목 / 수정 버튼 */
 .recipe-section-title {
   justify-content: space-between;
 }
-
 
 /* 상세 정보 라벨 / 값 */
 .detail-grid {
@@ -887,7 +846,6 @@ function departmentName(value) {
   gap: 14px 20px;
 }
 
-
 /* 상세 정보 라벨 */
 :deep(.detail-label) {
   color: rgba(
@@ -897,7 +855,6 @@ function departmentName(value) {
 
   font-size: 0.875rem;
 }
-
 
 /* 상세 정보 값 */
 :deep(.detail-value) {
@@ -911,19 +868,16 @@ function departmentName(value) {
   word-break: break-word;
 }
 
-
 /* 하단 기능 버튼 */
 .detail-actions {
   flex: 0 0 auto;
   padding: 16px 20px;
 }
 
-
 /* Flex/Grid 내부의 긴 텍스트 overflow 방지 */
 .min-width-0 {
   min-width: 0;
 }
-
 
 /*
  * 작은 화면 대응
@@ -933,7 +887,7 @@ function departmentName(value) {
  */
 @media (max-width: 480px) {
   .product-detail-dialog {
-    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
   }
 
   .detail-header,
@@ -966,7 +920,6 @@ function departmentName(value) {
     padding: 12px 16px;
   }
 }
-
 
 /*
  * 초소형 화면에서는 헤더 상태 영역도 아래로 내려

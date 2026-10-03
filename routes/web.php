@@ -26,7 +26,6 @@ Route::get('/tillwhite/auth/me', [AuthController::class, 'me']);
 // 로그아웃
 Route::post('/tillwhite/logout', [AuthController::class, 'logout']);
 
-
 /**
  * Till White 업무 API
  *
@@ -89,11 +88,11 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::post('/product-categories', [ProductController::class, 'categoryStore']);
     Route::put('/product-categories/{category}', [ProductController::class, 'categoryUpdate']);
     Route::put('/product-categories/{category}/toggle', [ProductController::class, 'categoryToggle']);
+    Route::put('/product-categories/{category}/reorder', [ProductController::class, 'categoryReorder']);
 
     // 제품 레시피 등록 / 수정
-    Route::post('/products/{product}/recipes', [ProductController::class, 'recipe']);
-    Route::put('/products/{product}/recipes/{recipe}', [ProductController::class, 'updateRecipe']);
-
+    Route::post('/products/{product}/recipes', [ProductController::class, 'recipe'])->withTrashed();
+    Route::put('/products/{product}/recipes/{recipe}', [ProductController::class, 'updateRecipe'])->withTrashed();
 
     /**
      * 생산·폐기 관리
@@ -119,7 +118,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 생산·폐기·로스 기록 삭제
     Route::delete('/production/{productionRecord}', [ProductionRecordController::class, 'destroy']);
 
-
     /**
      * 근무 관리
      *
@@ -132,7 +130,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // Route::post('/work/day-off', [WorkController::class, 'dayOff']);
     // Route::put('/work/requests/{type}/{id}', [WorkController::class, 'review']);
 
-
     /**
      * 매출 관리
      *
@@ -141,7 +138,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
 
     // Route::get('/sales', [SalesController::class, 'index']);
     // Route::post('/sales', [SalesController::class, 'store']);
-
 
     /**
      * 직원 관리
@@ -233,7 +229,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::delete('/employees/{user}', [AdminController::class, 'employeeDelete'])->withTrashed();
     Route::put('/employees/{user}/restore', [AdminController::class, 'employeeRestore'])->withTrashed();
 
-
     /**
      * 점포 관리
      *
@@ -242,7 +237,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
 
     // Route::get('/stores', [AdminController::class, 'stores']);
     // Route::post('/stores', [AdminController::class, 'storeStore']);
-
 
     /**
      * 시스템 관리
@@ -254,7 +248,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // Route::post('/system/settings', [AdminController::class, 'setting']);
     // Route::put('/system/roles/{role}/permissions', [AdminController::class, 'rolePermissions']);
 
-
     /**
      * 감사 로그
      *
@@ -263,7 +256,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
 
     // Route::get('/audits', [AdminController::class, 'audits']);
 });
-
 
 /**
  * 존재하지 않는 Till White API 차단
@@ -278,7 +270,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
  * 정상 업무 API보다 아래에 위치해야 합니다.
  */
 Route::any('/tillwhite/api/{path?}', fn () => abort(404))->where('path', '.*');
-
 
 /**
  * Vue Router용 SPA Catch-all Route

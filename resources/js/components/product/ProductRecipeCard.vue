@@ -8,13 +8,10 @@
     v-if="recipe"
     class="recipe-card"
   >
-    <!-- =========================================================
-      레시피 기본 정보
-
-      - 수정 권한이 있으면 전체 영역을 버튼으로 표시한다.
-      - 터치하면 레시피명/설명만 수정하는 부분 수정 화면을 연다.
-      - 수정 권한이 없으면 동일한 디자인을 유지하되 조회만 가능하다.
-    ========================================================== -->
+    <!--
+      레시피 기본 정보는 권한이 있으면 버튼으로 표시해 부분 수정으로 연결하고,
+      권한이 없으면 같은 디자인의 조회 전용 영역으로 표시합니다.
+    -->
     <button
       v-if="canManage"
       type="button"
@@ -65,20 +62,10 @@
       </span>
     </div>
 
-    <div class="recipe-history">
-      <span>등록 {{ historyText(recipe.management_history?.created) }}</span>
-      <span>수정 {{ historyText(recipe.management_history?.updated) }}</span>
-      <span v-if="recipe.management_history?.deleted">삭제 {{ historyText(recipe.management_history.deleted) }}</span>
-    </div>
-
-    <!-- =========================================================
-      재료 목록
-
-      - sort_order 기준으로 정렬된 재료를 표시한다.
-      - 화면에 표시하는 번호는 배열 순서를 기준으로 01, 02... 형태로 만든다.
-      - 수정 권한이 있으면 재료 하나를 터치하여 해당 재료만 수정할 수 있다.
-      - 수정 권한이 없으면 동일한 레이아웃의 조회 전용 div로 표시한다.
-    ========================================================== -->
+    <!--
+      재료는 sort_order 순서로 표시하며 화면 번호는 01, 02... 형태로 다시 만듭니다.
+      관리 권한이 있으면 각 재료를 눌러 해당 항목만 빠르게 수정할 수 있습니다.
+    -->
     <div class="recipe-block">
       <div class="recipe-label">
         <v-icon
@@ -164,13 +151,10 @@
       </div>
     </div>
 
-    <!-- =========================================================
-      공정 목록
-
-      - 재료와 동일하게 sort_order 기준으로 정렬한다.
-      - 공정 번호는 01, 02, 03... 형태로 자동 표시한다.
-      - 수정 권한이 있으면 원하는 공정 단계만 바로 수정할 수 있다.
-    ========================================================== -->
+    <!--
+      공정도 sort_order 순서로 표시하며 관리 권한이 있으면
+      원하는 단계만 눌러 빠르게 수정할 수 있습니다.
+    -->
     <div class="recipe-block">
       <div class="recipe-label">
         <v-icon
@@ -233,14 +217,21 @@
         등록된 공정이 없습니다.
       </div>
     </div>
+
+    <!-- 등록/수정/삭제 이력은 본문을 다 읽은 뒤 확인할 수 있도록 카드 맨 아래에 표시합니다. -->
+    <div class="recipe-history">
+      <div>등록 {{ historyText(recipe.management_history?.created, recipe.created_at) }}</div>
+      <div>수정 {{ historyText(recipe.management_history?.updated, recipe.updated_at) }}</div>
+      <div v-if="recipe.management_history?.deleted">
+        삭제 {{ historyText(recipe.management_history.deleted, recipe.deleted_at) }}
+      </div>
+    </div>
   </div>
 
-  <!-- =========================================================
-    레시피 미등록 상태
-
-    제품에 아직 레시피가 없는 경우 표시한다.
-    관리 권한이 있는 사용자에게만 등록 버튼을 제공한다.
-  ========================================================== -->
+  <!--
+    레시피가 없으면 빈 상태를 표시하고,
+    관리 권한이 있는 사용자에게만 등록 버튼을 제공합니다.
+  -->
   <div
     v-else
     class="empty-recipe"
@@ -351,9 +342,25 @@ const sortedSteps = computed(() => {
  * 수량이 입력되지 않은 경우에는 빈 화면으로 두지 않고
  * 사용자가 상태를 이해할 수 있도록 "수량 미입력"을 표시한다.
  */
-function historyText(entry) {
-  if (!entry) return '-';
-  return entry.user?.name ?? '알 수 없음';
+function historyText(entry, fallbackAt = null) {
+  const actor = entry?.user?.name ?? '알 수 없음';
+  const value = entry?.at ?? fallbackAt;
+
+  if (!value) return actor;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return actor;
+
+  const at = new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+
+  return `${actor} · ${at}`;
 }
 
 function ingredientAmount(item) {
@@ -400,9 +407,7 @@ function formatOrder(index) {
 </script>
 
 <style scoped>
-/* =========================================================
-   레시피 카드 전체 영역
-   ========================================================= */
+/* 레시피 카드 전체 영역 */
 
 .recipe-card {
   padding: 16px;
@@ -414,10 +419,7 @@ function formatOrder(index) {
   overflow-wrap: anywhere;
 }
 
-
-/* =========================================================
-   레시피 기본 정보
-   ========================================================= */
+/* 레시피 기본 정보 */
 
 .recipe-heading {
   display: flex;
@@ -461,10 +463,7 @@ function formatOrder(index) {
   white-space: pre-wrap;
 }
 
-
-/* =========================================================
-   재료 / 공정 공통 영역
-   ========================================================= */
+/* 재료 / 공정 공통 영역 */
 
 .recipe-block {
   margin-top: 20px;
@@ -493,10 +492,7 @@ function formatOrder(index) {
   gap: 7px;
 }
 
-
-/* =========================================================
-   재료 항목
-   ========================================================= */
+/* 재료 항목 */
 
 .recipe-item {
   display: flex;
@@ -575,10 +571,7 @@ function formatOrder(index) {
   font-size: 0.8rem;
 }
 
-
-/* =========================================================
-   공정 항목
-   ========================================================= */
+/* 공정 항목 */
 
 .recipe-step {
   display: flex;
@@ -614,10 +607,7 @@ function formatOrder(index) {
   overflow-wrap: anywhere;
 }
 
-
-/* =========================================================
-   수정 가능한 항목의 터치 피드백
-   ========================================================= */
+/* 수정 가능한 항목의 터치 피드백 */
 
 .recipe-item-arrow {
   flex: 0 0 auto;
@@ -655,10 +645,7 @@ function formatOrder(index) {
   transform: scale(0.995);
 }
 
-
-/* =========================================================
-   빈 상태
-   ========================================================= */
+/* 빈 상태 */
 
 .empty-text {
   color: rgba(var(--v-theme-on-surface), 0.55);
@@ -670,25 +657,19 @@ function formatOrder(index) {
   text-align: center;
 }
 
-
-/* =========================================================
-   작은 모바일 화면 대응
-
-   390px 이하에서는 재료명과 수량을 한 줄에 억지로 배치하지 않고
-   세로로 전환하여 긴 텍스트와 터치 영역을 안정적으로 유지한다.
-   ========================================================= */
-
-
 .recipe-history {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding: 8px 0 2px;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   color: rgba(var(--v-theme-on-surface), 0.58);
   font-size: 0.72rem;
   line-height: 1.4;
 }
 
+/* 390px 이하에서는 재료명과 수량을 세로로 전환해 좁은 화면의 겹침을 방지합니다. */
 @media (max-width: 390px) {
   .recipe-card {
     padding: 14px;
