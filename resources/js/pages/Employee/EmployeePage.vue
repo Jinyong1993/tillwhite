@@ -33,7 +33,7 @@
       -->
       <v-btn
         block
-        class="mb-5"
+        class="employee-primary-action mb-5"
         prepend-icon="mdi-account-plus-outline"
         variant="flat"
         @click="openRegisterDialog(setError)"
@@ -415,7 +415,6 @@ function clearEmployeeConfirm() {
   employeeConfirm.payload = null;
 }
 
-
 /**
  * 직원 관리 화면에서 사용하는 서버 데이터입니다.
  */
@@ -450,13 +449,11 @@ const currentPage = ref(1);
  */
 const paginationRef = ref(null);
 
-
 /**
  * 페이지 버튼을 눌렀을 때
  * 페이지네이션의 현재 화면상 위치를 임시 저장합니다.
  */
 let paginationViewportTop = null;
-
 
 /**
  * 직원 목록 페이지를 변경할 때 실행합니다.
@@ -645,7 +642,6 @@ const initialRegisterForm = ref(createEmptyForm());
  * 등록 창을 닫을 때 취소 확인창을 표시합니다.
  */
 const hasLoadedDraft = ref(false);
-
 
 /**
  * 비어 있는 신규 직원 등록 양식(form)을 만듭니다.
@@ -1355,7 +1351,6 @@ async function openDetailDialog(employee, setError) {
 
     selectedEmployee.value = latestEmployee;
 
-
     /**
      * Laravel 서버의 직원 상세조회가 성공한 경우에만
      * 직원 상세보기 컴포넌트를 엽니다.
@@ -1815,6 +1810,26 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.employee-primary-action {
+  min-width: 0;
+  min-height: 44px;
+  height: auto;
+  padding-block: 8px;
+}
+
+.employee-primary-action :deep(.v-btn__content) {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 6px;
+  white-space: normal;
+}
+
+.employee-primary-action :deep(.v-chip) {
+  flex: 0 0 auto;
+}
+
 .employee-toolbar {
   overflow: hidden;
   background: rgba(var(--v-theme-on-surface), 0.025);

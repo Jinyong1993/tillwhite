@@ -118,7 +118,6 @@
 
         <div class="category-result-count text-caption text-medium-emphasis">
           검색 결과 {{ filteredCategories.length }}개
-          <span v-if="!canReorderCategories"> · 순서 변경은 검색/상태 필터 해제 후 가능합니다.</span>
         </div>
       </div>
 
@@ -156,28 +155,9 @@
 
             <div class="category-row-actions">
               <!--
-                관리 화면의 순서는 sort_order를 사용합니다.
-                첫/마지막 항목은 이동할 곳이 없으므로 해당 방향 버튼만 비활성화합니다.
+                수동 순서 변경 기능은 향후 필요할 수 있어 스크립트/API는 유지합니다.
+                현재 UI에서는 카테고리를 이름 기준 자연 정렬하므로 이동 버튼만 노출하지 않습니다.
               -->
-              <v-btn
-                icon="mdi-chevron-up"
-                size="small"
-                variant="text"
-                :disabled="loading || !canMoveCategory(category, -1)"
-                aria-label="카테고리 위로 이동"
-                title="위로 이동"
-                @click="requestMoveCategory(category, -1)"
-              />
-
-              <v-btn
-                icon="mdi-chevron-down"
-                size="small"
-                variant="text"
-                :disabled="loading || !canMoveCategory(category, 1)"
-                aria-label="카테고리 아래로 이동"
-                title="아래로 이동"
-                @click="requestMoveCategory(category, 1)"
-              />
 
               <v-btn
                 size="small"
@@ -358,6 +338,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 
+import { sortByDisplayName } from '../../utils/naturalSort';
+
 const props = defineProps({
   modelValue: {
     type: Boolean,
@@ -439,12 +421,12 @@ watch([storeId, searchQuery, statusFilter], () => {
  * 카테고리명 검색과 사용 상태 필터를 함께 적용합니다.
  */
 const orderedStoreCategories = computed(() => {
-  return props.categories
-    .filter((category) => Number(category.store_id) === Number(storeId.value))
-    .sort((left, right) => {
-      const orderDifference = Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0);
-      return orderDifference || Number(left.id ?? 0) - Number(right.id ?? 0);
-    });
+  const categories = props.categories.filter(
+    (category) => Number(category.store_id) === Number(storeId.value),
+  );
+
+  // 수동 정렬 기능은 보존하지만 현재 UI는 카테고리명을 기준으로 자연 정렬합니다.
+  return sortByDisplayName(categories);
 });
 
 const filteredCategories = computed(() => {

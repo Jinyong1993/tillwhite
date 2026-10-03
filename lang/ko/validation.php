@@ -1,0 +1,41 @@
+<?php
+
+return [
+    'required' => ':attribute 항목은 필수입니다.',
+    'required_if' => ':attribute 항목은 필수입니다.',
+    'string' => ':attribute 항목은 문자로 입력해주세요.',
+    'integer' => ':attribute 항목은 정수로 입력해주세요.',
+    'numeric' => ':attribute 항목은 숫자로 입력해주세요.',
+    'array' => ':attribute 항목의 형식이 올바르지 않습니다.',
+    'date' => ':attribute 날짜 형식이 올바르지 않습니다.',
+    'exists' => '선택한 :attribute 항목을 사용할 수 없습니다.',
+    'unique' => '이미 등록된 :attribute입니다.',
+    'in' => '선택한 :attribute 값이 올바르지 않습니다.',
+    'min' => [
+        'numeric' => ':attribute 값은 :min 이상이어야 합니다.',
+        'string' => ':attribute 항목은 최소 :min자 이상 입력해주세요.',
+    ],
+    'max' => [
+        'numeric' => ':attribute 값은 :max 이하여야 합니다.',
+        'string' => ':attribute 항목은 :max자 이하로 입력해주세요.',
+    ],
+    'after_or_equal' => ':attribute 날짜는 :date 이후여야 합니다.',
+    'confirmed' => ':attribute 확인 값이 일치하지 않습니다.',
+    'attributes' => [
+        'store_id' => '점포',
+        'product_category_id' => '카테고리',
+        'name' => '이름',
+        'price' => '판매가',
+        'production_department' => '생산 부서',
+        'management_department' => '관리 부서',
+        'sales_type' => '판매 유형',
+        'sales_start_date' => '판매 시작일',
+        'sales_end_date' => '판매 종료일',
+        'ingredients.*.name' => '재료명',
+        'ingredients.*.quantity' => '사용량',
+        'ingredients.*.unit' => '단위',
+        'steps.*.description' => '공정 내용',
+        'employee_code' => '사원번호',
+        'password' => '비밀번호',
+    ],
+];

@@ -75,7 +75,6 @@
   </v-card>
 </template>
 
-
 <script setup>
 /*
  * 부모 컴포넌트에서 관리하는 검색 / 필터 상태를 전달받는다.
@@ -91,7 +90,6 @@ defineProps({
   hasActiveFilters: Boolean,
 });
 
-
 /*
  * 검색 / 필터 값이 변경되면 부모 컴포넌트에 전달한다.
  */
@@ -103,7 +101,6 @@ defineEmits([
 ]);
 </script>
 
-
 <style scoped>
 /* 검색 / 필터 영역 */
 .employee-toolbar {
@@ -112,7 +109,6 @@ defineEmits([
   background: rgba(var(--v-theme-on-surface), 0.025);
   border: 1px solid rgba(var(--v-border-color), 0.14);
 }
-
 
 /* 검색창은 한 줄, 상태와 페이지당 항목은 2열로 표시 */
 .employee-toolbar-grid {
@@ -141,7 +137,6 @@ defineEmits([
   grid-area: page-size;
 }
 
-
 /* 입력 필드 테두리 */
 .employee-toolbar :deep(.v-field) {
   --v-field-border-opacity: 0.18;
@@ -150,7 +145,6 @@ defineEmits([
 .employee-toolbar :deep(.v-field--focused) {
   --v-field-border-opacity: 0.34;
 }
-
 
 /* 작은 화면에서는 모든 항목을 한 줄씩 표시 */
 @media (max-width: 340px) {

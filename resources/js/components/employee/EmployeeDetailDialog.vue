@@ -277,63 +277,56 @@
             </div>
 
             <div class="detail-label">
-              마지막 로그인
+              로그인일
             </div>
-
             <div class="detail-value">
               {{ formatDateTime(employee.last_login_at) }}
             </div>
 
             <div class="detail-label">
-              마지막 비밀번호 변경
+              비밀번호 변경일
             </div>
-
             <div class="detail-value">
               {{ formatDateTime(employee.password_changed_at) }}
             </div>
 
             <div class="detail-label">
-              등록자
+              계정생성일
             </div>
-
-            <div class="detail-value">
-              {{ historyText(employee.management_history?.created) }}
-            </div>
-
-            <div class="detail-label">
-              마지막 수정자
-            </div>
-
-            <div class="detail-value">
-              {{ historyText(employee.management_history?.updated) }}
-            </div>
-
-            <template v-if="employee.deleted_at">
-              <div class="detail-label">
-                삭제자
-              </div>
-
-              <div class="detail-value">
-                {{ historyText(employee.management_history?.deleted) }}
-              </div>
-            </template>
-
-            <div class="detail-label">
-              계정 생성
-            </div>
-
             <div class="detail-value">
               {{ formatDateTime(employee.created_at) }}
             </div>
 
-            <div class="detail-label">
-              마지막 정보 수정
-            </div>
+            <div class="detail-label">등록자</div>
+            <div class="detail-value">{{ historyActor(employee.management_history?.created) }}</div>
+            <div class="detail-label">등록일</div>
+            <div class="detail-value">{{ historyAt(employee.management_history?.created, employee.created_at) }}</div>
 
-            <div class="detail-value">
-              {{ formatDateTime(employee.updated_at) }}
-            </div>
+            <div class="detail-label">수정자</div>
+            <div class="detail-value">{{ historyActor(employee.management_history?.updated) }}</div>
+            <div class="detail-label">수정일</div>
+            <div class="detail-value">{{ historyAt(employee.management_history?.updated, employee.updated_at) }}</div>
+
+            <div class="detail-label">삭제자</div>
+            <div class="detail-value">{{ historyActor(employee.management_history?.deleted) }}</div>
+            <div class="detail-label">삭제일</div>
+            <div class="detail-value">{{ historyAt(employee.management_history?.deleted, employee.deleted_at) }}</div>
           </div>
+
+          <details
+            v-if="employee.audit_history?.length"
+            class="employee-audit-history"
+          >
+            <summary>변경 이력 보기</summary>
+            <div
+              v-for="entry in employee.audit_history"
+              :key="entry.id"
+              class="employee-audit-entry"
+            >
+              <span>{{ auditActionText(entry.action) }}</span>
+              <span>{{ entry.user?.name ?? '-' }} · {{ formatDateTime(entry.at) }}</span>
+            </div>
+          </details>
         </section>
 
       </div>
@@ -467,7 +460,6 @@ const emit = defineEmits([
   'status-change',
   'close',
 ]);
-
 
 const statusDialog = ref(false);
 const nextStatus = ref('active');
@@ -604,12 +596,16 @@ function formatDate(value) {
  * 날짜와 시간 값을
  * 현재 브라우저 시간대로 변환하여 표시합니다.
  */
-function historyText(entry) {
-  if (!entry) return '-';
+function auditActionText(action) {
+  return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
+}
 
-  const actor = entry.user?.name ?? '알 수 없음';
-  const at = formatDateTime(entry.at);
-  return at === '-' ? actor : `${actor} · ${at}`;
+function historyActor(entry) {
+  return entry?.user?.name ?? '-';
+}
+
+function historyAt(entry, fallbackAt = null) {
+  return formatDateTime(entry?.at ?? fallbackAt);
 }
 
 function formatDateTime(value) {
@@ -745,6 +741,25 @@ function formatDateTime(value) {
  * 모바일 화면에서는 상세정보를
  * 항목명 → 값 순서의 세로 구조로 표시합니다.
  */
+.employee-audit-history {
+  margin-top: 16px;
+  font-size: 0.8rem;
+}
+
+.employee-audit-history summary {
+  cursor: pointer;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-weight: 600;
+}
+
+.employee-audit-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 480px) {
   .employee-detail-dialog {
     max-height: calc(100vh - 24px);

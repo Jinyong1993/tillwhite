@@ -93,6 +93,7 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 제품 레시피 등록 / 수정
     Route::post('/products/{product}/recipes', [ProductController::class, 'recipe'])->withTrashed();
     Route::put('/products/{product}/recipes/{recipe}', [ProductController::class, 'updateRecipe'])->withTrashed();
+    Route::post('/products/{product}/recipes/{recipe}/copy', [ProductController::class, 'copyRecipe'])->withTrashed();
 
     /**
      * 생산·폐기 관리

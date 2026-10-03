@@ -702,6 +702,7 @@ class AdminController extends Controller
                 'updated_at' => $user->updated_at?->toISOString(),
                 'deleted_at' => $user->deleted_at?->toISOString(),
                 'management_history' => $this->auditTrail->summary(User::class, $user->id),
+                'audit_history' => $this->auditTrail->history(User::class, $user->id),
             ],
         ]);
     }

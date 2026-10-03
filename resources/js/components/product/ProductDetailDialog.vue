@@ -259,6 +259,7 @@
             :can-manage="canManageRecipe"
             @edit="$emit('recipe')"
             @edit-part="$emit('recipe-part', $event)"
+            @copy="$emit('recipe-copy')"
           />
         </section>
 
@@ -277,42 +278,30 @@
             </span>
           </div>
 
-          <!--
-            등록/수정/삭제 정보는 각각 한 줄만 표시합니다.
-            감사 로그의 작업자와 작업 시각을 함께 보여 중복된 시스템 일시를 만들지 않습니다.
-          -->
+          <!-- 등록/수정/삭제의 작업자와 일시를 같은 규칙으로 항상 표시합니다. -->
           <div class="detail-grid">
-            <InfoItem
-              label="등록일시"
-              :value="
-                historyText(
-                  product.management_history?.created,
-                  product.created_at,
-                )
-              "
-            />
-
-            <InfoItem
-              label="수정일시"
-              :value="
-                historyText(
-                  product.management_history?.updated,
-                  product.updated_at,
-                )
-              "
-            />
-
-            <InfoItem
-              v-if="product.deleted_at"
-              label="삭제일시"
-              :value="
-                historyText(
-                  product.management_history?.deleted,
-                  product.deleted_at,
-                )
-              "
-            />
+            <InfoItem label="등록자" :value="historyActor(product.management_history?.created)" />
+            <InfoItem label="등록일" :value="historyAt(product.management_history?.created, product.created_at)" />
+            <InfoItem label="수정자" :value="historyActor(product.management_history?.updated)" />
+            <InfoItem label="수정일" :value="historyAt(product.management_history?.updated, product.updated_at)" />
+            <InfoItem label="삭제자" :value="historyActor(product.management_history?.deleted)" />
+            <InfoItem label="삭제일" :value="historyAt(product.management_history?.deleted, product.deleted_at)" />
           </div>
+
+          <details
+            v-if="product.audit_history?.length"
+            class="product-audit-history"
+          >
+            <summary>변경 이력 보기</summary>
+            <div
+              v-for="entry in product.audit_history"
+              :key="entry.id"
+              class="product-audit-entry"
+            >
+              <span>{{ auditActionText(entry.action) }}</span>
+              <span>{{ entry.user?.name ?? '-' }} · {{ formatDateTime(entry.at) }}</span>
+            </div>
+          </details>
         </section>
       </div>
 
@@ -479,6 +468,7 @@ const emit = defineEmits([
   'restore',
   'recipe',
   'recipe-part',
+  'recipe-copy',
 ]);
 
 /*
@@ -713,11 +703,16 @@ function formatDate(value) {
 /*
  * 등록 / 수정 / 삭제 일시 표시
  */
-function historyText(entry, fallbackAt = null) {
-  const actor = entry?.user?.name ?? '알 수 없음';
-  const at = formatDateTime(entry?.at ?? fallbackAt);
+function auditActionText(action) {
+  return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
+}
 
-  return at === '-' ? actor : `${actor} · ${at}`;
+function historyActor(entry) {
+  return entry?.user?.name ?? '-';
+}
+
+function historyAt(entry, fallbackAt = null) {
+  return formatDateTime(entry?.at ?? fallbackAt);
 }
 
 function formatDateTime(value) {
@@ -885,6 +880,25 @@ function departmentName(value) {
  * 상세 정보는 한 열로 변경하고 긴 텍스트와 버튼이
  * 다른 정보를 침범하지 않도록 배치합니다.
  */
+.product-audit-history {
+  margin-top: 16px;
+  font-size: 0.8rem;
+}
+
+.product-audit-history summary {
+  cursor: pointer;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-weight: 600;
+}
+
+.product-audit-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 480px) {
   .product-detail-dialog {
     max-height: calc(100dvh - 24px);

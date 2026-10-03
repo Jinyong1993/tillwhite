@@ -29,6 +29,33 @@ class AuditTrailService
         ];
     }
 
+    /**
+     * 대상의 변경 이력을 최신순으로 반환합니다.
+     * 상세 화면에서는 요약 정보와 분리해 필요할 때만 펼쳐볼 수 있습니다.
+     */
+    public function history(string $targetType, int $targetId, int $limit = 30): array
+    {
+        return AuditLog::query()
+            ->with('user:id,name')
+            ->where('target_type', $targetType)
+            ->where('target_id', $targetId)
+            ->whereIn('action', ['create', 'update', 'delete'])
+            ->latest('created_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn ($log) => [
+                'id' => $log->id,
+                'action' => $log->action,
+                'description' => $log->description,
+                'user' => $log->user ? [
+                    'id' => $log->user->id,
+                    'name' => $log->user->name,
+                ] : null,
+                'at' => $log->created_at?->toISOString(),
+            ])
+            ->all();
+    }
+
     private function entry($log): ?array
     {
         if (! $log) {

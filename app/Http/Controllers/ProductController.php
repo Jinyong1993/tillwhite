@@ -109,11 +109,19 @@ class ProductController extends Controller
             'management_history',
             $this->auditTrail->summary(Product::class, $product->id)
         );
+        $product->setAttribute(
+            'audit_history',
+            $this->auditTrail->history(Product::class, $product->id)
+        );
 
         $product->recipes->each(function (Recipe $recipe) {
             $recipe->setAttribute(
                 'management_history',
                 $this->auditTrail->summary(Recipe::class, $recipe->id)
+            );
+            $recipe->setAttribute(
+                'audit_history',
+                $this->auditTrail->history(Recipe::class, $recipe->id)
             );
         });
 
@@ -684,6 +692,99 @@ class ProductController extends Controller
     }
 
     /**
+     * 레시피를 같은 점포의 다른 제품으로 복사합니다.
+     * 원본 레시피는 변경하지 않으며 대상 제품에 새 레시피를 생성합니다.
+     */
+    public function copyRecipe(Request $request, Product $product, Recipe $recipe)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'recipe.manage');
+        $this->assertProductManageableByUser($user, $product);
+
+        if ($product->trashed()) {
+            throw ValidationException::withMessages([
+                'product' => '삭제된 제품의 레시피는 복사할 수 없습니다.',
+            ]);
+        }
+
+        abort_unless(
+            (int) $recipe->product_id === (int) $product->id,
+            404,
+            '레시피를 찾을 수 없습니다.'
+        );
+
+        $validated = $request->validate([
+            'target_product_id' => ['required', 'integer', 'exists:products,id'],
+        ], [
+            'target_product_id.required' => '레시피를 복사할 제품을 선택해주세요.',
+            'target_product_id.exists' => '선택한 제품을 찾을 수 없습니다.',
+        ]);
+
+        $target = Product::query()->findOrFail($validated['target_product_id']);
+        $this->assertProductManageableByUser($user, $target);
+
+        if ((int) $target->store_id !== (int) $product->store_id) {
+            throw ValidationException::withMessages([
+                'target_product_id' => '같은 점포의 제품으로만 레시피를 복사할 수 있습니다.',
+            ]);
+        }
+
+        if ($target->recipes()->exists()) {
+            throw ValidationException::withMessages([
+                'target_product_id' => '선택한 제품에는 이미 레시피가 등록되어 있습니다.',
+            ]);
+        }
+
+        $recipe->load(['ingredients', 'steps']);
+
+        $copy = DB::transaction(function () use ($recipe, $target, $user) {
+            $copy = Recipe::create([
+                'store_id' => $target->store_id,
+                'product_id' => $target->id,
+                'department' => $target->management_department,
+                'name' => $recipe->name,
+                'description' => $recipe->description,
+                'is_active' => $recipe->is_active,
+                'created_by' => $user->id,
+            ]);
+
+            foreach ($recipe->ingredients as $ingredient) {
+                $copy->ingredients()->create([
+                    'name' => $ingredient->name,
+                    'quantity' => $ingredient->quantity,
+                    'unit' => $ingredient->unit,
+                    'sort_order' => $ingredient->sort_order,
+                ]);
+            }
+
+            foreach ($recipe->steps as $step) {
+                $copy->steps()->create([
+                    'description' => $step->description,
+                    'sort_order' => $step->sort_order,
+                ]);
+            }
+
+            return $copy;
+        });
+
+        $this->audit->log(
+            $user,
+            'recipe',
+            'create',
+            Recipe::class,
+            $copy->id,
+            null,
+            $copy->fresh()->load(['ingredients', 'steps'])->toArray(),
+            '레시피 복사'
+        );
+
+        return response()->json([
+            'message' => '레시피를 복사했습니다.',
+        ], 201);
+    }
+
+    /**
      * 제품 카테고리를 등록합니다.
      */
     public function categoryStore(Request $request)
@@ -708,6 +809,12 @@ class ProductController extends Controller
                         $request->integer('store_id')
                     )),
             ],
+        ], [
+            'store_id.required' => '점포를 선택해주세요.',
+            'store_id.exists' => '선택한 점포를 찾을 수 없습니다.',
+            'name.required' => '카테고리명을 입력해주세요.',
+            'name.unique' => '이미 등록된 카테고리입니다.',
+            'name.max' => '카테고리명은 100자 이하로 입력해주세요.',
         ]);
 
         $this->access->assertStoreDepartment(
@@ -767,6 +874,10 @@ class ProductController extends Controller
                     ))
                     ->ignore($category->id),
             ],
+        ], [
+            'name.required' => '카테고리명을 입력해주세요.',
+            'name.unique' => '이미 등록된 카테고리입니다.',
+            'name.max' => '카테고리명은 100자 이하로 입력해주세요.',
         ]);
 
         $oldData = $category->toArray();

@@ -62,6 +62,16 @@
       </span>
     </div>
 
+    <div class="recipe-status-row">
+      <v-chip
+        v-if="isIncomplete"
+        size="x-small"
+        variant="tonal"
+      >
+        미완성
+      </v-chip>
+    </div>
+
     <!--
       재료는 sort_order 순서로 표시하며 화면 번호는 01, 02... 형태로 다시 만듭니다.
       관리 권한이 있으면 각 재료를 눌러 해당 항목만 빠르게 수정할 수 있습니다.
@@ -120,12 +130,10 @@
               {{ item.name || '-' }}
             </span>
 
-            <!-- 수량 + 단위 -->
-            <span
-              v-if="ingredientAmount(item)"
-              class="recipe-item-meta"
-            >
-              {{ ingredientAmount(item) }}
+            <!-- 사용량과 단위는 서로 붙어 보이지 않도록 별도 요소로 표시합니다. -->
+            <span class="recipe-item-meta">
+              <span>{{ ingredientQuantity(item) }}</span>
+              <span class="recipe-item-unit">{{ ingredientUnit(item) }}</span>
             </span>
           </span>
 
@@ -218,14 +226,41 @@
       </div>
     </div>
 
+    <v-btn
+      v-if="canManage"
+      class="mt-4"
+      size="small"
+      variant="tonal"
+      prepend-icon="mdi-content-copy"
+      @click="$emit('copy')"
+    >
+      레시피 복사
+    </v-btn>
+
     <!-- 등록/수정/삭제 이력은 본문을 다 읽은 뒤 확인할 수 있도록 카드 맨 아래에 표시합니다. -->
     <div class="recipe-history">
-      <div>등록 {{ historyText(recipe.management_history?.created, recipe.created_at) }}</div>
-      <div>수정 {{ historyText(recipe.management_history?.updated, recipe.updated_at) }}</div>
-      <div v-if="recipe.management_history?.deleted">
-        삭제 {{ historyText(recipe.management_history.deleted, recipe.deleted_at) }}
-      </div>
+      <div class="recipe-history-label">등록</div>
+      <div>{{ historyText(recipe.management_history?.created, recipe.created_at) }}</div>
+      <div class="recipe-history-label">수정</div>
+      <div>{{ historyText(recipe.management_history?.updated, recipe.updated_at) }}</div>
+      <div class="recipe-history-label">삭제</div>
+      <div>{{ historyText(recipe.management_history?.deleted, recipe.deleted_at) }}</div>
     </div>
+
+    <details
+      v-if="recipe.audit_history?.length"
+      class="recipe-audit-history"
+    >
+      <summary>변경 이력 보기</summary>
+      <div
+        v-for="entry in recipe.audit_history"
+        :key="entry.id"
+        class="recipe-audit-entry"
+      >
+        <span>{{ auditActionText(entry.action) }}</span>
+        <span>{{ entry.user?.name ?? '-' }} · {{ formatHistoryDateTime(entry.at) }}</span>
+      </div>
+    </details>
   </div>
 
   <!--
@@ -296,6 +331,7 @@ const props = defineProps({
 defineEmits([
   'edit',
   'edit-part',
+  'copy',
 ]);
 
 /*
@@ -342,16 +378,29 @@ const sortedSteps = computed(() => {
  * 수량이 입력되지 않은 경우에는 빈 화면으로 두지 않고
  * 사용자가 상태를 이해할 수 있도록 "수량 미입력"을 표시한다.
  */
-function historyText(entry, fallbackAt = null) {
-  const actor = entry?.user?.name ?? '알 수 없음';
-  const value = entry?.at ?? fallbackAt;
+const isIncomplete = computed(() => {
+  return sortedIngredients.value.length === 0 || sortedSteps.value.length === 0;
+});
 
-  if (!value) return actor;
+function auditActionText(action) {
+  return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
+}
+
+function historyText(entry, fallbackAt = null) {
+  const actor = entry?.user?.name ?? '-';
+  const value = entry?.at ?? fallbackAt;
+  const at = formatHistoryDateTime(value);
+
+  return `${actor} · ${at}`;
+}
+
+function formatHistoryDateTime(value) {
+  if (!value) return '-';
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return actor;
+  if (Number.isNaN(date.getTime())) return '-';
 
-  const at = new Intl.DateTimeFormat('ko-KR', {
+  return new Intl.DateTimeFormat('ko-KR', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -359,25 +408,17 @@ function historyText(entry, fallbackAt = null) {
     minute: '2-digit',
     hour12: false,
   }).format(date);
-
-  return `${actor} · ${at}`;
 }
 
-function ingredientAmount(item) {
-  const quantity = item.quantity;
+function ingredientQuantity(item) {
+  const quantity = item?.quantity;
+  return quantity === null || quantity === undefined || quantity === ''
+    ? '-'
+    : formatQuantity(quantity);
+}
 
-  const hasQuantity =
-    quantity !== null &&
-    quantity !== undefined &&
-    quantity !== '';
-
-  const unit = String(item.unit ?? '').trim();
-
-  if (!hasQuantity) {
-    return unit;
-  }
-
-  return unit ? `${formatQuantity(quantity)} ${unit}` : formatQuantity(quantity);
+function ingredientUnit(item) {
+  return String(item?.unit ?? '').trim() || '-';
 }
 
 /** DB decimal 문자열의 불필요한 뒤쪽 0을 제거해 입력한 수량을 자연스럽게 보여줍니다. */
@@ -657,6 +698,42 @@ function formatOrder(index) {
   text-align: center;
 }
 
+.recipe-item-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.recipe-item-unit {
+  color: rgba(var(--v-theme-on-surface), 0.58);
+}
+
+.recipe-status-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+
+.recipe-audit-history {
+  margin-top: 12px;
+  font-size: 0.75rem;
+}
+
+.recipe-audit-history summary {
+  cursor: pointer;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-weight: 600;
+}
+
+.recipe-audit-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 7px;
+  overflow-wrap: anywhere;
+}
+
 .recipe-history {
   display: flex;
   flex-direction: column;
@@ -667,6 +744,12 @@ function formatOrder(index) {
   color: rgba(var(--v-theme-on-surface), 0.58);
   font-size: 0.72rem;
   line-height: 1.4;
+  text-align: left;
+}
+
+.recipe-history-label {
+  margin-top: 4px;
+  font-weight: 700;
 }
 
 /* 390px 이하에서는 재료명과 수량을 세로로 전환해 좁은 화면의 겹침을 방지합니다. */

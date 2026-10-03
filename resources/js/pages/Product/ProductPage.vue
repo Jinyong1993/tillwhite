@@ -171,6 +171,7 @@
         @restore="requestProductAction('restore')"
         @recipe="openRecipeDialog"
         @recipe-part="openRecipePartDialog"
+        @recipe-copy="openRecipeCopyDialog"
       />
 
       <!-- 제품 수정 -->
@@ -196,6 +197,48 @@
         @reorder="requestCategoryReorder($event, setError, setSuccess)"
       />
 
+      <v-dialog
+        v-model="recipeCopyDialog"
+        max-width="460"
+        persistent
+      >
+        <v-card rounded="lg">
+          <v-card-title class="pa-5 pb-2">레시피 복사</v-card-title>
+          <v-card-text class="px-5">
+            <div class="text-body-2 text-medium-emphasis mb-4">
+              원본은 그대로 유지하고 같은 점포의 다른 제품에 새 레시피를 만듭니다.
+            </div>
+            <v-select
+              v-model="recipeCopyTargetId"
+              :items="recipeCopyTargets"
+              item-title="name"
+              item-value="id"
+              label="복사할 제품"
+              variant="outlined"
+              :disabled="productActionLoading === 'recipe-copy'"
+            />
+          </v-card-text>
+          <v-card-actions class="px-5 pb-4">
+            <v-btn
+              variant="text"
+              :disabled="productActionLoading === 'recipe-copy'"
+              @click="recipeCopyDialog = false"
+            >
+              취소
+            </v-btn>
+            <v-spacer />
+            <v-btn
+              variant="flat"
+              :disabled="!recipeCopyTargetId"
+              :loading="productActionLoading === 'recipe-copy'"
+              @click="requestRecipeCopy(setError, setSuccess)"
+            >
+              복사
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <!-- 삭제/복구/취급상태/중요 수정 확인 -->
       <ConfirmDialog
         v-model="confirmDialog.open"
@@ -211,6 +254,7 @@
         v-model="recipeDialog"
         max-width="620"
         persistent
+        @after-leave="resetRecipeDialogState"
       >
         <v-card class="recipe-dialog" rounded="lg">
           <div class="recipe-dialog-header">
@@ -260,7 +304,7 @@
 
                     <v-text-field
                       v-model="ingredient.quantity"
-                      label="수량"
+                      label="사용량"
                       type="number"
                       inputmode="decimal"
                       step="any"
@@ -270,13 +314,27 @@
                       hide-details
                     />
 
-                    <v-text-field
-                      v-model="ingredient.unit"
+                    <v-select
+                      v-if="ingredient.unitChoice !== CUSTOM_UNIT"
+                      v-model="ingredient.unitChoice"
+                      :items="unitItems"
                       label="단위"
-                      placeholder="g"
                       variant="outlined"
                       density="comfortable"
                       hide-details
+                      @update:model-value="applyUnitChoice(ingredient)"
+                    />
+
+                    <v-text-field
+                      v-else
+                      v-model="ingredient.unit"
+                      label="단위 직접입력"
+                      placeholder="예: 꼬집"
+                      variant="outlined"
+                      density="comfortable"
+                      hide-details
+                      append-inner-icon="mdi-menu-down"
+                      @click:append-inner="useUnitSelect(ingredient)"
                     />
                   </div>
                   <v-btn
@@ -349,6 +407,24 @@
                 공정 추가
               </v-btn>
             </section>
+
+            <section
+              v-if="editingRecipeId"
+              class="recipe-form-section"
+            >
+              <div class="recipe-form-section-title">
+                <v-icon icon="mdi-clock-outline" size="18" />
+                시스템 정보
+              </div>
+              <div class="recipe-system-grid">
+                <span>등록자</span><strong>{{ recipeHistoryActor(recipeManagementInfo?.management_history?.created) }}</strong>
+                <span>등록일</span><strong>{{ recipeHistoryAt(recipeManagementInfo?.management_history?.created, recipeManagementInfo?.created_at) }}</strong>
+                <span>수정자</span><strong>{{ recipeHistoryActor(recipeManagementInfo?.management_history?.updated) }}</strong>
+                <span>수정일</span><strong>{{ recipeHistoryAt(recipeManagementInfo?.management_history?.updated, recipeManagementInfo?.updated_at) }}</strong>
+                <span>삭제자</span><strong>{{ recipeHistoryActor(recipeManagementInfo?.management_history?.deleted) }}</strong>
+                <span>삭제일</span><strong>{{ recipeHistoryAt(recipeManagementInfo?.management_history?.deleted, recipeManagementInfo?.deleted_at) }}</strong>
+              </div>
+            </section>
           </div>
 
           <v-divider />
@@ -415,6 +491,8 @@ const detailDialog = ref(false);
 const editDialog = ref(false);
 const recipeDialog = ref(false);
 const categoryDialog = ref(false);
+const recipeCopyDialog = ref(false);
+const recipeCopyTargetId = ref(null);
 
 /** 제품 API 중복 요청을 막기 위한 현재 작업 상태 */
 const productActionLoading = ref(null);
@@ -446,6 +524,18 @@ const editingRecipeId = ref(null);
 const recipeEditMode = ref('full');
 const recipeEditIndex = ref(null);
 const recipeInitialSnapshot = ref('');
+
+const CUSTOM_UNIT = '__custom__';
+const DEFAULT_UNITS = ['g', 'kg', 'ml', 'L', '개', '장', '봉', '팩', '병', '캔', '스푼', '작은술', '큰술'];
+const recentUnits = ref([]);
+
+const unitItems = computed(() => {
+  const units = [...new Set([...recentUnits.value, ...DEFAULT_UNITS])];
+  return [
+    ...units.map((unit) => ({ title: unit, value: unit })),
+    { title: '직접입력', value: CUSTOM_UNIT },
+  ];
+});
 
 const statusFilterItems = [
   { title: '전체', value: 'all' },
@@ -483,7 +573,7 @@ const recipeDialogSubtitle = computed(() => {
 
 const ingredientGuideText = computed(() => {
   if (recipeEditMode.value === 'ingredient') {
-    return '선택한 재료의 이름, 수량, 단위를 확인하고 수정해주세요.';
+    return '선택한 재료의 이름, 사용량, 단위를 확인하고 수정해주세요.';
   }
 
   const count = meaningfulIngredients().length;
@@ -501,6 +591,12 @@ const stepGuideText = computed(() => {
   return count
     ? `현재 공정 ${count}단계가 등록되어 있습니다. 순서를 확인하거나 필요한 공정을 추가해주세요.`
     : '공정을 하나씩 추가하면 순서 번호는 자동으로 정리됩니다.';
+});
+
+const recipeManagementInfo = computed(() => {
+  return selectedProduct.value?.recipes?.find(
+    (item) => Number(item.id) === Number(editingRecipeId.value),
+  ) ?? null;
 });
 
 const recipeDialogIcon = computed(() => {
@@ -532,6 +628,19 @@ const canSaveRecipe = computed(() => {
   if (steps.some((step) => !step.description.trim())) return false;
 
   return productActionLoading.value !== 'recipe';
+});
+
+const recipeCopyTargets = computed(() => {
+  if (!selectedProduct.value) return [];
+
+  return products.value
+    .filter((product) => (
+      Number(product.store_id) === Number(selectedProduct.value.store_id)
+      && Number(product.id) !== Number(selectedProduct.value.id)
+      && !product.deleted_at
+      && !(product.recipes?.length)
+    ))
+    .sort((a, b) => compareDisplayName(a.name, b.name));
 });
 
 const hasRecipeChanges = computed(() => {
@@ -1209,6 +1318,13 @@ async function executeConfirmedAction(setError, setSuccess) {
     return;
   }
 
+  if (action === 'recipe-copy') {
+    const saved = confirmDialog.payload;
+    await copyRecipe(saved?.setError ?? setError, saved?.setSuccess ?? setSuccess);
+    clearConfirmDialog(true);
+    return;
+  }
+
   if (action === 'draft') {
     const saved = confirmDialog.payload;
 
@@ -1283,6 +1399,57 @@ async function executeConfirmedAction(setError, setSuccess) {
     }
   } catch (error) {
     setError(requestFailureMessage(error, '제품 작업을 완료하지 못했습니다.'));
+  } finally {
+    productActionLoading.value = null;
+  }
+}
+
+function openRecipeCopyDialog() {
+  if (!selectedProduct.value || selectedProduct.value.deleted_at) {
+    appShellRef.value?.setError?.('삭제된 제품입니다. 복구 후 레시피를 관리해주세요.');
+    return;
+  }
+
+  if (!selectedProduct.value.recipes?.[0]) return;
+
+  recipeCopyTargetId.value = null;
+  recipeCopyDialog.value = true;
+}
+
+function requestRecipeCopy(setError, setSuccess) {
+  if (!recipeCopyTargetId.value) return;
+
+  const target = recipeCopyTargets.value.find(
+    (product) => Number(product.id) === Number(recipeCopyTargetId.value),
+  );
+
+  openConfirm(
+    'recipe-copy',
+    '레시피를 복사하시겠습니까?',
+    `현재 레시피를 ‘${target?.name ?? '-'}’ 제품에 새 레시피로 복사합니다.`,
+    '예',
+    { setError, setSuccess },
+  );
+}
+
+async function copyRecipe(setError, setSuccess) {
+  const sourceRecipe = selectedProduct.value?.recipes?.[0];
+  if (!sourceRecipe || !recipeCopyTargetId.value || productActionLoading.value) return;
+
+  productActionLoading.value = 'recipe-copy';
+
+  try {
+    await window.axios.post(
+      `/tillwhite/api/products/${selectedProduct.value.id}/recipes/${sourceRecipe.id}/copy`,
+      { target_product_id: recipeCopyTargetId.value },
+    );
+
+    recipeCopyDialog.value = false;
+    recipeCopyTargetId.value = null;
+    setSuccess('레시피를 복사했습니다.');
+    await refreshListAfterAction(setError, '복사는 완료되었지만 제품 목록을 새로고침하지 못했습니다.');
+  } catch (error) {
+    setError(requestFailureMessage(error, '레시피 복사에 실패했습니다.'));
   } finally {
     productActionLoading.value = null;
   }
@@ -1408,7 +1575,12 @@ function requestRecipeSave(setError, setSuccess) {
 }
 
 function closeRecipeDialog() {
+  // 퇴장 애니메이션 중 편집 모드를 바꾸면 다른 레시피 화면이 순간적으로 보일 수 있습니다.
+  // 실제 상태 초기화는 @after-leave에서 처리합니다.
   recipeDialog.value = false;
+}
+
+function resetRecipeDialogState() {
   editingRecipeId.value = null;
   recipeEditMode.value = 'full';
   recipeEditIndex.value = null;
@@ -1431,6 +1603,9 @@ async function saveRecipe(setError, setSuccess) {
       })),
       steps: meaningfulSteps().map((step) => ({ description: step.description.trim() })),
     };
+
+    const usedUnits = payload.ingredients.map((item) => item.unit).filter(Boolean);
+    recentUnits.value = [...new Set([...usedUnits, ...recentUnits.value])].slice(0, 5);
 
     if (editingRecipeId.value) {
       await window.axios.put(
@@ -1487,6 +1662,27 @@ function recipeSnapshot() {
   });
 }
 
+function recipeHistoryActor(entry) {
+  return entry?.user?.name ?? '-';
+}
+
+function recipeHistoryAt(entry, fallbackAt = null) {
+  const value = entry?.at ?? fallbackAt;
+  if (!value) return '-';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
 /** DB decimal 문자열에서 의미 없는 뒤쪽 0을 제거해 입력 당시 형태에 가깝게 표시합니다. */
 function formatRecipeQuantity(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -1497,12 +1693,31 @@ function formatRecipeQuantity(value) {
 
 function createIngredientRow(ingredient = {}) {
   recipeRowKey += 1;
+  const unit = String(ingredient.unit ?? '').trim();
+
   return {
     _key: `ingredient-${recipeRowKey}`,
     name: ingredient.name ?? '',
     quantity: formatRecipeQuantity(ingredient.quantity),
-    unit: ingredient.unit ?? '',
+    unit,
+    unitChoice: !unit || DEFAULT_UNITS.includes(unit) ? unit : CUSTOM_UNIT,
   };
+}
+
+function applyUnitChoice(ingredient) {
+  if (ingredient.unitChoice === CUSTOM_UNIT) {
+    if (DEFAULT_UNITS.includes(ingredient.unit)) ingredient.unit = '';
+    return;
+  }
+
+  ingredient.unit = ingredient.unitChoice ?? '';
+}
+
+function useUnitSelect(ingredient) {
+  ingredient.unitChoice = ingredient.unit && DEFAULT_UNITS.includes(ingredient.unit)
+    ? ingredient.unit
+    : '';
+  ingredient.unit = ingredient.unitChoice;
 }
 
 function createStepRow(step = {}) {
@@ -1669,6 +1884,8 @@ onMounted(() => {
 .product-primary-action {
   min-width: 0;
   min-height: 44px;
+  height: auto;
+  padding-block: 8px;
 }
 
 .product-primary-action :deep(.v-btn__content) {
@@ -1676,7 +1893,7 @@ onMounted(() => {
   min-width: 0;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 4px 6px;
+  gap: 8px 6px;
   white-space: normal;
 }
 
@@ -1781,6 +1998,24 @@ onMounted(() => {
   font-size: 0.76rem;
 }
 
+.recipe-system-grid {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
+  gap: 10px 16px;
+  font-size: 0.82rem;
+}
+
+.recipe-system-grid > span {
+  color: rgba(var(--v-theme-on-surface), 0.58);
+}
+
+.recipe-system-grid > strong {
+  min-width: 0;
+  font-weight: 500;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .recipe-builder-list {
   display: flex;
   flex-direction: column;
@@ -1813,7 +2048,7 @@ onMounted(() => {
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1.5fr) minmax(90px, 0.7fr) minmax(80px, 0.6fr);
-  gap: 8px;
+  gap: 12px;
 }
 
 .recipe-builder-item--step {
