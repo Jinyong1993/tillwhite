@@ -24,7 +24,7 @@
               {{ displayValue(employee.name) }}
             </div>
 
-            <div class="text-body-2 text-medium-emphasis mt-1">
+            <div class="text-caption text-medium-emphasis mt-1">
               {{ displayValue(employee.employee_code) }}
             </div>
           </div>
@@ -291,6 +291,32 @@
             <div class="detail-value">
               {{ formatDateTime(employee.password_changed_at) }}
             </div>
+
+            <div class="detail-label">
+              등록자
+            </div>
+
+            <div class="detail-value">
+              {{ historyText(employee.management_history?.created) }}
+            </div>
+
+            <div class="detail-label">
+              마지막 수정자
+            </div>
+
+            <div class="detail-value">
+              {{ historyText(employee.management_history?.updated) }}
+            </div>
+
+            <template v-if="employee.deleted_at">
+              <div class="detail-label">
+                삭제자
+              </div>
+
+              <div class="detail-value">
+                {{ historyText(employee.management_history?.deleted) }}
+              </div>
+            </template>
 
             <div class="detail-label">
               계정 생성
@@ -578,6 +604,14 @@ function formatDate(value) {
  * 날짜와 시간 값을
  * 현재 브라우저 시간대로 변환하여 표시합니다.
  */
+function historyText(entry) {
+  if (!entry) return '-';
+
+  const actor = entry.user?.name ?? '알 수 없음';
+  const at = formatDateTime(entry.at);
+  return at === '-' ? actor : `${actor} · ${at}`;
+}
+
 function formatDateTime(value) {
   if (!value) {
     return '-';

@@ -9,6 +9,7 @@ use App\Models\Recipe;
 use App\Models\Store;
 use App\Services\AccessService;
 use App\Services\AuditService;
+use App\Services\AuditTrailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -21,7 +22,8 @@ class ProductController extends Controller
      */
     public function __construct(
         private AccessService $access,
-        private AuditService $audit
+        private AuditService $audit,
+        private AuditTrailService $auditTrail
     ) {
     }
 
@@ -101,6 +103,19 @@ class ProductController extends Controller
             'recipes.ingredients',
             'recipes.steps',
         ]);
+
+        // 상세 화면에서 작업자 이력을 바로 표시할 수 있도록 기존 감사 로그를 재사용합니다.
+        $product->setAttribute(
+            'management_history',
+            $this->auditTrail->summary(Product::class, $product->id)
+        );
+
+        $product->recipes->each(function (Recipe $recipe) {
+            $recipe->setAttribute(
+                'management_history',
+                $this->auditTrail->summary(Recipe::class, $recipe->id)
+            );
+        });
 
         return response()->json([
             'product' => $product,
@@ -520,8 +535,8 @@ class ProductController extends Controller
             'description' => ['nullable', 'string'],
             'ingredients' => ['array'],
             'ingredients.*.name' => ['required', 'string'],
-            'ingredients.*.quantity' => ['required', 'numeric', 'min:0'],
-            'ingredients.*.unit' => ['required', 'string'],
+            'ingredients.*.quantity' => ['nullable', 'numeric', 'min:0'],
+            'ingredients.*.unit' => ['nullable', 'string', 'max:50'],
             'steps' => ['array'],
             'steps.*.description' => ['required', 'string'],
         ]);
@@ -604,8 +619,8 @@ class ProductController extends Controller
             'description' => ['nullable', 'string'],
             'ingredients' => ['array'],
             'ingredients.*.name' => ['required', 'string'],
-            'ingredients.*.quantity' => ['required', 'numeric', 'min:0'],
-            'ingredients.*.unit' => ['required', 'string'],
+            'ingredients.*.quantity' => ['nullable', 'numeric', 'min:0'],
+            'ingredients.*.unit' => ['nullable', 'string', 'max:50'],
             'steps' => ['array'],
             'steps.*.description' => ['required', 'string'],
         ]);

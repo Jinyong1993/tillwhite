@@ -14,6 +14,7 @@
       <!-- 제품 등록 / 카테고리 관리 -->
       <div class="product-primary-actions mb-5">
         <v-btn
+          class="product-primary-action"
           block
           prepend-icon="mdi-package-variant-plus"
           variant="flat"
@@ -32,6 +33,7 @@
         </v-btn>
 
         <v-btn
+          class="product-primary-action"
           block
           prepend-icon="mdi-shape-plus-outline"
           variant="flat"
@@ -149,7 +151,7 @@
         :draft="productDraft"
         :loading="['create', 'draft', 'clear-draft'].includes(productActionLoading)"
         @close="registerDialog = false"
-        @save="saveProduct($event, setError, setSuccess)"
+        @save="requestProductCreate($event, setError, setSuccess)"
         @draft="requestSaveProductDraft($event, setError, setSuccess)"
         @clear-draft="requestClearProductDraft(setError, setSuccess)"
       />
@@ -188,9 +190,9 @@
         :categories="categories"
         :stores="visibleStores"
         :loading="productActionLoading === 'category'"
-        @create="createCategory($event, setError, setSuccess)"
-        @rename="renameCategory($event, setError, setSuccess)"
-        @toggle="toggleCategory($event, setError, setSuccess)"
+        @create="requestCategoryCreate($event, setError, setSuccess)"
+        @rename="requestCategoryRename($event, setError, setSuccess)"
+        @toggle="requestCategoryToggle($event, setError, setSuccess)"
       />
 
       <!-- 삭제/복구/취급상태/중요 수정 확인 -->
@@ -200,7 +202,7 @@
         :message="confirmDialog.message"
         :confirm-text="confirmDialog.confirmText"
         cancel-text="취소"
-        :loading="productActionLoading === confirmDialog.action"
+        :loading="Boolean(productActionLoading)"
         @confirm="executeConfirmedAction(setError, setSuccess)"
         @cancel="clearConfirmDialog"
       />
@@ -218,18 +220,18 @@
             </div>
             <div class="min-width-0">
               <div class="text-h6 font-weight-bold">{{ recipeDialogTitle }}</div>
-              <div class="text-body-2 text-medium-emphasis mt-1">{{ recipeDialogSubtitle }}</div>
+              <div class="recipe-dialog-description text-medium-emphasis mt-1">{{ recipeDialogSubtitle }}</div>
             </div>
           </div>
 
           <v-divider />
 
           <div class="recipe-scroll">
-            <v-alert class="mb-5" type="info" variant="tonal" density="compact">
+            <v-alert class="recipe-required-guide mb-5" type="info" variant="tonal" density="compact">
               * 표시는 필수 입력 항목입니다. 재료와 공정은 저장된 순서대로 표시됩니다.
             </v-alert>
 
-            <section v-if="recipeEditMode === 'full' || recipeEditMode === 'basic'" class="recipe-form-section">
+            <section v-if="recipeEditMode === 'full' || recipeEditMode === 'basic'" class="recipe-form-section recipe-form-section--basic">
               <div class="recipe-form-section-title"><v-icon icon="mdi-notebook-outline" size="18" />기본 내용</div>
               <v-text-field v-model="recipe.name" label="레시피명 *" variant="outlined" />
               <v-textarea v-model="recipe.description" label="설명" variant="outlined" auto-grow rows="2" />
@@ -248,8 +250,8 @@
                   <div class="recipe-builder-number">{{ String(actualIngredientIndex(index) + 1).padStart(2, '0') }}</div>
                   <div class="recipe-ingredient-fields">
                     <v-text-field v-model="ingredient.name" label="재료명 *" variant="outlined" density="comfortable" hide-details />
-                    <v-number-input v-model="ingredient.quantity" label="수량 *" variant="outlined" density="comfortable" :min="0" hide-details />
-                    <v-text-field v-model="ingredient.unit" label="단위 *" placeholder="g" variant="outlined" density="comfortable" hide-details />
+                    <v-text-field v-model="ingredient.quantity" label="수량" type="number" inputmode="decimal" step="any" min="0" variant="outlined" density="comfortable" hide-details />
+                    <v-text-field v-model="ingredient.unit" label="단위" placeholder="g" variant="outlined" density="comfortable" hide-details />
                   </div>
                   <v-btn
                     v-if="recipeEditMode === 'full'"
@@ -257,7 +259,7 @@
                     size="small"
                     variant="text"
                     aria-label="재료 삭제"
-                    @click="removeRecipeIngredient(actualIngredientIndex(index))"
+                    @click="requestRemoveRecipeIngredient(actualIngredientIndex(index))"
                   />
                 </div>
               </div>
@@ -265,6 +267,7 @@
               <v-btn
                 v-if="recipeEditMode === 'full'"
                 class="mt-3"
+                block
                 variant="tonal"
                 prepend-icon="mdi-plus"
                 @click="addRecipeIngredient"
@@ -284,11 +287,11 @@
                   class="recipe-builder-item recipe-builder-item--step"
                 >
                   <div class="recipe-builder-number">{{ String(actualStepIndex(index) + 1).padStart(2, '0') }}</div>
-                  <v-textarea v-model="step.description" label="공정 내용 *" variant="outlined" density="comfortable" auto-grow rows="2" hide-details />
+                  <v-textarea v-model="step.description" label="공정 내용 *" variant="outlined" density="comfortable" auto-grow rows="3" hide-details />
                   <div v-if="recipeEditMode === 'full'" class="recipe-step-actions">
                     <v-btn icon="mdi-chevron-up" size="small" variant="text" :disabled="actualStepIndex(index) === 0" aria-label="공정 위로 이동" @click="moveRecipeStep(actualStepIndex(index), -1)" />
                     <v-btn icon="mdi-chevron-down" size="small" variant="text" :disabled="actualStepIndex(index) === recipe.steps.length - 1" aria-label="공정 아래로 이동" @click="moveRecipeStep(actualStepIndex(index), 1)" />
-                    <v-btn icon="mdi-close" size="small" variant="text" aria-label="공정 삭제" @click="removeRecipeStep(actualStepIndex(index))" />
+                    <v-btn icon="mdi-close" size="small" variant="text" aria-label="공정 삭제" @click="requestRemoveRecipeStep(actualStepIndex(index))" />
                   </div>
                 </div>
               </div>
@@ -296,11 +299,12 @@
               <v-btn
                 v-if="recipeEditMode === 'full'"
                 class="mt-3"
+                block
                 variant="tonal"
                 prepend-icon="mdi-plus"
                 @click="addRecipeStep"
               >
-                다음 공정 추가
+                공정 추가
               </v-btn>
             </section>
           </div>
@@ -308,9 +312,9 @@
           <v-divider />
 
           <div class="recipe-dialog-actions">
-            <v-btn variant="text" prepend-icon="mdi-close" :disabled="productActionLoading === 'recipe'" @click="recipeDialog = false">취소</v-btn>
+            <v-btn variant="text" prepend-icon="mdi-close" :disabled="productActionLoading === 'recipe'" @click="requestCloseRecipeDialog">취소</v-btn>
             <v-spacer />
-            <v-btn variant="flat" prepend-icon="mdi-content-save-outline" :loading="productActionLoading === 'recipe'" :disabled="!canSaveRecipe" @click="saveRecipe(setError, setSuccess)">{{ editingRecipeId ? '저장' : '등록' }}</v-btn>
+            <v-btn variant="flat" prepend-icon="mdi-content-save-outline" :loading="productActionLoading === 'recipe'" :disabled="!canSaveRecipe" @click="requestRecipeSave(setError, setSuccess)">{{ editingRecipeId ? '저장' : '등록' }}</v-btn>
           </div>
         </v-card>
       </v-dialog>
@@ -390,6 +394,7 @@ const recipe = reactive(createEmptyRecipe());
 const editingRecipeId = ref(null);
 const recipeEditMode = ref('full');
 const recipeEditIndex = ref(null);
+const recipeInitialSnapshot = ref('');
 
 const statusFilterItems = [
   { title: '전체', value: 'all' },
@@ -445,9 +450,20 @@ const visibleRecipeSteps = computed(() => {
 
 const canSaveRecipe = computed(() => {
   if (!recipe.name.trim()) return false;
-  if (recipe.ingredients.some((item) => !item.name.trim() || item.quantity === null || item.quantity === '' || Number(item.quantity) < 0 || !item.unit.trim())) return false;
-  if (recipe.steps.some((step) => !step.description.trim())) return false;
+
+  const ingredients = meaningfulIngredients();
+  const steps = meaningfulSteps();
+
+  if (ingredients.some((item) => !item.name.trim())) return false;
+  if (ingredients.some((item) => item.quantity !== '' && item.quantity !== null && Number(item.quantity) < 0)) return false;
+  if (steps.some((step) => !step.description.trim())) return false;
+
   return productActionLoading.value !== 'recipe';
+});
+
+const hasRecipeChanges = computed(() => {
+  return Boolean(recipeInitialSnapshot.value)
+    && recipeSnapshot() !== recipeInitialSnapshot.value;
 });
 
 const categoryFilterItems = computed(() => {
@@ -584,6 +600,19 @@ function openCategoryDialog(can, setError) {
   }
 
   categoryDialog.value = true;
+}
+
+function requestCategoryCreate(payload, setError, setSuccess) {
+  openConfirm('category-create', '카테고리를 등록하시겠습니까?', `‘${payload.name}’ 카테고리를 등록합니다.`, '등록', { payload, setError, setSuccess });
+}
+
+function requestCategoryRename(payload, setError, setSuccess) {
+  openConfirm('category-rename', '카테고리명을 수정하시겠습니까?', `‘${payload.category.name}’ → ‘${payload.name}’으로 변경합니다.`, '저장', { payload, setError, setSuccess });
+}
+
+function requestCategoryToggle(category, setError, setSuccess) {
+  const actionText = category.is_active ? '사용을 중단' : '다시 사용';
+  openConfirm('category-toggle', `카테고리를 ${actionText}하시겠습니까?`, `‘${category.name}’ 카테고리를 ${actionText}합니다. 기존 제품과 기록은 유지됩니다.`, category.is_active ? '사용중단' : '재사용', { category, setError, setSuccess });
 }
 
 async function runCategoryRequest(
@@ -785,6 +814,11 @@ async function clearProductDraft(setError, setSuccess) {
   }
 }
 
+/** 제품 등록은 서버 반영 직전에 한 번 확인하여 오등록을 방지합니다. */
+function requestProductCreate(payload, setError, setSuccess) {
+  openConfirm('create', '제품을 등록하시겠습니까?', `‘${payload.name}’ 제품을 등록합니다.`, '등록', { payload, setError, setSuccess });
+}
+
 /** 신규 제품을 저장합니다. */
 async function saveProduct(payload, setError, setSuccess) {
   if (productActionLoading.value) {
@@ -798,6 +832,7 @@ async function saveProduct(payload, setError, setSuccess) {
 
     registerDialog.value = false;
     productDraft.value = null;
+    clearConfirmDialog(true);
     setSuccess('제품을 등록했습니다.');
 
     await refreshListAfterAction(
@@ -889,45 +924,15 @@ function canManageSelectedRecipe(can) {
 
 /** 수정 시 가격/상태/판매기간 등 영향이 큰 변경사항은 확인창을 한 번 더 표시합니다. */
 function requestProductEdit(payload, setError, setSuccess) {
-  if (!selectedProduct.value || productActionLoading.value) {
-    return;
-  }
+  if (!selectedProduct.value || productActionLoading.value) return;
 
-  const changes = [];
-  const oldPrice = Number(selectedProduct.value.prices?.[0]?.price ?? 0);
-
-  if (oldPrice !== Number(payload.price)) {
-    changes.push(`판매가: ${oldPrice.toLocaleString('ko-KR')}원 → ${Number(payload.price).toLocaleString('ko-KR')}원`);
-  }
-
-  if (selectedProduct.value.sales_type !== payload.sales_type) {
-    changes.push(`판매 유형: ${salesTypeName(selectedProduct.value.sales_type)} → ${salesTypeName(payload.sales_type)}`);
-  }
-
-  if (
-    String(selectedProduct.value.sales_start_date ?? '').slice(0, 10)
-      !== String(payload.sales_start_date ?? '')
-    || String(selectedProduct.value.sales_end_date ?? '').slice(0, 10)
-      !== String(payload.sales_end_date ?? '')
-  ) {
-    changes.push('판매 기간이 변경됩니다.');
-  }
-
-  if (changes.length === 0) {
-    saveProductEdit(payload, setError, setSuccess);
-    return;
-  }
-
-  confirmDialog.action = 'edit';
-  confirmDialog.payload = {
-    payload,
-    setError,
-    setSuccess,
-  };
-  confirmDialog.title = '제품 정보를 수정하시겠습니까?';
-  confirmDialog.message = `중요 정보가 변경됩니다.\n${changes.join('\n')}`;
-  confirmDialog.confirmText = '저장';
-  confirmDialog.open = true;
+  openConfirm(
+    'edit',
+    '제품 정보를 수정하시겠습니까?',
+    `‘${selectedProduct.value.name}’ 제품의 변경 내용을 저장합니다.`,
+    '저장',
+    { payload, setError, setSuccess },
+  );
 }
 
 async function saveProductEdit(payload, setError, setSuccess) {
@@ -1023,6 +1028,58 @@ async function executeConfirmedAction(setError, setSuccess) {
     return;
   }
 
+  if (action === 'create') {
+    const saved = confirmDialog.payload;
+    if (saved?.payload) await saveProduct(saved.payload, saved.setError ?? setError, saved.setSuccess ?? setSuccess);
+    return;
+  }
+
+  if (action === 'category-create') {
+    const saved = confirmDialog.payload;
+    if (saved?.payload) await createCategory(saved.payload, saved.setError ?? setError, saved.setSuccess ?? setSuccess);
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'category-rename') {
+    const saved = confirmDialog.payload;
+    if (saved?.payload) await renameCategory(saved.payload, saved.setError ?? setError, saved.setSuccess ?? setSuccess);
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'category-toggle') {
+    const saved = confirmDialog.payload;
+    if (saved?.category) await toggleCategory(saved.category, saved.setError ?? setError, saved.setSuccess ?? setSuccess);
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'recipe-remove-ingredient') {
+    removeRecipeIngredient(confirmDialog.payload?.index);
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'recipe-remove-step') {
+    removeRecipeStep(confirmDialog.payload?.index);
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'recipe-discard') {
+    closeRecipeDialog();
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'recipe-save') {
+    const saved = confirmDialog.payload;
+    await saveRecipe(saved?.setError ?? setError, saved?.setSuccess ?? setSuccess);
+    clearConfirmDialog(true);
+    return;
+  }
+
   if (action === 'draft') {
     const saved = confirmDialog.payload;
 
@@ -1111,6 +1168,7 @@ function openRecipeDialog() {
   recipeEditMode.value = 'full';
   recipeEditIndex.value = null;
   Object.assign(recipe, existingRecipe ? createRecipeForm(existingRecipe) : createEmptyRecipe());
+  recipeInitialSnapshot.value = recipeSnapshot();
   recipeDialog.value = true;
 }
 
@@ -1123,6 +1181,7 @@ function openRecipePartDialog(part) {
   recipeEditMode.value = part.type;
   recipeEditIndex.value = Number.isInteger(part.index) ? part.index : null;
   Object.assign(recipe, createRecipeForm(existingRecipe));
+  recipeInitialSnapshot.value = recipeSnapshot();
   recipeDialog.value = true;
 }
 
@@ -1142,6 +1201,18 @@ function removeRecipeIngredient(index) {
   recipe.ingredients.splice(index, 1);
 }
 
+function requestRemoveRecipeIngredient(index) {
+  const item = recipe.ingredients[index];
+  if (!item) return;
+
+  if (!item.name.trim() && (item.quantity === null || item.quantity === '') && !item.unit.trim()) {
+    removeRecipeIngredient(index);
+    return;
+  }
+
+  openConfirm('recipe-remove-ingredient', '재료를 삭제하시겠습니까?', `‘${item.name || `재료 ${index + 1}`}’ 항목을 현재 편집 내용에서 삭제합니다.`, '삭제', { index });
+}
+
 function addRecipeStep() {
   recipe.steps.push(createStepRow());
 }
@@ -1150,11 +1221,54 @@ function removeRecipeStep(index) {
   recipe.steps.splice(index, 1);
 }
 
+function requestRemoveRecipeStep(index) {
+  const step = recipe.steps[index];
+  if (!step) return;
+
+  if (!step.description.trim()) {
+    removeRecipeStep(index);
+    return;
+  }
+
+  openConfirm('recipe-remove-step', '공정을 삭제하시겠습니까?', `공정 ${index + 1}의 입력 내용을 삭제합니다.`, '삭제', { index });
+}
+
 function moveRecipeStep(index, direction) {
   const target = index + direction;
   if (target < 0 || target >= recipe.steps.length) return;
   const [step] = recipe.steps.splice(index, 1);
   recipe.steps.splice(target, 0, step);
+}
+
+function requestCloseRecipeDialog() {
+  if (productActionLoading.value === 'recipe') return;
+
+  if (!hasRecipeChanges.value) {
+    closeRecipeDialog();
+    return;
+  }
+
+  openConfirm('recipe-discard', '레시피 수정을 취소하시겠습니까?', '저장하지 않은 레시피 변경 내용은 사라집니다.', '나가기');
+}
+
+function requestRecipeSave(setError, setSuccess) {
+  if (!canSaveRecipe.value) return;
+
+  openConfirm(
+    'recipe-save',
+    editingRecipeId.value ? '레시피를 수정하시겠습니까?' : '레시피를 등록하시겠습니까?',
+    '현재 입력한 레시피 내용을 저장합니다.',
+    editingRecipeId.value ? '저장' : '등록',
+    { setError, setSuccess },
+  );
+}
+
+function closeRecipeDialog() {
+  recipeDialog.value = false;
+  editingRecipeId.value = null;
+  recipeEditMode.value = 'full';
+  recipeEditIndex.value = null;
+  recipeInitialSnapshot.value = '';
 }
 
 async function saveRecipe(setError, setSuccess) {
@@ -1166,12 +1280,12 @@ async function saveRecipe(setError, setSuccess) {
     const payload = {
       name: recipe.name.trim(),
       description: recipe.description.trim() || null,
-      ingredients: recipe.ingredients.map((item) => ({
+      ingredients: meaningfulIngredients().map((item) => ({
         name: item.name.trim(),
-        quantity: Number(item.quantity),
-        unit: item.unit.trim(),
+        quantity: item.quantity === null || item.quantity === '' ? null : Number(item.quantity),
+        unit: item.unit.trim() || null,
       })),
-      steps: recipe.steps.map((step) => ({ description: step.description.trim() })),
+      steps: meaningfulSteps().map((step) => ({ description: step.description.trim() })),
     };
 
     if (editingRecipeId.value) {
@@ -1192,10 +1306,7 @@ async function saveRecipe(setError, setSuccess) {
           ? '레시피를 수정했습니다.'
           : '레시피를 등록했습니다.';
 
-    recipeDialog.value = false;
-    editingRecipeId.value = null;
-    recipeEditMode.value = 'full';
-    recipeEditIndex.value = null;
+    closeRecipeDialog();
     setSuccess(successMessage);
 
     await refreshSelectedProduct(
@@ -1209,6 +1320,27 @@ async function saveRecipe(setError, setSuccess) {
   } finally {
     productActionLoading.value = null;
   }
+}
+
+function meaningfulIngredients() {
+  return recipe.ingredients.filter((item) => (
+    item.name.trim()
+    || (item.quantity !== null && item.quantity !== '')
+    || item.unit.trim()
+  ));
+}
+
+function meaningfulSteps() {
+  return recipe.steps.filter((step) => step.description.trim());
+}
+
+function recipeSnapshot() {
+  return JSON.stringify({
+    name: recipe.name,
+    description: recipe.description,
+    ingredients: recipe.ingredients.map(({ name, quantity, unit }) => ({ name, quantity, unit })),
+    steps: recipe.steps.map(({ description }) => ({ description })),
+  });
 }
 
 function createIngredientRow(ingredient = {}) {
@@ -1306,6 +1438,17 @@ function resetFilters() {
   currentPage.value = 1;
 }
 
+function openConfirm(action, title, message, confirmText = '확인', payload = null) {
+  if (productActionLoading.value) return;
+
+  confirmDialog.action = action;
+  confirmDialog.title = title;
+  confirmDialog.message = message;
+  confirmDialog.confirmText = confirmText;
+  confirmDialog.payload = payload;
+  confirmDialog.open = true;
+}
+
 function clearConfirmDialog(force = false) {
   if (productActionLoading.value && !force) {
     return;
@@ -1367,6 +1510,32 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+
+.product-primary-action {
+  min-width: 0;
+  min-height: 44px;
+}
+
+.product-primary-action :deep(.v-btn__content) {
+  min-width: 0;
+  gap: 4px;
+}
+
+.product-primary-action :deep(.v-chip) {
+  flex: 0 0 auto;
+}
+
+.recipe-dialog-description,
+.recipe-form-hint,
+.recipe-required-guide :deep(.v-alert__content) {
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.recipe-form-section--basic .recipe-form-section-title {
+  margin-bottom: 14px;
 }
 
 .product-pagination {
@@ -1518,7 +1687,7 @@ onMounted(() => {
   }
 
   .recipe-ingredient-fields {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .recipe-ingredient-fields > :first-child {
@@ -1526,10 +1695,13 @@ onMounted(() => {
   }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 390px) {
   .product-primary-actions {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 360px) {
 
   .recipe-builder-item {
     grid-template-columns: 30px minmax(0, 1fr);
@@ -1548,6 +1720,9 @@ onMounted(() => {
 }
 
 @media (max-width: 340px) {
+  .recipe-dialog-header-icon { flex-basis: 36px; width: 36px; height: 36px; }
+  .recipe-dialog-actions { gap: 6px; }
+  .recipe-dialog-actions .v-btn { min-width: 0; }
   .product-pagination {
     width: calc(100% - 16px);
     max-width: calc(100% - 16px);

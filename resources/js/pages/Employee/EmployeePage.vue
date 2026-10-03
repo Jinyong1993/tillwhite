@@ -1462,58 +1462,12 @@ function requestEmployeeEditSave(payload, setError, setSuccess) {
     return;
   }
 
-  const employee = selectedEmployee.value;
-  const changes = [];
-  const statusNames = {
-    active: '재직',
-    leave: '휴직',
-    resigned: '퇴사',
-  };
-
-  const storeName = (id) => {
-    return data.value.stores.find((store) => {
-      return Number(store.id) === Number(id);
-    })?.name ?? '본사';
-  };
-
-  const roleName = (id) => {
-    return data.value.roles.find((role) => {
-      return Number(role.id) === Number(id);
-    })?.name ?? '-';
-  };
-
-  if (Number(payload.store_id ?? 0) !== Number(employee.store?.id ?? 0)) {
-    changes.push(
-      `소속 점포: ${employee.store?.name ?? '본사'} → ${storeName(payload.store_id)}`,
-    );
-  }
-
-  if (Number(payload.role_id) !== Number(employee.role?.id)) {
-    changes.push(
-      `권한 역할: ${employee.role?.name ?? '-'} → ${roleName(payload.role_id)}`,
-    );
-  }
-
-  if (payload.employment_status !== employee.employment_status) {
-    const beforeStatus = statusNames[employee.employment_status]
-      ?? employee.employment_status;
-    const afterStatus = statusNames[payload.employment_status]
-      ?? payload.employment_status;
-
-    changes.push(`재직 상태: ${beforeStatus} → ${afterStatus}`);
-  }
-
-  if (changes.length > 0) {
-    employeeConfirm.action = 'edit';
-    employeeConfirm.payload = payload;
-    employeeConfirm.title = '직원 정보를 수정하시겠습니까?';
-    employeeConfirm.message = `중요 정보가 변경됩니다.\n${changes.join('\n')}`;
-    employeeConfirm.confirmText = '저장';
-    employeeConfirm.open = true;
-    return;
-  }
-
-  saveEmployeeEdit(payload, setError, setSuccess);
+  employeeConfirm.action = 'edit';
+  employeeConfirm.payload = payload;
+  employeeConfirm.title = '직원 정보를 수정하시겠습니까?';
+  employeeConfirm.message = `${selectedEmployee.value.name} 직원의 변경 내용을 저장합니다.`;
+  employeeConfirm.confirmText = '저장';
+  employeeConfirm.open = true;
 }
 
 /** 직원 수정 요청과 이후 목록/상세 재조회는 서로 분리해서 처리합니다. */

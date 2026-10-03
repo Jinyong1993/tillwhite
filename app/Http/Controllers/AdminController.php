@@ -11,6 +11,7 @@ use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AccessService;
 use App\Services\AuditService;
+use App\Services\AuditTrailService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
@@ -22,7 +23,8 @@ class AdminController extends Controller
      */
     public function __construct(
         private AccessService $access,
-        private AuditService $audit
+        private AuditService $audit,
+        private AuditTrailService $auditTrail
     ) {
     }
 
@@ -699,6 +701,7 @@ class AdminController extends Controller
                 'created_at' => $user->created_at?->toISOString(),
                 'updated_at' => $user->updated_at?->toISOString(),
                 'deleted_at' => $user->deleted_at?->toISOString(),
+                'management_history' => $this->auditTrail->summary(User::class, $user->id),
             ],
         ]);
     }

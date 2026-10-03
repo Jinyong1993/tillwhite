@@ -65,6 +65,12 @@
       </span>
     </div>
 
+    <div class="recipe-history">
+      <span>등록 {{ historyText(recipe.management_history?.created) }}</span>
+      <span>수정 {{ historyText(recipe.management_history?.updated) }}</span>
+      <span v-if="recipe.management_history?.deleted">삭제 {{ historyText(recipe.management_history.deleted) }}</span>
+    </div>
+
     <!-- =========================================================
       재료 목록
 
@@ -128,7 +134,10 @@
             </span>
 
             <!-- 수량 + 단위 -->
-            <span class="recipe-item-meta">
+            <span
+              v-if="ingredientAmount(item)"
+              class="recipe-item-meta"
+            >
               {{ ingredientAmount(item) }}
             </span>
           </span>
@@ -342,6 +351,11 @@ const sortedSteps = computed(() => {
  * 수량이 입력되지 않은 경우에는 빈 화면으로 두지 않고
  * 사용자가 상태를 이해할 수 있도록 "수량 미입력"을 표시한다.
  */
+function historyText(entry) {
+  if (!entry) return '-';
+  return entry.user?.name ?? '알 수 없음';
+}
+
 function ingredientAmount(item) {
   const quantity = item.quantity;
 
@@ -350,15 +364,24 @@ function ingredientAmount(item) {
     quantity !== undefined &&
     quantity !== '';
 
+  const unit = String(item.unit ?? '').trim();
+
   if (!hasQuantity) {
-    return '수량 미입력';
+    return unit;
   }
 
-  if (item.unit) {
-    return `${quantity} ${item.unit}`;
+  return unit ? `${formatQuantity(quantity)} ${unit}` : formatQuantity(quantity);
+}
+
+/** DB decimal 문자열의 불필요한 뒤쪽 0을 제거해 입력한 수량을 자연스럽게 보여줍니다. */
+function formatQuantity(value) {
+  const text = String(value);
+
+  if (!text.includes('.')) {
+    return text;
   }
 
-  return String(quantity);
+  return text.replace(/\.?0+$/, '');
 }
 
 /*
@@ -654,6 +677,17 @@ function formatOrder(index) {
    390px 이하에서는 재료명과 수량을 한 줄에 억지로 배치하지 않고
    세로로 전환하여 긴 텍스트와 터치 영역을 안정적으로 유지한다.
    ========================================================= */
+
+
+.recipe-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 0 2px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
 
 @media (max-width: 390px) {
   .recipe-card {

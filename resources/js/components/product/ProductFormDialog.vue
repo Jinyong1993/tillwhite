@@ -20,7 +20,7 @@
             {{ isEdit ? '제품 수정' : '제품 등록' }}
           </div>
 
-          <div class="text-body-2 text-medium-emphasis mt-1">
+          <div class="product-form-description text-medium-emphasis mt-1">
             {{
               isEdit
                 ? '제품의 기본 정보와 판매 정보를 수정합니다.'
@@ -35,6 +35,7 @@
       <div class="product-form-scroll">
         <div class="required-guide">
           <v-alert
+            class="required-guide-alert"
             type="info"
             variant="tonal"
             density="compact"
@@ -688,6 +689,23 @@ function createPayload() {
 }
 
 .min-width-0 {
+  min-width: 0;
+}
+
+
+.product-form-description,
+.required-guide-alert :deep(.v-alert__content) {
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.product-form-dialog {
+  width: 100%;
+  max-width: 100%;
+}
+
+.product-form-actions,
+.product-form-action-buttons {
   min-width: 0;
 }
 

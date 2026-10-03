@@ -28,7 +28,7 @@
             직원 등록
           </div>
 
-          <div class="text-body-2 text-medium-emphasis mt-1">
+          <div class="text-caption text-medium-emphasis mt-1">
             새로운 직원의 기본 정보와 소속 정보를 등록합니다.
           </div>
         </div>

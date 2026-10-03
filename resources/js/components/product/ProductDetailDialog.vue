@@ -296,6 +296,22 @@
               "
             />
 
+            <InfoItem
+              label="등록"
+              :value="historyText(product.management_history?.created)"
+            />
+
+            <InfoItem
+              label="수정"
+              :value="historyText(product.management_history?.updated)"
+            />
+
+            <InfoItem
+              v-if="product.deleted_at"
+              label="삭제"
+              :value="historyText(product.management_history?.deleted)"
+            />
+
             <!-- 삭제된 제품만 삭제 일시 표시 -->
             <InfoItem
               v-if="product.deleted_at"
@@ -726,6 +742,14 @@ function formatDate(value) {
 /*
  * 등록 / 수정 / 삭제 일시 표시
  */
+function historyText(entry) {
+  if (!entry) return '-';
+
+  const actor = entry.user?.name ?? '알 수 없음';
+  const at = formatDateTime(entry.at);
+  return at === '-' ? actor : `${actor} · ${at}`;
+}
+
 function formatDateTime(value) {
   if (!value) {
     return '-';
