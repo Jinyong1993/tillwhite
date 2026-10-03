@@ -18,7 +18,7 @@
 
           <!-- 카테고리는 제품명의 보조 정보이므로 칩 대신 서브타이틀로 표시합니다. -->
           <div class="product-category">
-            {{ product.category?.name ?? '카테고리 없음' }}
+            {{ product.category?.name ?? '-' }}
           </div>
         </div>
 

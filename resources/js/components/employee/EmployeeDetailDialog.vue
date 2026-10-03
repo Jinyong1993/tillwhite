@@ -24,7 +24,7 @@
               {{ displayValue(employee.name) }}
             </div>
 
-            <div class="text-caption text-medium-emphasis mt-1">
+            <div class="detail-subtitle text-medium-emphasis mt-1">
               {{ displayValue(employee.employee_code) }}
             </div>
           </div>
@@ -94,7 +94,7 @@
       <div class="detail-scroll-area">
         <v-alert
           v-if="employee.deleted_at"
-          class="ma-5 mb-0"
+          class="employee-detail-guide ma-5 mb-0"
           type="warning"
           variant="tonal"
           density="compact"
@@ -353,30 +353,28 @@
           v-if="employee.deleted_at"
           variant="flat"
           prepend-icon="mdi-restore"
-          :disabled="!canManage"
-          @click="$emit('restore')"
+          @click="requestManageAction('restore')"
         >
           복구
         </v-btn>
 
         <template v-else>
-          <!-- 상세 하단은 핵심 동작인 닫기 / 수정 / 삭제만 유지합니다. -->
-          <v-btn
-            variant="text"
-            prepend-icon="mdi-pencil-outline"
-            :disabled="!canManage"
-            @click="$emit('edit')"
-          >
-            수정
-          </v-btn>
+          <!-- 닫기는 왼쪽, 위험 동작은 오른쪽 그룹의 왼쪽, 최종 수정은 가장 오른쪽에 둡니다. -->
           <v-btn
             color="error"
             variant="text"
             prepend-icon="mdi-delete-outline"
-            :disabled="!canManage"
-            @click="$emit('delete')"
+            @click="requestManageAction('delete')"
           >
             삭제
+          </v-btn>
+
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-pencil-outline"
+            @click="requestManageAction('edit')"
+          >
+            수정
           </v-btn>
         </template>
       </v-card-actions>
@@ -459,28 +457,43 @@ const emit = defineEmits([
   'password-reset',
   'status-change',
   'close',
+  'permission-denied',
 ]);
 
 const statusDialog = ref(false);
 const nextStatus = ref('active');
 
+/** 권한이 없는 관리 버튼도 동일한 외형을 유지하고 클릭 시 이유를 안내합니다. */
+function requestManageAction(action) {
+  if (!props.canManage) {
+    emit('permission-denied', '직원 정보를 관리할 권한이 없습니다.');
+    return;
+  }
+
+  emit(action);
+}
+
+/** 재직 상태 변경 권한과 현재 상태를 확인한 뒤 상태 변경창을 엽니다. */
 function openStatusDialog() {
   if (!props.employee || props.employee.deleted_at || !props.canManage) return;
   nextStatus.value = props.employee.employment_status;
   statusDialog.value = true;
 }
 
+/** 실제로 상태가 달라진 경우에만 부모에 변경 요청을 전달합니다. */
 function submitStatus() {
   if (nextStatus.value === props.employee?.employment_status) return;
   emit('status-change', nextStatus.value);
   statusDialog.value = false;
 }
 
+/** v-dialog의 열림 상태를 부모와 동기화하고 닫힘 이벤트를 전달합니다. */
 function handleDialogChange(value) {
   emit('update:modelValue', value);
   if (!value) emit('close');
 }
 
+/** 직원 상세 다이얼로그를 닫고 부모의 정리 로직을 호출합니다. */
 function close() {
   emit('update:modelValue', false);
   emit('close');
@@ -600,14 +613,17 @@ function auditActionText(action) {
   return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
 }
 
+/** 등록·수정·삭제 작업자 이름을 표시하며 누락 시 하이픈을 사용합니다. */
 function historyActor(entry) {
   return entry?.user?.name ?? '-';
 }
 
+/** 관리 이력 일시를 공통 날짜·시간 형식으로 표시합니다. */
 function historyAt(entry, fallbackAt = null) {
   return formatDateTime(entry?.at ?? fallbackAt);
 }
 
+/** 날짜·시간 값을 사용자 화면용 형식으로 변환합니다. */
 function formatDateTime(value) {
   if (!value) {
     return '-';
@@ -732,6 +748,12 @@ function formatDateTime(value) {
  *
  * 스크롤 영역과 분리되어 항상 하단에 표시됩니다.
  */
+.detail-subtitle,
+.employee-detail-guide :deep(.v-alert__content) {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 .detail-actions {
   flex: 0 0 auto;
   padding: 16px 20px;

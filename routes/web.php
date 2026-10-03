@@ -72,6 +72,9 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::post('/products', [ProductController::class, 'store']);
 
     // 제품 상세정보 조회 (삭제 제품도 상세/복구를 위해 조회 가능)
+    Route::get('/products/recent-viewed', [ProductController::class, 'recentViewed']);
+    Route::post('/products/recent-viewed', [ProductController::class, 'rememberRecentViewed']);
+
     Route::get('/products/{product}', [ProductController::class, 'show'])->withTrashed();
 
     // 제품 기본정보 및 판매정보 수정
@@ -94,6 +97,9 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::post('/products/{product}/recipes', [ProductController::class, 'recipe'])->withTrashed();
     Route::put('/products/{product}/recipes/{recipe}', [ProductController::class, 'updateRecipe'])->withTrashed();
     Route::post('/products/{product}/recipes/{recipe}/copy', [ProductController::class, 'copyRecipe'])->withTrashed();
+    Route::delete('/products/{product}/recipes/{recipe}', [ProductController::class, 'destroyRecipe'])->withTrashed();
+    Route::put('/products/{product}/recipes/{recipe}/restore', [ProductController::class, 'restoreRecipe'])->withTrashed();
+    Route::post('/products/{product}/clone', [ProductController::class, 'cloneProduct'])->withTrashed();
 
     /**
      * 생산·폐기 관리

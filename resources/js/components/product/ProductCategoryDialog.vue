@@ -657,6 +657,7 @@ function canMoveCategory(category, direction) {
     : index < orderedStoreCategories.value.length - 1;
 }
 
+/** 보존 중인 수동 정렬 기능에서 카테고리 이동 이벤트를 전달합니다. */
 function requestMoveCategory(category, direction) {
   if (props.loading || !canMoveCategory(category, direction)) {
     return;
@@ -665,6 +666,7 @@ function requestMoveCategory(category, direction) {
   emit('reorder', { category, direction });
 }
 
+/** 새 카테고리명을 검증한 뒤 등록 이벤트를 전달합니다. */
 function add() {
   const name = newName.value.trim();
 

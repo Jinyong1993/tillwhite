@@ -22,7 +22,7 @@
             </div>
 
             <div class="detail-product-category">
-              {{ product.category?.name ?? '카테고리 없음' }}
+              {{ product.category?.name ?? '-' }}
             </div>
           </div>
 
@@ -244,22 +244,28 @@
               바로 수정할 수 있도록 접근 경로를 제공합니다.
             -->
             <v-btn
-              v-if="hasRecipe && canManageRecipe"
+              v-if="hasRecipe && !product.deleted_at"
               size="small"
               variant="text"
               prepend-icon="mdi-pencil-outline"
-              @click="$emit('recipe')"
+              @click="requestRecipeEdit"
             >
-              레시피 수정
+              {{ displayedRecipe?.deleted_at ? '레시피 복구' : '레시피 수정' }}
             </v-btn>
           </div>
 
           <ProductRecipeCard
-            :recipe="product.recipes?.[0] ?? null"
+            :recipe="displayedRecipe"
             :can-manage="canManageRecipe"
-            @edit="$emit('recipe')"
+            :parent-deleted="Boolean(product.deleted_at)"
+            @edit="requestRecipeEdit"
             @edit-part="$emit('recipe-part', $event)"
-            @copy="$emit('recipe-copy')"
+            @copy="requestRecipeCopy"
+            @delete="$emit('recipe-delete')"
+            @restore="$emit('recipe-restore')"
+            @create-product="$emit('recipe-create-product')"
+            @view-product="$emit('recipe-view-product')"
+            @permission-denied="$emit('permission-denied', $event)"
           />
         </section>
 
@@ -324,32 +330,41 @@
           v-if="product.deleted_at"
           variant="flat"
           prepend-icon="mdi-restore"
-          :disabled="!canManage"
+          :disabled="loading"
           :loading="loading"
-          @click="$emit('restore')"
+          @click="requestManageAction('restore')"
         >
           복구
         </v-btn>
 
         <!-- 정상 제품 -->
-        <template v-else-if="canManage">
-          <v-btn
-            variant="text"
-            prepend-icon="mdi-pencil-outline"
-            :disabled="loading"
-            @click="$emit('edit')"
-          >
-            수정
-          </v-btn>
-
+        <template v-else>
           <v-btn
             color="error"
             variant="text"
             prepend-icon="mdi-delete-outline"
             :disabled="loading"
-            @click="$emit('delete')"
+            @click="requestManageAction('delete')"
           >
             삭제
+          </v-btn>
+
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-content-copy"
+            :disabled="loading"
+            @click="requestManageAction('clone')"
+          >
+            복제
+          </v-btn>
+
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-pencil-outline"
+            :disabled="loading"
+            @click="requestManageAction('edit')"
+          >
+            수정
           </v-btn>
         </template>
       </v-card-actions>
@@ -463,12 +478,18 @@ const emit = defineEmits([
   'close',
   'closed',
   'edit',
+  'clone',
   'toggle',
   'delete',
   'restore',
   'recipe',
   'recipe-part',
   'recipe-copy',
+  'recipe-delete',
+  'recipe-restore',
+  'recipe-create-product',
+  'recipe-view-product',
+  'permission-denied',
 ]);
 
 /*
@@ -528,11 +549,12 @@ const currentPrice = computed(() => {
 /*
  * 레시피 등록 여부
  */
-const hasRecipe = computed(() => {
-  return Boolean(
-    props.product?.recipes?.length,
-  );
+const displayedRecipe = computed(() => {
+  const recipes = props.product?.recipes ?? [];
+  return recipes.find((recipe) => !recipe.deleted_at) ?? recipes[0] ?? null;
 });
+
+const hasRecipe = computed(() => Boolean(displayedRecipe.value));
 
 /*
  * 제품 상태 표시 문구
@@ -634,6 +656,41 @@ function submitStatus() {
   emit('toggle');
 }
 
+/** 권한이 필요한 제품 관리 동작은 버튼을 숨기지 않고 클릭 시 이유를 안내합니다. */
+function requestManageAction(action) {
+  if (!props.canManage) {
+    emit('permission-denied', '제품을 관리할 권한이 없습니다.');
+    return;
+  }
+
+  emit(action);
+}
+
+/** 레시피 수정/복구 진입 전에 권한을 확인합니다. */
+function requestRecipeEdit() {
+  if (!props.canManageRecipe) {
+    emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
+    return;
+  }
+
+  if (displayedRecipe.value?.deleted_at) {
+    emit('recipe-restore');
+    return;
+  }
+
+  emit('recipe');
+}
+
+/** 레시피 복사 역시 같은 권한 안내 규칙을 사용합니다. */
+function requestRecipeCopy() {
+  if (!props.canManageRecipe) {
+    emit('permission-denied', '레시피를 복사할 권한이 없습니다.');
+    return;
+  }
+
+  emit('recipe-copy');
+}
+
 /*
  * 제품 상세보기 닫기
  */
@@ -707,14 +764,17 @@ function auditActionText(action) {
   return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
 }
 
+/** 관리 이력의 작업자 이름을 표시하고 누락 시 하이픈을 사용합니다. */
 function historyActor(entry) {
   return entry?.user?.name ?? '-';
 }
 
+/** 관리 이력 일시와 모델 일시를 공통 형식으로 표시합니다. */
 function historyAt(entry, fallbackAt = null) {
   return formatDateTime(entry?.at ?? fallbackAt);
 }
 
+/** 날짜·시간 값을 사용자 화면용 형식으로 변환합니다. */
 function formatDateTime(value) {
   if (!value) {
     return '-';

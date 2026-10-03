@@ -7,13 +7,14 @@
   <div
     v-if="recipe"
     class="recipe-card"
+    :class="{ 'recipe-card--deleted': recipe.deleted_at }"
   >
     <!--
       레시피 기본 정보는 권한이 있으면 버튼으로 표시해 부분 수정으로 연결하고,
       권한이 없으면 같은 디자인의 조회 전용 영역으로 표시합니다.
     -->
     <button
-      v-if="canManage"
+      v-if="canManage && !recipe.deleted_at"
       type="button"
       class="recipe-heading recipe-touchable"
       @click="$emit('edit-part', { type: 'basic' })"
@@ -101,12 +102,12 @@
           실제 요소 자체를 div로 변경하여 불필요한 클릭 동작을 막는다.
         -->
         <component
-          :is="canManage ? 'button' : 'div'"
+          :is="canManage && !recipe.deleted_at ? 'button' : 'div'"
           v-for="(item, index) in sortedIngredients"
           :key="item.id ?? `${item.name}-${item.sort_order}`"
           :type="canManage ? 'button' : undefined"
           class="recipe-item"
-          :class="{ 'recipe-touchable': canManage }"
+          :class="{ 'recipe-touchable': canManage && !recipe.deleted_at }"
           @click="
             canManage &&
             $emit('edit-part', {
@@ -142,7 +143,7 @@
             단순 장식이 아니라 해당 행을 터치할 수 있다는 의미로 사용한다.
           -->
           <v-icon
-            v-if="canManage"
+            v-if="canManage && !recipe.deleted_at"
             icon="mdi-chevron-right"
             size="18"
             class="recipe-item-arrow"
@@ -179,12 +180,12 @@
         class="recipe-steps"
       >
         <component
-          :is="canManage ? 'button' : 'div'"
+          :is="canManage && !recipe.deleted_at ? 'button' : 'div'"
           v-for="(step, index) in sortedSteps"
           :key="step.id ?? step.sort_order"
           :type="canManage ? 'button' : undefined"
           class="recipe-step"
-          :class="{ 'recipe-touchable': canManage }"
+          :class="{ 'recipe-touchable': canManage && !recipe.deleted_at }"
           @click="
             canManage &&
             $emit('edit-part', {
@@ -209,7 +210,7 @@
 
           <!-- 수정 가능한 공정에만 화살표 표시 -->
           <v-icon
-            v-if="canManage"
+            v-if="canManage && !recipe.deleted_at"
             icon="mdi-chevron-right"
             size="18"
             class="recipe-item-arrow"
@@ -226,16 +227,79 @@
       </div>
     </div>
 
-    <v-btn
-      v-if="canManage"
-      class="mt-4"
-      size="small"
-      variant="tonal"
-      prepend-icon="mdi-content-copy"
-      @click="$emit('copy')"
+    <div
+      v-if="!parentDeleted"
+      class="recipe-actions mt-4"
     >
-      레시피 복사
-    </v-btn>
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-package-variant"
+        @click="$emit('view-product')"
+      >
+        제품 보기
+      </v-btn>
+
+      <v-btn
+        v-if="!recipe.deleted_at"
+        size="small"
+        variant="text"
+        prepend-icon="mdi-package-variant-plus"
+        @click="requestAction('create-product')"
+      >
+        새 제품 만들기
+      </v-btn>
+
+      <v-btn
+        v-if="!recipe.deleted_at"
+        size="small"
+        variant="text"
+        prepend-icon="mdi-content-copy"
+        @click="requestAction('copy')"
+      >
+        복사
+      </v-btn>
+
+      <v-spacer />
+
+      <v-btn
+        v-if="!recipe.deleted_at"
+        color="error"
+        size="small"
+        variant="text"
+        prepend-icon="mdi-delete-outline"
+        @click="requestAction('delete')"
+      >
+        삭제
+      </v-btn>
+
+      <v-btn
+        v-if="recipe.deleted_at"
+        size="small"
+        variant="flat"
+        prepend-icon="mdi-restore"
+        @click="requestAction('restore')"
+      >
+        복구
+      </v-btn>
+
+      <v-btn
+        v-else
+        size="small"
+        variant="flat"
+        prepend-icon="mdi-pencil-outline"
+        @click="requestAction('edit')"
+      >
+        수정
+      </v-btn>
+    </div>
+
+    <div
+      v-if="parentDeleted"
+      class="recipe-parent-deleted-hint mt-4"
+    >
+      제품을 복구하면 제품 삭제로 함께 삭제된 레시피도 자동으로 복구됩니다.
+    </div>
 
     <!-- 등록/수정/삭제 이력은 본문을 다 읽은 뒤 확인할 수 있도록 카드 맨 아래에 표시합니다. -->
     <div class="recipe-history">
@@ -313,6 +377,11 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+
+  parentDeleted: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 /*
@@ -328,10 +397,15 @@ const props = defineProps({
  * 실제 수정과 저장 처리는 부모 컴포넌트에서 담당하여
  * 상세 카드가 데이터 처리 로직까지 중복해서 가지지 않도록 한다.
  */
-defineEmits([
+const emit = defineEmits([
   'edit',
   'edit-part',
   'copy',
+  'delete',
+  'restore',
+  'create-product',
+  'view-product',
+  'permission-denied',
 ]);
 
 /*
@@ -382,10 +456,27 @@ const isIncomplete = computed(() => {
   return sortedIngredients.value.length === 0 || sortedSteps.value.length === 0;
 });
 
+/** 레시피 관리 버튼은 동일한 외형을 유지하고 권한이 없으면 알림만 요청합니다. */
+function requestAction(action) {
+  if (!props.canManage) {
+    emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
+    return;
+  }
+
+  if (props.recipe?.deleted_at && !['restore'].includes(action)) {
+    emit('permission-denied', '삭제된 레시피입니다. 복구 후 이용해주세요.');
+    return;
+  }
+
+  emit(action);
+}
+
+/** 감사 로그 동작 코드를 사용자에게 보여줄 한글 이름으로 변환합니다. */
 function auditActionText(action) {
   return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
 }
 
+/** 관리 이력의 작업자와 일시를 카드용 한 줄 문자열로 만듭니다. */
 function historyText(entry, fallbackAt = null) {
   const actor = entry?.user?.name ?? '-';
   const value = entry?.at ?? fallbackAt;
@@ -394,6 +485,7 @@ function historyText(entry, fallbackAt = null) {
   return `${actor} · ${at}`;
 }
 
+/** 관리 이력 일시를 분 단위의 한국어 날짜 형식으로 표시합니다. */
 function formatHistoryDateTime(value) {
   if (!value) return '-';
 
@@ -410,6 +502,7 @@ function formatHistoryDateTime(value) {
   }).format(date);
 }
 
+/** 재료 사용량이 없으면 하이픈, 있으면 불필요한 소수점 0을 제거해 표시합니다. */
 function ingredientQuantity(item) {
   const quantity = item?.quantity;
   return quantity === null || quantity === undefined || quantity === ''
@@ -417,6 +510,7 @@ function ingredientQuantity(item) {
     : formatQuantity(quantity);
 }
 
+/** 재료 단위가 비어 있으면 공통 누락 표시인 하이픈을 반환합니다. */
 function ingredientUnit(item) {
   return String(item?.unit ?? '').trim() || '-';
 }
@@ -458,6 +552,17 @@ function formatOrder(index) {
 
   /* 긴 재료명이나 설명이 카드 밖으로 밀려나지 않도록 처리한다. */
   overflow-wrap: anywhere;
+}
+
+.recipe-card--deleted {
+  opacity: 0.58;
+}
+
+.recipe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 /* 레시피 기본 정보 */
@@ -732,6 +837,12 @@ function formatOrder(index) {
   gap: 12px;
   padding-top: 7px;
   overflow-wrap: anywhere;
+}
+
+.recipe-parent-deleted-hint {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+  line-height: 1.45;
 }
 
 .recipe-history {

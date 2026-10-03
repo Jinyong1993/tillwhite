@@ -39,15 +39,6 @@
         @click="openRegisterDialog(setError)"
       >
         직원 등록
-
-        <v-chip
-          v-if="!can('employee.manage')"
-          class="ml-2"
-          size="x-small"
-          variant="tonal"
-        >
-          권한 없음
-        </v-chip>
       </v-btn>
 
       <!-- 직원 검색/필터는 기존 UX를 그대로 유지하면서 전용 컴포넌트로 분리합니다. -->
@@ -230,6 +221,7 @@
         @status-change="changeEmployeeStatus($event, setError, setSuccess)"
         @delete="requestEmployeeAction('delete')"
         @restore="requestEmployeeAction('restore')"
+        @permission-denied="setError($event)"
       />
 
       <!-- 직원 정보 수정은 상세조회에서 받은 최신 값을 기준으로 별도 다이얼로그에서 처리합니다. -->
@@ -405,6 +397,7 @@ const employeeConfirm = reactive({
   payload: null,
 });
 
+/** 직원 관리 확인창의 상태와 보관 payload를 초기화합니다. */
 function clearEmployeeConfirm() {
   if (employeeActionLoading.value) return;
   employeeConfirm.open = false;
@@ -596,6 +589,7 @@ const paginatedEmployees = computed(() => {
 const pageStart = computed(() => filteredEmployees.value.length === 0 ? 0 : ((currentPage.value - 1) * itemsPerPage.value) + 1);
 const pageEnd = computed(() => Math.min(currentPage.value * itemsPerPage.value, filteredEmployees.value.length));
 
+/** 직원 검색어와 상태 필터를 기본값으로 되돌립니다. */
 function resetEmployeeFilters() {
   searchQuery.value = '';
   statusFilter.value = 'all';
@@ -1437,6 +1431,7 @@ async function changeEmployeeStatus(status, setError, setSuccess) {
   }
 }
 
+/** 직원 삭제·복구 등 영속 변경 전에 공통 확인창을 구성합니다. */
 function requestEmployeeAction(action) {
   if (!selectedEmployee.value || employeeActionLoading.value) return;
   employeeConfirm.action = action;
@@ -1687,7 +1682,7 @@ async function saveEmployee(
      *
      * 예:
      *
-     * - 403: 직원 등록 권한 없음
+     * - 403: 직원 등록 권한 부족
      * - 422: 입력값 검증 실패
      * - 500: 서버 내부 오류
      *
@@ -1811,23 +1806,11 @@ onMounted(() => {
 
 <style scoped>
 .employee-primary-action {
-  min-width: 0;
   min-height: 44px;
-  height: auto;
-  padding-block: 8px;
 }
 
 .employee-primary-action :deep(.v-btn__content) {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px 6px;
   white-space: normal;
-}
-
-.employee-primary-action :deep(.v-chip) {
-  flex: 0 0 auto;
 }
 
 .employee-toolbar {

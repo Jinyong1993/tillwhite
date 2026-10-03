@@ -516,6 +516,7 @@ function clearDraft() {
   emit('clear-draft');
 }
 
+/** 빈 제품 등록 폼의 기본값을 생성합니다. */
 function createEmptyForm() {
   return {
     store_id: null,
@@ -539,6 +540,7 @@ function createFormFromDraft(draft) {
   };
 }
 
+/** 기존 제품 데이터를 수정 폼에 맞는 값으로 변환합니다. */
 function createFormFromProduct(product) {
   return {
     store_id: product.store_id ?? product.store?.id ?? null,
@@ -565,12 +567,14 @@ function clearUnavailableCategory() {
   }
 }
 
+/** 현재 폼 상태를 비교 가능한 문자열로 만들어 변경 여부를 판단합니다. */
 function snapshot() {
   return JSON.stringify({
     ...form,
   });
 }
 
+/** 변경사항이 있으면 확인 후 닫고, 없으면 즉시 닫습니다. */
 function requestClose() {
   if (props.loading) {
     return;
@@ -584,17 +588,20 @@ function requestClose() {
   emit('close');
 }
 
+/** 작성 중 변경사항을 버리고 다이얼로그를 닫습니다. */
 function discardChanges() {
   discardDialog.value = false;
   emit('close');
 }
 
+/** 외부에서 변경된 다이얼로그 상태를 안전한 닫기 흐름으로 연결합니다. */
 function handleDialogChange(value) {
   if (!value) {
     requestClose();
   }
 }
 
+/** 현재 입력값을 정리해 부모의 저장 흐름으로 전달합니다. */
 function submit() {
   if (!canSubmit.value || props.loading) {
     return;

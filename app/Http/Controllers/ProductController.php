@@ -130,6 +130,40 @@ class ProductController extends Controller
         ]);
     }
 
+    /** 최근 본 제품/레시피를 Laravel Session에서 조회합니다. */
+    public function recentViewed(Request $request)
+    {
+        $this->access->requirePermission($request->user(), 'product.view');
+
+        return response()->json([
+            'items' => array_values($request->session()->get('product_recent_viewed', [])),
+        ]);
+    }
+
+    /** 최근 본 항목을 최대 5개까지 중복 없이 Laravel Session에 저장합니다. */
+    public function rememberRecentViewed(Request $request)
+    {
+        $this->access->requirePermission($request->user(), 'product.view');
+
+        $validated = $request->validate([
+            'type' => ['required', Rule::in(['product', 'recipe'])],
+            'id' => ['required', 'integer'],
+            'product_id' => ['nullable', 'integer'],
+            'title' => ['required', 'string', 'max:255'],
+        ]);
+
+        $items = collect($request->session()->get('product_recent_viewed', []))
+            ->reject(fn ($item) => $item['type'] === $validated['type'] && (int) $item['id'] === (int) $validated['id'])
+            ->prepend($validated)
+            ->take(5)
+            ->values()
+            ->all();
+
+        $request->session()->put('product_recent_viewed', $items);
+
+        return response()->json(['items' => $items]);
+    }
+
     /**
      * 현재 로그인 세션에 저장된 제품 등록 draft를 조회합니다.
      */
@@ -472,7 +506,34 @@ class ProductController extends Controller
         $this->assertProductManageableByUser($user, $product);
 
         $oldData = $product->toArray();
-        $product->delete();
+
+        DB::transaction(function () use ($product, $user) {
+            // 제품 삭제 시점에 살아 있던 레시피만 함께 삭제합니다.
+            // 이미 사용자가 직접 삭제한 레시피는 건드리지 않아 복구 의도를 보존합니다.
+            $product->recipes()
+                ->whereNull('deleted_at')
+                ->get()
+                ->each(function (Recipe $recipe) use ($user) {
+                    $recipe->forceFill([
+                        'deleted_by' => $user->id,
+                        'deletion_source' => 'product',
+                    ])->save();
+                    $recipe->delete();
+
+                    $this->audit->log(
+                        $user,
+                        'recipe',
+                        'delete',
+                        Recipe::class,
+                        $recipe->id,
+                        $recipe->toArray(),
+                        null,
+                        '제품 삭제에 따른 레시피 삭제'
+                    );
+                });
+
+            $product->delete();
+        });
 
         $this->audit->log(
             $user,
@@ -501,7 +562,36 @@ class ProductController extends Controller
         $this->assertProductManageableByUser($user, $product);
 
         $oldData = $product->toArray();
-        $product->restore();
+
+        DB::transaction(function () use ($product, $user) {
+            $product->restore();
+
+            // 제품 삭제 때문에 함께 삭제된 레시피만 자동 복구합니다.
+            // 사용자가 직접 삭제한 레시피(deletion_source=manual)는 삭제 상태를 유지합니다.
+            $product->recipes()
+                ->onlyTrashed()
+                ->where('deletion_source', 'product')
+                ->get()
+                ->each(function (Recipe $recipe) use ($user) {
+                    $recipeOldData = $recipe->toArray();
+                    $recipe->restore();
+                    $recipe->forceFill([
+                        'deleted_by' => null,
+                        'deletion_source' => null,
+                    ])->save();
+
+                    $this->audit->log(
+                        $user,
+                        'recipe',
+                        'update',
+                        Recipe::class,
+                        $recipe->id,
+                        $recipeOldData,
+                        $recipe->fresh()->toArray(),
+                        '제품 복구에 따른 레시피 복구'
+                    );
+                });
+        });
 
         $this->audit->log(
             $user,
@@ -545,7 +635,8 @@ class ProductController extends Controller
                 Rule::unique('recipes', 'name')
                     ->where(fn ($query) => $query
                         ->where('store_id', $product->store_id)
-                        ->where('product_id', $product->id)),
+                        ->where('product_id', $product->id)
+                        ->whereNull('deleted_at')),
             ],
             'description' => ['nullable', 'string'],
             'ingredients' => ['array'],
@@ -627,6 +718,12 @@ class ProductController extends Controller
             '해당 제품의 레시피를 찾을 수 없습니다.'
         );
 
+        if ($recipe->trashed()) {
+            throw ValidationException::withMessages([
+                'recipe' => '삭제된 레시피입니다. 복구 후 수정해주세요.',
+            ]);
+        }
+
         $validated = $request->validate([
             'name' => [
                 'required',
@@ -635,7 +732,8 @@ class ProductController extends Controller
                 Rule::unique('recipes', 'name')
                     ->where(fn ($query) => $query
                         ->where('store_id', $product->store_id)
-                        ->where('product_id', $product->id))
+                        ->where('product_id', $product->id)
+                        ->whereNull('deleted_at'))
                     ->ignore($recipe->id),
             ],
             'description' => ['nullable', 'string'],
@@ -714,6 +812,12 @@ class ProductController extends Controller
             '레시피를 찾을 수 없습니다.'
         );
 
+        if ($recipe->trashed()) {
+            throw ValidationException::withMessages([
+                'recipe' => '삭제된 레시피는 복사할 수 없습니다. 복구 후 이용해주세요.',
+            ]);
+        }
+
         $validated = $request->validate([
             'target_product_id' => ['required', 'integer', 'exists:products,id'],
         ], [
@@ -730,7 +834,7 @@ class ProductController extends Controller
             ]);
         }
 
-        if ($target->recipes()->exists()) {
+        if ($target->recipes()->whereNull('deleted_at')->exists()) {
             throw ValidationException::withMessages([
                 'target_product_id' => '선택한 제품에는 이미 레시피가 등록되어 있습니다.',
             ]);
@@ -781,6 +885,140 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => '레시피를 복사했습니다.',
+        ], 201);
+    }
+
+    /** 레시피를 직접 Soft Delete합니다. */
+    public function destroyRecipe(Request $request, Product $product, Recipe $recipe)
+    {
+        $user = $request->user();
+        $this->access->requirePermission($user, 'recipe.manage');
+        $this->assertProductManageableByUser($user, $product);
+
+        abort_unless((int) $recipe->product_id === (int) $product->id, 404, '레시피를 찾을 수 없습니다.');
+        abort_if($recipe->trashed(), 409, '이미 삭제된 레시피입니다.');
+
+        $oldData = $recipe->load(['ingredients', 'steps'])->toArray();
+        $recipe->forceFill([
+            'deleted_by' => $user->id,
+            'deletion_source' => 'manual',
+        ])->save();
+        $recipe->delete();
+
+        $this->audit->log($user, 'recipe', 'delete', Recipe::class, $recipe->id, $oldData, null, '레시피 삭제');
+
+        return response()->json(['message' => '레시피를 삭제했습니다.']);
+    }
+
+    /** 직접 삭제된 레시피를 복구합니다. */
+    public function restoreRecipe(Request $request, Product $product, Recipe $recipe)
+    {
+        $user = $request->user();
+        $this->access->requirePermission($user, 'recipe.manage');
+        $this->assertProductManageableByUser($user, $product);
+
+        abort_unless((int) $recipe->product_id === (int) $product->id, 404, '레시피를 찾을 수 없습니다.');
+        abort_unless($recipe->trashed(), 409, '삭제된 레시피가 아닙니다.');
+
+        if ($product->trashed()) {
+            throw ValidationException::withMessages(['recipe' => '제품을 먼저 복구해주세요.']);
+        }
+
+        if ($product->recipes()->whereNull('deleted_at')->exists()) {
+            throw ValidationException::withMessages(['recipe' => '이미 등록된 레시피가 있어 복구할 수 없습니다.']);
+        }
+
+        $oldData = $recipe->toArray();
+        $recipe->restore();
+        $recipe->forceFill(['deleted_by' => null, 'deletion_source' => null])->save();
+
+        $this->audit->log($user, 'recipe', 'update', Recipe::class, $recipe->id, $oldData, $recipe->fresh()->toArray(), '레시피 복구');
+
+        return response()->json(['message' => '레시피를 복구했습니다.']);
+    }
+
+    /**
+     * 기존 제품을 새 제품으로 복제합니다.
+     * 레시피 복제를 선택해도 모든 행은 새 ID로 생성되어 원본과 독립적으로 관리됩니다.
+     */
+    public function cloneProduct(Request $request, Product $product)
+    {
+        $user = $request->user();
+        $this->access->requirePermission($user, 'product.manage');
+        $this->assertProductManageableByUser($user, $product);
+        abort_if($product->trashed(), 422, '삭제된 제품은 복제할 수 없습니다.');
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('products', 'name')->where(fn ($query) => $query->where('store_id', $product->store_id)),
+            ],
+            'copy_recipe' => ['required', 'boolean'],
+        ], [
+            'name.required' => '새 제품명을 입력해주세요.',
+            'name.max' => '제품명은 255자 이하로 입력해주세요.',
+            'name.unique' => '같은 점포에 동일한 제품명이 이미 등록되어 있습니다.',
+            'copy_recipe.required' => '레시피 복사 여부를 선택해주세요.',
+        ]);
+
+        if ($validated['copy_recipe']) {
+            $this->access->requirePermission($user, 'recipe.manage');
+        }
+
+        $product->load(['prices', 'recipes.ingredients', 'recipes.steps']);
+        $sourceRecipe = $product->recipes->firstWhere('deleted_at', null);
+
+        $copy = DB::transaction(function () use ($product, $sourceRecipe, $validated, $user) {
+            $copy = Product::create([
+                'store_id' => $product->store_id,
+                'product_category_id' => $product->product_category_id,
+                'name' => trim($validated['name']),
+                'production_department' => $product->production_department,
+                'management_department' => $product->management_department,
+                'sales_type' => $product->sales_type,
+                'sales_start_date' => $product->sales_start_date,
+                'sales_end_date' => $product->sales_end_date,
+                'sort_order' => $product->sort_order,
+                'is_active' => true,
+            ]);
+
+            $price = $product->prices->first()?->price ?? 0;
+            ProductPrice::create([
+                'product_id' => $copy->id,
+                'price' => $price,
+                'effective_from' => now()->toDateString(),
+                'created_by' => $user->id,
+            ]);
+
+            if ($validated['copy_recipe'] && $sourceRecipe) {
+                $recipeCopy = Recipe::create([
+                    'store_id' => $copy->store_id,
+                    'product_id' => $copy->id,
+                    'department' => $copy->management_department,
+                    'name' => $sourceRecipe->name,
+                    'description' => $sourceRecipe->description,
+                    'is_active' => $sourceRecipe->is_active,
+                    'created_by' => $user->id,
+                ]);
+
+                foreach ($sourceRecipe->ingredients as $ingredient) {
+                    $recipeCopy->ingredients()->create($ingredient->only(['name', 'quantity', 'unit', 'sort_order']));
+                }
+                foreach ($sourceRecipe->steps as $step) {
+                    $recipeCopy->steps()->create($step->only(['description', 'sort_order']));
+                }
+            }
+
+            return $copy;
+        });
+
+        $this->audit->log($user, 'product', 'create', Product::class, $copy->id, null, $copy->toArray(), '제품 복제');
+
+        return response()->json([
+            'message' => '새 제품을 만들었습니다.',
+            'product_id' => $copy->id,
         ], 201);
     }
 

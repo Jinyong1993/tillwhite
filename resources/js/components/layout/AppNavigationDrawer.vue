@@ -7,7 +7,7 @@
 
     직원 관리 메뉴는 직원 개인정보와 관련된 기능이므로
     권한이 없는 사용자에게도 메뉴의 존재는 보여주되
-    '권한 없음' 상태를 명확하게 표시합니다.
+    권한이 없는 기능은 클릭 시 공통 알림으로 이유를 안내합니다.
   -->
   <v-navigation-drawer
     v-model="drawer"
@@ -51,8 +51,8 @@
         직원 관리 메뉴:
         - 직원 조회 권한(employee.view)과 관계없이 항상 표시
         - 권한이 있으면 정상적으로 이용 가능
-        - 권한이 없으면 오른쪽에 '권한 없음' 표시
-        - 권한이 없어도 클릭 자체는 가능
+        - 권한이 없어도 메뉴 외형은 동일하게 유지
+        - 클릭하면 권한 부족 알림을 표시
         - 클릭 후 Vue Router에서 권한을 검사
         - 권한이 없으면 메인으로 이동하면서 안내 메시지 표시
 
@@ -80,19 +80,16 @@
             개발 중:
             - 아직 사용할 수 없는 기능
 
-            권한 없음:
-            - 기능은 사용 중이지만
-              현재 사용자에게 필요한 권한이 없는 기능
           -->
           <template
-            v-if="item.developing || hasNoPermission(item)"
+            v-if="item.developing"
             #append
           >
             <v-chip
               size="x-small"
               variant="tonal"
             >
-              {{ item.developing ? '개발 중' : '권한 없음' }}
+              개발 중
             </v-chip>
           </template>
         </v-list-item>
@@ -269,8 +266,8 @@ const drawer = computed({
  * 현재 직원 관리에 사용합니다.
  *
  * 직원 관리 권한이 없는 사용자는
- * 메뉴 오른쪽에 '권한 없음'이 표시되지만
- * 메뉴 클릭 자체는 가능합니다.
+ * 권한이 없어도 메뉴 외형은 그대로 유지하며
+ * 클릭 시 공통 오류 알림으로 이유를 안내합니다.
  *
  * 실제 화면 접근은 Vue Router에서 다시 검사하며,
  * 실제 데이터 접근은 Laravel 서버에서 다시 검사합니다.
@@ -374,9 +371,9 @@ const visibleItems = computed(() => {
  * 필요한 권한(Permission)을 가지고 있지 않은지 확인합니다.
  *
  * showWithoutPermission이 true인 메뉴에 대해서만
- * '권한 없음' 상태를 표시합니다.
+ * 권한 부족 여부를 판단합니다.
  *
- * 현재는 직원 관리 메뉴에 사용합니다.
+ * 현재는 직원 관리 메뉴의 클릭 안내에 사용합니다.
  */
 function hasNoPermission(item) {
   return (
@@ -475,7 +472,7 @@ async function goToMain() {
  * - Vue Router 화면 이동
  * - Router에서 공통 로딩 시작
  *
- * 권한 없음 메뉴:
+ * 권한이 부족한 메뉴:
  * - 클릭 가능
  * - Vue Router에서 공통 로딩 시작
  * - Vue Router에서 권한 검사
@@ -486,6 +483,11 @@ async function goToMain() {
  */
 async function handleMenuClick(item) {
   if (item.developing) {
+    return;
+  }
+
+  if (hasNoPermission(item)) {
+    emit('error', `${item.title} 기능을 사용할 권한이 없습니다.`);
     return;
   }
 

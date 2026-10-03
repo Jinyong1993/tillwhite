@@ -490,6 +490,7 @@ async function confirmRemove() {
   }
 }
 
+/** 생산 기록 삭제 요청이 끝난 뒤 확인창 상태를 안전하게 초기화합니다. */
 function clearRemoveConfirmAfterRequest() {
   deleteConfirmOpen.value = false;
   pendingDeleteRecord.value = null;

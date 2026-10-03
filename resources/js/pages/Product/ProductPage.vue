@@ -21,15 +21,6 @@
           @click="openRegisterDialog(user, can, setError)"
         >
           <span class="product-primary-action-label">제품 등록</span>
-
-          <v-chip
-            v-if="!can('product.manage')"
-            class="ml-2"
-            size="x-small"
-            variant="tonal"
-          >
-            권한 없음
-          </v-chip>
         </v-btn>
 
         <v-btn
@@ -40,15 +31,22 @@
           @click="openCategoryDialog(can, setError)"
         >
           <span class="product-primary-action-label">카테고리 관리</span>
+        </v-btn>
+      </div>
 
-          <v-chip
-            v-if="!can('product.manage')"
-            class="ml-2"
-            size="x-small"
-            variant="tonal"
-          >
-            권한 없음
-          </v-chip>
+      <div
+        v-if="recentViewed.length"
+        class="recent-viewed mb-5"
+      >
+        <span class="recent-viewed-label">최근 본 항목</span>
+        <v-btn
+          v-for="item in recentViewed"
+          :key="`${item.type}-${item.id}`"
+          size="small"
+          variant="text"
+          @click="openRecentItem(item, user, setError)"
+        >
+          {{ item.title }}
         </v-btn>
       </div>
 
@@ -166,12 +164,18 @@
         @close="closeDetailDialog"
         @closed="clearClosedDetailState"
         @edit="openEditDialog"
+        @clone="openCloneProductDialog(false)"
         @toggle="requestProductAction('toggle')"
         @delete="requestProductAction('delete')"
         @restore="requestProductAction('restore')"
         @recipe="openRecipeDialog"
         @recipe-part="openRecipePartDialog"
         @recipe-copy="openRecipeCopyDialog"
+        @recipe-delete="requestRecipeDelete(setError, setSuccess)"
+        @recipe-restore="requestRecipeRestore(setError, setSuccess)"
+        @recipe-create-product="openCloneProductDialog(true)"
+        @recipe-view-product="focusProductInfo"
+        @permission-denied="setError($event)"
       />
 
       <!-- 제품 수정 -->
@@ -234,6 +238,51 @@
               @click="requestRecipeCopy(setError, setSuccess)"
             >
               복사
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <v-dialog
+        v-model="cloneProductDialog"
+        max-width="480"
+        persistent
+      >
+        <v-card rounded="lg">
+          <v-card-title class="pa-5 pb-2">{{ cloneFromRecipe ? '이 레시피를 기반으로 새 제품 만들기' : '제품 복제' }}</v-card-title>
+          <v-card-text class="px-5">
+            <div class="clone-dialog-description text-medium-emphasis mb-4">
+              원본은 변경하지 않고 별도 ID의 새 제품을 생성합니다.
+            </div>
+            <v-text-field
+              v-model="cloneProductName"
+              label="새 제품명 *"
+              variant="outlined"
+              :disabled="productActionLoading === 'clone-product'"
+            />
+            <v-checkbox
+              v-if="!cloneFromRecipe && activeSelectedRecipe"
+              v-model="cloneWithRecipe"
+              label="레시피도 함께 복사"
+              hide-details
+            />
+          </v-card-text>
+          <v-card-actions class="px-5 pb-4">
+            <v-btn
+              variant="text"
+              :disabled="productActionLoading === 'clone-product'"
+              @click="cloneProductDialog = false"
+            >
+              취소
+            </v-btn>
+            <v-spacer />
+            <v-btn
+              variant="flat"
+              :disabled="!cloneProductName.trim()"
+              :loading="productActionLoading === 'clone-product'"
+              @click="createClonedProduct(setError, setSuccess)"
+            >
+              등록
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -493,6 +542,11 @@ const recipeDialog = ref(false);
 const categoryDialog = ref(false);
 const recipeCopyDialog = ref(false);
 const recipeCopyTargetId = ref(null);
+const cloneProductDialog = ref(false);
+const cloneProductName = ref('');
+const cloneWithRecipe = ref(false);
+const cloneFromRecipe = ref(false);
+const recentViewed = ref([]);
 
 /** 제품 API 중복 요청을 막기 위한 현재 작업 상태 */
 const productActionLoading = ref(null);
@@ -630,6 +684,14 @@ const canSaveRecipe = computed(() => {
   return productActionLoading.value !== 'recipe';
 });
 
+const activeSelectedRecipe = computed(() => {
+  return selectedProduct.value?.recipes?.find((item) => !item.deleted_at) ?? null;
+});
+
+const displayedSelectedRecipe = computed(() => {
+  return activeSelectedRecipe.value ?? selectedProduct.value?.recipes?.[0] ?? null;
+});
+
 const recipeCopyTargets = computed(() => {
   if (!selectedProduct.value) return [];
 
@@ -638,7 +700,7 @@ const recipeCopyTargets = computed(() => {
       Number(product.store_id) === Number(selectedProduct.value.store_id)
       && Number(product.id) !== Number(selectedProduct.value.id)
       && !product.deleted_at
-      && !(product.recipes?.length)
+      && !(product.recipes?.some((recipe) => !recipe.deleted_at))
     ))
     .sort((a, b) => compareDisplayName(a.name, b.name));
 });
@@ -766,6 +828,8 @@ async function load() {
 async function initialLoad() {
   try {
     await load();
+    const recentResponse = await window.axios.get('/tillwhite/api/products/recent-viewed');
+    recentViewed.value = recentResponse.data.items ?? [];
   } catch (error) {
     appShellRef.value?.setError?.(
       errorMessage(error, '제품 정보를 불러오지 못했습니다.'),
@@ -775,6 +839,7 @@ async function initialLoad() {
   }
 }
 
+/** 카테고리 관리 권한을 확인하고 관리 다이얼로그를 엽니다. */
 function openCategoryDialog(can, setError) {
   if (!can('product.manage')) {
     setError('카테고리를 관리할 권한이 없습니다.');
@@ -795,6 +860,7 @@ function requestCategoryCreate(payload, setError, setSuccess) {
   );
 }
 
+/** 카테고리명 수정 전에 공통 확인창을 엽니다. */
 function requestCategoryRename(payload, setError, setSuccess) {
   openConfirm(
     'category-rename',
@@ -805,6 +871,7 @@ function requestCategoryRename(payload, setError, setSuccess) {
   );
 }
 
+/** 카테고리 사용 상태 변경 전에 영향 범위를 안내합니다. */
 function requestCategoryToggle(category, setError, setSuccess) {
   const actionText = category.is_active ? '사용을 중단' : '다시 사용';
 
@@ -830,6 +897,7 @@ function requestCategoryReorder({ category, direction }, setError, setSuccess) {
   );
 }
 
+/** 카테고리 API 요청의 로딩·성공·실패 처리를 공통화합니다. */
 async function runCategoryRequest(
   request,
   successMessage,
@@ -858,6 +926,7 @@ async function runCategoryRequest(
   }
 }
 
+/** 카테고리 등록 API를 공통 요청 처리기로 실행합니다. */
 function createCategory(payload, setError, setSuccess) {
   return runCategoryRequest(
     () => window.axios.post(
@@ -870,6 +939,7 @@ function createCategory(payload, setError, setSuccess) {
   );
 }
 
+/** 카테고리명 수정 API를 공통 요청 처리기로 실행합니다. */
 function renameCategory({ category, name }, setError, setSuccess) {
   return runCategoryRequest(
     () => window.axios.put(
@@ -882,6 +952,7 @@ function renameCategory({ category, name }, setError, setSuccess) {
   );
 }
 
+/** 카테고리 사용 상태 변경 API를 공통 요청 처리기로 실행합니다. */
 function toggleCategory(category, setError, setSuccess) {
   const successMessage = category.is_active
     ? '카테고리 사용을 중단했습니다.'
@@ -897,6 +968,7 @@ function toggleCategory(category, setError, setSuccess) {
   );
 }
 
+/** 숨겨 둔 수동 정렬 API 기능을 기존 호환을 위해 유지합니다. */
 function reorderCategory(category, direction, setError, setSuccess) {
   return runCategoryRequest(
     () => window.axios.put(
@@ -1086,11 +1158,13 @@ async function openDetailDialog(product, user, setError) {
 
     selectedProduct.value = response.data.product;
     detailDialog.value = true;
+    await rememberRecentViewed({ type: 'product', id: product.id, title: response.data.product?.name ?? product.name });
   } catch (error) {
     setError(errorMessage(error, '제품 정보를 열람할 수 없습니다.'));
   }
 }
 
+/** 제품 상세와 연결된 하위 다이얼로그를 함께 닫습니다. */
 function closeDetailDialog() {
   if (productActionLoading.value) {
     return;
@@ -1103,12 +1177,14 @@ function closeDetailDialog() {
   recipeDialog.value = false;
 }
 
+/** 상세 다이얼로그 퇴장 애니메이션이 끝난 뒤 선택 제품을 비웁니다. */
 function clearClosedDetailState() {
   if (!detailDialog.value) {
     selectedProduct.value = null;
   }
 }
 
+/** 삭제 상태를 확인한 뒤 제품 수정 다이얼로그를 엽니다. */
 function openEditDialog() {
   if (!selectedProduct.value) return;
 
@@ -1136,10 +1212,12 @@ function canManageProduct(product, user, can) {
   return Number(user?.store?.id) === Number(product.store_id);
 }
 
+/** 현재 선택 제품에 대한 제품 관리 가능 여부를 계산합니다. */
 function canManageSelectedProduct(can) {
   return canManageProduct(selectedProduct.value, currentUser.value, can);
 }
 
+/** 현재 선택 제품의 레시피 관리 가능 여부를 계산합니다. */
 function canManageSelectedRecipe(can) {
   if (!selectedProduct.value || !can('recipe.manage')) {
     return false;
@@ -1165,6 +1243,7 @@ function requestProductEdit(payload, setError, setSuccess) {
   );
 }
 
+/** 제품 수정 내용을 서버에 저장하고 최신 상세정보를 다시 조회합니다. */
 async function saveProductEdit(payload, setError, setSuccess) {
   if (!selectedProduct.value || productActionLoading.value) {
     return;
@@ -1226,15 +1305,16 @@ function requestProductAction(action) {
     },
     delete: {
       title: '제품을 삭제하시겠습니까?',
-      message: (
-        `${selectedProduct.value.name} 제품은 목록에서 삭제 상태가 되지만 `
-        + '과거 생산·폐기·가격·레시피 기록은 보존되며 복구할 수 있습니다.'
-      ),
+      message: activeSelectedRecipe.value
+        ? '이 제품에는 등록된 레시피가 있습니다. 제품을 삭제하면 해당 레시피도 함께 삭제됩니다. 그래도 삭제하시겠습니까?'
+        : `${selectedProduct.value.name} 제품을 삭제하시겠습니까? 과거 기록은 보존되며 복구할 수 있습니다.`,
       confirmText: '삭제',
     },
     restore: {
       title: '제품을 복구하시겠습니까?',
-      message: `${selectedProduct.value.name} 제품을 제품 목록에 다시 복구합니다.`,
+      message: selectedProduct.value.recipes?.some((recipe) => recipe.deleted_at && recipe.deletion_source === 'product')
+        ? '제품을 복구하면 제품 삭제로 함께 삭제된 레시피도 복구됩니다. 복구하시겠습니까?'
+        : `${selectedProduct.value.name} 제품을 제품 목록에 다시 복구합니다.`,
       confirmText: '복구',
     },
   }[action];
@@ -1251,6 +1331,7 @@ function requestProductAction(action) {
   confirmDialog.open = true;
 }
 
+/** 공통 확인창에서 승인된 작업을 실제 API 동작으로 분기합니다. */
 async function executeConfirmedAction(setError, setSuccess) {
   const action = confirmDialog.action;
 
@@ -1322,6 +1403,25 @@ async function executeConfirmedAction(setError, setSuccess) {
     const saved = confirmDialog.payload;
     await copyRecipe(saved?.setError ?? setError, saved?.setSuccess ?? setSuccess);
     clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'recipe-delete' || action === 'recipe-restore') {
+    const saved = confirmDialog.payload;
+    const verb = action === 'recipe-delete' ? 'delete' : 'restore';
+    const url = `/tillwhite/api/products/${selectedProduct.value.id}/recipes/${saved.recipeId}${verb === 'restore' ? '/restore' : ''}`;
+    productActionLoading.value = action;
+    try {
+      if (verb === 'delete') await window.axios.delete(url);
+      else await window.axios.put(url);
+      saved.setSuccess(action === 'recipe-delete' ? '레시피를 삭제했습니다.' : '레시피를 복구했습니다.');
+      clearConfirmDialog(true);
+      await refreshSelectedProduct(saved.setError, '작업은 완료되었지만 화면을 새로고침하지 못했습니다.');
+    } catch (error) {
+      saved.setError(requestFailureMessage(error, '레시피 작업을 완료하지 못했습니다.'));
+    } finally {
+      productActionLoading.value = null;
+    }
     return;
   }
 
@@ -1404,18 +1504,147 @@ async function executeConfirmedAction(setError, setSuccess) {
   }
 }
 
+/** 제품 복제 또는 레시피 기반 새 제품 생성 다이얼로그를 엽니다. */
+function openCloneProductDialog(fromRecipe = false) {
+  if (!selectedProduct.value || selectedProduct.value.deleted_at) {
+    appShellRef.value?.setError?.('삭제된 제품은 복제할 수 없습니다.');
+    return;
+  }
+
+  cloneFromRecipe.value = fromRecipe;
+  cloneWithRecipe.value = fromRecipe ? true : Boolean(activeSelectedRecipe.value);
+  cloneProductName.value = `${selectedProduct.value.name ?? ''} 복사본`.trim();
+  cloneProductDialog.value = true;
+}
+
+/** 새 제품과 선택한 레시피 복사본을 서버에서 하나의 트랜잭션으로 생성합니다. */
+async function createClonedProduct(setError, setSuccess) {
+  if (
+    !selectedProduct.value
+    || !cloneProductName.value.trim()
+    || productActionLoading.value
+  ) {
+    return;
+  }
+
+  productActionLoading.value = 'clone-product';
+
+  try {
+    const response = await window.axios.post(
+      `/tillwhite/api/products/${selectedProduct.value.id}/clone`,
+      {
+        name: cloneProductName.value.trim(),
+        copy_recipe: cloneFromRecipe.value ? true : cloneWithRecipe.value,
+      },
+    );
+
+    cloneProductDialog.value = false;
+    setSuccess(response.data.message ?? '새 제품을 만들었습니다.');
+    await load();
+
+    const created = products.value.find(
+      (item) => Number(item.id) === Number(response.data.product_id),
+    );
+
+    if (created) {
+      await openDetailDialog(created, currentUser.value, setError);
+    }
+  } catch (error) {
+    setError(requestFailureMessage(error, '새 제품을 만들지 못했습니다.'));
+  } finally {
+    productActionLoading.value = null;
+  }
+}
+
+/** 레시피 삭제는 실제 행을 제거하지 않고 Soft Delete 확인창을 거칩니다. */
+function requestRecipeDelete(setError, setSuccess) {
+  const target = displayedSelectedRecipe.value;
+  if (!target || target.deleted_at) {
+    return;
+  }
+
+  openConfirm(
+    'recipe-delete',
+    '레시피를 삭제하시겠습니까?',
+    '레시피는 삭제 상태로 보관되며 나중에 복구할 수 있습니다.',
+    '예',
+    { setError, setSuccess, recipeId: target.id },
+  );
+}
+
+/** 삭제된 레시피 복구도 동일한 확인 규칙을 사용합니다. */
+function requestRecipeRestore(setError, setSuccess) {
+  const target = displayedSelectedRecipe.value;
+  if (!target?.deleted_at) {
+    return;
+  }
+
+  openConfirm(
+    'recipe-restore',
+    '레시피를 복구하시겠습니까?',
+    '삭제된 레시피의 재료와 공정을 그대로 복구합니다.',
+    '예',
+    { setError, setSuccess, recipeId: target.id },
+  );
+}
+
+/** 최근 본 항목은 Laravel Session에 저장하여 화면을 다시 열어도 이어서 제공합니다. */
+async function rememberRecentViewed(item) {
+  try {
+    const response = await window.axios.post(
+      '/tillwhite/api/products/recent-viewed',
+      item,
+    );
+    recentViewed.value = response.data.items ?? recentViewed.value;
+  } catch (_) {
+    // 최근 본 항목 기록 실패는 핵심 업무를 막지 않습니다.
+  }
+}
+
+/** 최근 본 제품/레시피를 선택하면 연결된 제품 상세를 다시 엽니다. */
+async function openRecentItem(item, user, setError) {
+  const productId = item.product_id ?? item.id;
+  const product = products.value.find(
+    (candidate) => Number(candidate.id) === Number(productId),
+  );
+  if (!product) {
+    setError('최근 본 항목을 더 이상 열람할 수 없습니다.');
+    return;
+  }
+  await openDetailDialog(product, user, setError);
+}
+
+/** 레시피는 제품 상세 안에 있으므로 제품 보기 동작은 상세 상단으로 초점을 돌립니다. */
+function focusProductInfo() {
+  document
+    .querySelector('.product-detail-dialog .detail-scroll-area')
+    ?.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
+}
+
+/** 활성 레시피를 다른 제품으로 복사할 대상 선택창을 엽니다. */
 function openRecipeCopyDialog() {
   if (!selectedProduct.value || selectedProduct.value.deleted_at) {
     appShellRef.value?.setError?.('삭제된 제품입니다. 복구 후 레시피를 관리해주세요.');
     return;
   }
 
-  if (!selectedProduct.value.recipes?.[0]) return;
+  if (!activeSelectedRecipe.value) return;
+
+  rememberRecentViewed({
+    type: 'recipe',
+    id: activeSelectedRecipe.value.id,
+    product_id: selectedProduct.value.id,
+    title: activeSelectedRecipe.value.name ?? '레시피',
+  });
 
   recipeCopyTargetId.value = null;
   recipeCopyDialog.value = true;
 }
 
+/** 레시피 복사 전에 대상 제품과 작업 내용을 확인합니다. */
 function requestRecipeCopy(setError, setSuccess) {
   if (!recipeCopyTargetId.value) return;
 
@@ -1432,8 +1661,9 @@ function requestRecipeCopy(setError, setSuccess) {
   );
 }
 
+/** 선택한 제품에 독립된 새 레시피를 복사합니다. */
 async function copyRecipe(setError, setSuccess) {
-  const sourceRecipe = selectedProduct.value?.recipes?.[0];
+  const sourceRecipe = activeSelectedRecipe.value;
   if (!sourceRecipe || !recipeCopyTargetId.value || productActionLoading.value) return;
 
   productActionLoading.value = 'recipe-copy';
@@ -1464,7 +1694,15 @@ function openRecipeDialog() {
     return;
   }
 
-  const existingRecipe = selectedProduct.value.recipes?.[0] ?? null;
+  const existingRecipe = activeSelectedRecipe.value;
+  if (existingRecipe) {
+    rememberRecentViewed({
+      type: 'recipe',
+      id: existingRecipe.id,
+      product_id: selectedProduct.value.id,
+      title: existingRecipe.name ?? '레시피',
+    });
+  }
   editingRecipeId.value = existingRecipe?.id ?? null;
   recipeEditMode.value = 'full';
   recipeEditIndex.value = null;
@@ -1480,7 +1718,7 @@ function openRecipePartDialog(part) {
     return;
   }
 
-  const existingRecipe = selectedProduct.value?.recipes?.[0] ?? null;
+  const existingRecipe = activeSelectedRecipe.value;
   if (!existingRecipe || !part?.type) return;
 
   editingRecipeId.value = existingRecipe.id;
@@ -1491,22 +1729,27 @@ function openRecipePartDialog(part) {
   recipeDialog.value = true;
 }
 
+/** 부분 수정 모드에서 실제 재료 배열 인덱스를 계산합니다. */
 function actualIngredientIndex(index) {
   return recipeEditMode.value === 'ingredient' ? recipeEditIndex.value : index;
 }
 
+/** 부분 수정 모드에서 실제 공정 배열 인덱스를 계산합니다. */
 function actualStepIndex(index) {
   return recipeEditMode.value === 'step' ? recipeEditIndex.value : index;
 }
 
+/** 레시피에 빈 재료 입력 행을 추가합니다. */
 function addRecipeIngredient() {
   recipe.ingredients.push(createIngredientRow());
 }
 
+/** 지정한 재료 입력 행을 현재 편집 목록에서 제거합니다. */
 function removeRecipeIngredient(index) {
   recipe.ingredients.splice(index, 1);
 }
 
+/** 입력된 재료를 제거할 때만 확인창을 표시합니다. */
 function requestRemoveRecipeIngredient(index) {
   const item = recipe.ingredients[index];
   if (!item) return;
@@ -1519,14 +1762,17 @@ function requestRemoveRecipeIngredient(index) {
   openConfirm('recipe-remove-ingredient', '재료를 삭제하시겠습니까?', `‘${item.name || `재료 ${index + 1}`}’ 항목을 현재 편집 내용에서 삭제합니다.`, '삭제', { index });
 }
 
+/** 레시피에 빈 공정 입력 행을 추가합니다. */
 function addRecipeStep() {
   recipe.steps.push(createStepRow());
 }
 
+/** 지정한 공정 입력 행을 현재 편집 목록에서 제거합니다. */
 function removeRecipeStep(index) {
   recipe.steps.splice(index, 1);
 }
 
+/** 입력된 공정을 제거할 때만 확인창을 표시합니다. */
 function requestRemoveRecipeStep(index) {
   const step = recipe.steps[index];
   if (!step) return;
@@ -1539,6 +1785,7 @@ function requestRemoveRecipeStep(index) {
   openConfirm('recipe-remove-step', '공정을 삭제하시겠습니까?', `공정 ${index + 1}의 입력 내용을 삭제합니다.`, '삭제', { index });
 }
 
+/** 공정 순서를 현재 편집 목록 안에서 한 칸 이동합니다. */
 function moveRecipeStep(index, direction) {
   const target = index + direction;
   if (target < 0 || target >= recipe.steps.length) return;
@@ -1546,6 +1793,7 @@ function moveRecipeStep(index, direction) {
   recipe.steps.splice(target, 0, step);
 }
 
+/** 미저장 레시피 변경사항을 확인한 뒤 닫기 흐름을 결정합니다. */
 function requestCloseRecipeDialog() {
   if (productActionLoading.value === 'recipe') return;
 
@@ -1562,6 +1810,7 @@ function requestCloseRecipeDialog() {
   );
 }
 
+/** 레시피 저장 전에 공통 확인창을 표시합니다. */
 function requestRecipeSave(setError, setSuccess) {
   if (!canSaveRecipe.value) return;
 
@@ -1574,12 +1823,14 @@ function requestRecipeSave(setError, setSuccess) {
   );
 }
 
+/** 레시피 다이얼로그를 닫되 퇴장 중 상태 변경으로 인한 깜빡임을 막습니다. */
 function closeRecipeDialog() {
   // 퇴장 애니메이션 중 편집 모드를 바꾸면 다른 레시피 화면이 순간적으로 보일 수 있습니다.
   // 실제 상태 초기화는 @after-leave에서 처리합니다.
   recipeDialog.value = false;
 }
 
+/** 레시피 다이얼로그가 완전히 닫힌 뒤 편집 상태를 초기화합니다. */
 function resetRecipeDialogState() {
   editingRecipeId.value = null;
   recipeEditMode.value = 'full';
@@ -1587,6 +1838,7 @@ function resetRecipeDialogState() {
   recipeInitialSnapshot.value = '';
 }
 
+/** 레시피 등록 또는 수정 내용을 서버에 저장합니다. */
 async function saveRecipe(setError, setSuccess) {
   if (!selectedProduct.value || !canSaveRecipe.value) return;
 
@@ -1641,6 +1893,7 @@ async function saveRecipe(setError, setSuccess) {
   }
 }
 
+/** 실제로 값이 입력된 재료 행만 저장 대상으로 반환합니다. */
 function meaningfulIngredients() {
   return recipe.ingredients.filter((item) => (
     item.name.trim()
@@ -1649,10 +1902,12 @@ function meaningfulIngredients() {
   ));
 }
 
+/** 실제로 내용이 입력된 공정 행만 저장 대상으로 반환합니다. */
 function meaningfulSteps() {
   return recipe.steps.filter((step) => step.description.trim());
 }
 
+/** 레시피 편집 상태를 비교 가능한 문자열로 만듭니다. */
 function recipeSnapshot() {
   return JSON.stringify({
     name: recipe.name,
@@ -1662,10 +1917,12 @@ function recipeSnapshot() {
   });
 }
 
+/** 레시피 관리 이력의 작업자 이름을 표시합니다. */
 function recipeHistoryActor(entry) {
   return entry?.user?.name ?? '-';
 }
 
+/** 레시피 관리 이력의 작업 일시를 표시합니다. */
 function recipeHistoryAt(entry, fallbackAt = null) {
   const value = entry?.at ?? fallbackAt;
   if (!value) return '-';
@@ -1691,6 +1948,7 @@ function formatRecipeQuantity(value) {
   return text.includes('.') ? text.replace(/\.?0+$/, '') : text;
 }
 
+/** 기존 값 또는 빈 값으로 재료 입력 행을 생성합니다. */
 function createIngredientRow(ingredient = {}) {
   recipeRowKey += 1;
   const unit = String(ingredient.unit ?? '').trim();
@@ -1704,6 +1962,7 @@ function createIngredientRow(ingredient = {}) {
   };
 }
 
+/** 단위 선택값을 실제 저장할 unit 문자열에 반영합니다. */
 function applyUnitChoice(ingredient) {
   if (ingredient.unitChoice === CUSTOM_UNIT) {
     if (DEFAULT_UNITS.includes(ingredient.unit)) ingredient.unit = '';
@@ -1713,6 +1972,7 @@ function applyUnitChoice(ingredient) {
   ingredient.unit = ingredient.unitChoice ?? '';
 }
 
+/** 직접입력 단위에서 기본 단위 선택 모드로 되돌립니다. */
 function useUnitSelect(ingredient) {
   ingredient.unitChoice = ingredient.unit && DEFAULT_UNITS.includes(ingredient.unit)
     ? ingredient.unit
@@ -1720,6 +1980,7 @@ function useUnitSelect(ingredient) {
   ingredient.unit = ingredient.unitChoice;
 }
 
+/** 기존 값 또는 빈 값으로 공정 입력 행을 생성합니다. */
 function createStepRow(step = {}) {
   recipeRowKey += 1;
   return {
@@ -1728,6 +1989,7 @@ function createStepRow(step = {}) {
   };
 }
 
+/** 서버 레시피 데이터를 편집 폼 구조로 변환합니다. */
 function createRecipeForm(existingRecipe) {
   return {
     name: existingRecipe.name ?? '',
@@ -1741,6 +2003,7 @@ function createRecipeForm(existingRecipe) {
   };
 }
 
+/** 새 레시피 등록에 사용할 빈 폼을 생성합니다. */
 function createEmptyRecipe() {
   return {
     name: '',
@@ -1766,6 +2029,7 @@ async function refreshSelectedProduct(setError, failureMessage) {
   }
 }
 
+/** 작업 완료 후 제품 목록을 다시 조회하고 실패 시 별도 안내합니다. */
 async function refreshListAfterAction(setError, failureMessage) {
   try {
     await load();
@@ -1796,6 +2060,7 @@ async function handlePageChange(nextPage) {
   }
 }
 
+/** 제품 검색과 필터를 기본값으로 초기화합니다. */
 function resetFilters() {
   searchQuery.value = '';
   categoryFilter.value = 'all';
@@ -1831,16 +2096,19 @@ function clearConfirmDialog(force = false) {
   confirmDialog.payload = null;
 }
 
+/** 삭제·복구 완료 후 상세 상태를 안전하게 정리합니다. */
 function closeDetailDialogAfterAction() {
   detailDialog.value = false;
   editDialog.value = false;
   recipeDialog.value = false;
 }
 
+/** 판매 유형 코드를 사용자용 한글 이름으로 변환합니다. */
 function salesTypeName(value) {
   return value === 'limited' ? '기간 한정' : '상시';
 }
 
+/** 서버 오류 응답에서 사용자에게 보여줄 메시지를 안전하게 추출합니다. */
 function errorMessage(error, fallback) {
   return error.response?.data?.message ?? fallback;
 }
@@ -1903,10 +2171,7 @@ onMounted(() => {
   text-align: center;
 }
 
-.product-primary-action :deep(.v-chip) {
-  flex: 0 0 auto;
-}
-
+.clone-dialog-description,
 .recipe-dialog-description,
 .recipe-form-hint,
 .recipe-required-guide :deep(.v-alert__content) {
@@ -1916,6 +2181,20 @@ onMounted(() => {
 
 .recipe-form-section--basic .recipe-form-section-title {
   margin-bottom: 14px;
+}
+
+.recent-viewed {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.recent-viewed-label {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .product-pagination {
@@ -2121,7 +2400,21 @@ onMounted(() => {
   .recipe-dialog-header-icon { flex-basis: 36px; width: 36px; height: 36px; }
   .recipe-dialog-actions { gap: 6px; }
   .recipe-dialog-actions .v-btn { min-width: 0; }
-  .product-pagination {
+  .recent-viewed {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.recent-viewed-label {
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.product-pagination {
     width: calc(100% - 16px);
     max-width: calc(100% - 16px);
   }

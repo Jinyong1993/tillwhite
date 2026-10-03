@@ -216,6 +216,7 @@ const availableRoles = computed(() => {
   return props.roles.filter((role) => (allowed[form.department] ?? []).includes(role.code));
 });
 
+/** 직원 수정 폼의 현재 상태를 비교용 문자열로 만듭니다. */
 function snapshot() {
   return JSON.stringify({ ...form });
 }
@@ -253,6 +254,7 @@ watch(() => form.department, (value) => {
   }
 });
 
+/** 수정 내용이 있으면 확인창을 거쳐 닫도록 처리합니다. */
 function requestClose() {
   if (props.loading) {
     return;
@@ -265,6 +267,7 @@ function requestClose() {
 
   emit('close');
 }
+/** 직원 수정 내용을 버리고 원래 상태로 닫습니다. */
 function discardChanges() {
   discardDialog.value = false;
   emit('close');
