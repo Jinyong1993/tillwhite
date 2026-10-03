@@ -80,8 +80,9 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->withTrashed();
     Route::put('/products/{product}/restore', [ProductController::class, 'restore'])->withTrashed();
 
-    // 제품 레시피 등록
+    // 제품 레시피 등록 / 수정
     Route::post('/products/{product}/recipes', [ProductController::class, 'recipe']);
+    Route::put('/products/{product}/recipes/{recipe}', [ProductController::class, 'updateRecipe']);
 
 
     /**

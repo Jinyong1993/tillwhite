@@ -5,18 +5,33 @@
     persistent
     @update:model-value="handleDialogChange"
   >
-    <v-card rounded="lg">
-      <v-card-title class="d-flex align-center ga-2 pa-5 pb-3">
-        <v-icon :icon="isEdit ? 'mdi-package-variant' : 'mdi-package-variant-plus'" />
-        {{ isEdit ? '제품 수정' : '제품 등록' }}
-      </v-card-title>
+    <v-card class="product-form-dialog" rounded="lg">
+      <!-- 직원 등록 다이얼로그와 같은 구조의 고정 헤더입니다. -->
+      <div class="product-form-header">
+        <div class="product-form-header-icon">
+          <v-icon
+            :icon="isEdit ? 'mdi-package-variant' : 'mdi-package-variant-plus'"
+            size="22"
+          />
+        </div>
+
+        <div class="min-width-0">
+          <div class="text-h6 font-weight-bold">
+            {{ isEdit ? '제품 수정' : '제품 등록' }}
+          </div>
+
+          <div class="text-body-2 text-medium-emphasis mt-1">
+            {{ isEdit ? '제품의 기본 정보와 판매 정보를 수정합니다.' : '새로운 제품의 기본 정보와 판매 정보를 등록합니다.' }}
+          </div>
+        </div>
+      </div>
 
       <v-divider />
 
-      <v-card-text class="product-form-scroll pa-5">
+      <div class="product-form-scroll">
         <!-- 기본 정보 -->
-        <section>
-          <div class="section-title">
+        <section class="product-form-section">
+          <div class="product-form-section-header">
             <v-icon icon="mdi-information-outline" size="18" />
             기본 정보
           </div>
@@ -26,7 +41,24 @@
               일반 점포 직원은 자기 점포만 선택할 수 있으므로 잠급니다.
               최고 관리자는 서버가 내려준 점포 범위 안에서 선택할 수 있습니다.
             -->
+            <!--
+              일반 점포 직원의 점포는 서버 권한 범위상 변경할 수 없는 값입니다.
+              선택 가능한 것처럼 보이는 Select 대신 읽기 전용 TextField로 표시하여
+              사용자가 눌러도 선택 메뉴가 열리지 않도록 합니다.
+            -->
+            <v-text-field
+              v-if="storeLocked"
+              :model-value="lockedStoreName"
+              label="점포 *"
+              prepend-inner-icon="mdi-store-outline"
+              append-inner-icon="mdi-lock-outline"
+              variant="outlined"
+              readonly
+              :disabled="loading"
+            />
+
             <v-select
+              v-else
               v-model="form.store_id"
               :items="stores"
               item-title="name"
@@ -34,8 +66,7 @@
               label="점포 *"
               prepend-inner-icon="mdi-store-outline"
               variant="outlined"
-              :readonly="storeLocked"
-              :clearable="!storeLocked"
+              clearable
               :disabled="loading"
             />
 
@@ -72,11 +103,11 @@
           </div>
         </section>
 
-        <v-divider class="my-5" />
+        <v-divider />
 
         <!-- 담당 부서 -->
-        <section>
-          <div class="section-title">
+        <section class="product-form-section">
+          <div class="product-form-section-header">
             <v-icon icon="mdi-account-group-outline" size="18" />
             담당 부서
           </div>
@@ -92,8 +123,8 @@
             />
 
             <!--
-              일반 점포 관리자는 자신의 부서 데이터만 관리할 수 있으므로
-              관리 부서는 로그인 사용자의 부서로 고정합니다.
+              제품의 관리 부서는 로그인 사용자의 소속 부서와 별개의 제품 속성입니다.
+              음료는 홀, 제빵 제품은 주방처럼 실제 운영 담당 부서를 선택할 수 있습니다.
             -->
             <v-select
               v-model="form.management_department"
@@ -101,17 +132,16 @@
               label="관리 부서 *"
               prepend-inner-icon="mdi-account-cog-outline"
               variant="outlined"
-              :readonly="departmentLocked"
               :disabled="loading"
             />
           </div>
         </section>
 
-        <v-divider class="my-5" />
+        <v-divider />
 
         <!-- 판매 정보 -->
-        <section>
-          <div class="section-title">
+        <section class="product-form-section">
+          <div class="product-form-section-header">
             <v-icon icon="mdi-calendar-check-outline" size="18" />
             판매 정보
           </div>
@@ -149,11 +179,11 @@
             />
           </div>
         </section>
-      </v-card-text>
+      </div>
 
       <v-divider />
 
-      <v-card-actions class="pa-4 px-5 product-form-actions">
+      <v-card-actions class="product-form-actions">
         <v-btn
           variant="text"
           :disabled="loading"
@@ -274,7 +304,9 @@ const form = reactive(createEmptyForm());
 const isEdit = computed(() => Boolean(props.product?.id));
 const isSuperAdmin = computed(() => props.user?.role?.code === 'super_admin');
 const storeLocked = computed(() => !isSuperAdmin.value);
-const departmentLocked = computed(() => !isSuperAdmin.value);
+
+/** 고정 점포는 선택 UI 대신 이름만 표시합니다. */
+const lockedStoreName = computed(() => props.user?.store?.name ?? '-');
 
 /** 선택한 점포에서 현재 사용 가능한 카테고리만 표시합니다. */
 const availableCategories = computed(() => props.categories.filter(
@@ -334,12 +366,9 @@ watch(
         : createEmptyForm(),
     );
 
-    /** 일반 점포 직원은 자기 점포와 자기 부서로 자동 고정합니다. */
+    /** 일반 점포 직원은 자기 점포만 자동 고정합니다. 담당 부서는 제품 특성에 맞게 직접 선택합니다. */
     if (!isSuperAdmin.value) {
       form.store_id = props.user?.store?.id ?? null;
-      form.management_department = ['kitchen', 'hall'].includes(props.user?.department)
-        ? props.user.department
-        : '';
     }
 
     if (!availableCategories.value.some(
@@ -383,7 +412,7 @@ function createEmptyForm() {
     product_category_id: null,
     name: '',
     price: null,
-    production_department: 'kitchen',
+    production_department: '',
     management_department: '',
     sales_type: 'regular',
     sales_start_date: '',
@@ -398,7 +427,7 @@ function createFormFromProduct(product) {
     product_category_id: product.product_category_id ?? product.category?.id ?? null,
     name: product.name ?? '',
     price: product.prices?.[0]?.price ?? null,
-    production_department: product.production_department ?? 'kitchen',
+    production_department: product.production_department ?? '',
     management_department: product.management_department ?? '',
     sales_type: product.sales_type ?? 'regular',
     sales_start_date: String(product.sales_start_date ?? '').slice(0, 10),
@@ -456,28 +485,81 @@ function submit() {
 </script>
 
 <style scoped>
+/* 직원 등록 다이얼로그와 동일하게 헤더/본문/하단 버튼을 분리합니다. */
+.product-form-dialog {
+  display: flex;
+  max-height: calc(100vh - 48px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.product-form-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+}
+
+.product-form-header-icon {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 10px;
+}
+
 .product-form-scroll {
-  max-height: min(70vh, 650px);
+  min-height: 0;
   overflow-y: auto;
 }
 
-.section-title {
+/* 섹션 안쪽만 여백을 주고 Divider는 스크롤 영역의 끝에서 끝까지 이어지게 합니다. */
+.product-form-section {
+  padding: 22px 20px;
+}
+
+.product-form-section-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
   font-weight: 700;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 4px;
+  gap: 2px;
 }
 
 .product-form-actions {
-  position: sticky;
-  bottom: 0;
+  flex: 0 0 auto;
+  padding: 16px 20px;
   background: rgb(var(--v-theme-surface));
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .product-form-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
+  .product-form-header,
+  .product-form-section {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .product-form-actions {
+    padding: 12px 16px;
+  }
 }
 </style>

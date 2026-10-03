@@ -43,7 +43,7 @@
  *
  * variant:
  * - Vuetify Alert의 표시 스타일
- * - 기본값은 tonal입니다.
+ * - 기본값은 flat입니다. 배경을 불투명하게 표시하여 다이얼로그 위에서도 잘 보이게 합니다.
  *
  * 모든 알림은 반드시 사용자가 닫을 수 있어야 하므로
  * closable은 외부에서 변경할 수 있는 속성으로 두지 않습니다.
@@ -61,7 +61,7 @@ defineProps({
 
   variant: {
     type: String,
-    default: 'tonal',
+    default: 'flat',
   },
 });
 

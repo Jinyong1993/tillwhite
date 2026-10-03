@@ -18,7 +18,7 @@
             {{ product.name || '-' }}
           </div>
 
-          <div class="product-category">
+          <div class="product-category text-body-2 text-medium-emphasis">
             {{ product.category?.name ?? '카테고리 없음' }}
           </div>
         </div>
@@ -149,7 +149,7 @@ function formatDate(value) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px;
+  padding: 18px 18px 16px;
 }
 
 .min-width-0 {
@@ -166,9 +166,8 @@ function formatDate(value) {
 }
 
 .product-category {
-  margin-top: 3px;
-  color: rgba(var(--v-theme-on-surface), 0.62);
-  font-size: 0.78rem;
+  margin-top: 4px;
+  line-height: 1.4;
 }
 
 .product-status-chips {
@@ -183,7 +182,7 @@ function formatDate(value) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  padding: 0 16px 14px;
+  padding: 0 18px 16px;
 }
 
 .product-info-label {
@@ -207,7 +206,7 @@ function formatDate(value) {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 16px 14px;
+  margin: 0 18px 16px;
   color: rgba(var(--v-theme-on-surface), 0.68);
   font-size: 0.78rem;
 }

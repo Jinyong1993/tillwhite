@@ -40,6 +40,7 @@
         <v-card-text>
           <div class="product-toolbar-grid">
             <v-text-field
+              class="product-search-field"
               v-model="searchQuery"
               prepend-inner-icon="mdi-magnify"
               label="제품 검색"
@@ -51,6 +52,7 @@
             />
 
             <v-select
+              class="product-category-filter"
               v-model="categoryFilter"
               :items="categoryFilterItems"
               label="카테고리"
@@ -60,6 +62,7 @@
             />
 
             <v-select
+              class="product-status-filter"
               v-model="statusFilter"
               :items="statusFilterItems"
               label="상태"
@@ -69,6 +72,7 @@
             />
 
             <v-select
+              class="product-sales-filter"
               v-model="salesTypeFilter"
               :items="salesTypeFilterItems"
               label="판매 유형"
@@ -79,6 +83,7 @@
 
             <v-select
               v-if="visibleStores.length > 1"
+              class="product-store-filter"
               v-model="storeFilter"
               :items="storeFilterItems"
               label="점포"
@@ -88,6 +93,7 @@
             />
 
             <v-select
+              class="product-page-size"
               v-model="itemsPerPage"
               :items="itemsPerPageOptions"
               label="페이지당"
@@ -201,6 +207,7 @@
         :can-manage-recipe="canManageSelectedRecipe(can)"
         :loading="Boolean(productActionLoading)"
         @close="closeDetailDialog"
+        @closed="clearClosedDetailState"
         @edit="openEditDialog"
         @toggle="requestProductAction('toggle')"
         @delete="requestProductAction('delete')"
@@ -243,8 +250,8 @@
       >
         <v-card rounded="lg">
           <v-card-title class="d-flex align-center ga-2 pa-5 pb-3">
-            <v-icon icon="mdi-notebook-plus-outline" />
-            레시피 추가
+            <v-icon :icon="editingRecipeId ? 'mdi-notebook-edit-outline' : 'mdi-notebook-plus-outline'" />
+            {{ editingRecipeId ? '레시피 수정' : '레시피 등록' }}
           </v-card-title>
 
           <v-divider />
@@ -300,7 +307,7 @@
               :disabled="!recipe.name.trim()"
               @click="saveRecipe(setError, setSuccess)"
             >
-              저장
+              {{ editingRecipeId ? '수정 저장' : '등록' }}
             </v-btn>
           </v-card-actions>
         </v-card>
@@ -371,8 +378,9 @@ const confirmDialog = reactive({
   payload: null,
 });
 
-/** 기존 레시피 등록 기능의 입력 상태 */
+/** 레시피 등록/수정 입력 상태 */
 const recipe = reactive(createEmptyRecipe());
+const editingRecipeId = ref(null);
 
 const statusFilterItems = [
   { title: '전체', value: 'all' },
@@ -576,10 +584,17 @@ function closeDetailDialog() {
     return;
   }
 
+  // 먼저 다이얼로그를 닫고, 퇴장 애니메이션이 끝난 뒤 선택값을 비웁니다.
+  // 이렇게 해야 닫히는 순간 제품명이 '-'로 바뀌는 장면이 사용자에게 보이지 않습니다.
   detailDialog.value = false;
   editDialog.value = false;
   recipeDialog.value = false;
-  selectedProduct.value = null;
+}
+
+function clearClosedDetailState() {
+  if (!detailDialog.value) {
+    selectedProduct.value = null;
+  }
 }
 
 function openEditDialog() {
@@ -603,8 +618,7 @@ function canManageSelectedProduct(can) {
     return true;
   }
 
-  return Number(currentUser.value?.store?.id) === Number(selectedProduct.value.store_id)
-    && currentUser.value?.department === selectedProduct.value.management_department;
+  return Number(currentUser.value?.store?.id) === Number(selectedProduct.value.store_id);
 }
 
 function canManageSelectedRecipe(can) {
@@ -616,8 +630,7 @@ function canManageSelectedRecipe(can) {
     return true;
   }
 
-  return Number(currentUser.value?.store?.id) === Number(selectedProduct.value.store_id)
-    && currentUser.value?.department === selectedProduct.value.management_department;
+  return Number(currentUser.value?.store?.id) === Number(selectedProduct.value.store_id);
 }
 
 /** 수정 시 가격/상태/판매기간 등 영향이 큰 변경사항은 확인창을 한 번 더 표시합니다. */
@@ -790,13 +803,25 @@ async function executeConfirmedAction(setError, setSuccess) {
   }
 }
 
-/** 기존 레시피 등록 기능 */
+/**
+ * 레시피가 없으면 등록 모드, 이미 있으면 첫 번째 대표 레시피 수정 모드로 엽니다.
+ * 등록 직후 다시 열었을 때 빈 등록창이 뜨지 않도록 현재 상세 데이터에서 값을 채웁니다.
+ */
 function openRecipeDialog() {
   if (!selectedProduct.value || selectedProduct.value.deleted_at) {
     return;
   }
 
-  Object.assign(recipe, createEmptyRecipe());
+  const existingRecipe = selectedProduct.value.recipes?.[0] ?? null;
+
+  editingRecipeId.value = existingRecipe?.id ?? null;
+  Object.assign(
+    recipe,
+    existingRecipe
+      ? createRecipeForm(existingRecipe)
+      : createEmptyRecipe(),
+  );
+
   recipeDialog.value = true;
 }
 
@@ -823,25 +848,39 @@ async function saveRecipe(setError, setSuccess) {
   productActionLoading.value = 'recipe';
 
   try {
-    await window.axios.post(
-      `/tillwhite/api/products/${selectedProduct.value.id}/recipes`,
-      {
-        name: recipe.name.trim(),
-        description: recipe.description.trim() || null,
-        ingredients,
-        steps,
-      },
-    );
+    const payload = {
+      name: recipe.name.trim(),
+      description: recipe.description.trim() || null,
+      ingredients,
+      steps,
+    };
+
+    if (editingRecipeId.value) {
+      await window.axios.put(
+        `/tillwhite/api/products/${selectedProduct.value.id}/recipes/${editingRecipeId.value}`,
+        payload,
+      );
+    } else {
+      await window.axios.post(
+        `/tillwhite/api/products/${selectedProduct.value.id}/recipes`,
+        payload,
+      );
+    }
+
+    const wasEditing = Boolean(editingRecipeId.value);
 
     recipeDialog.value = false;
-    setSuccess('레시피를 등록했습니다.');
+    editingRecipeId.value = null;
+    setSuccess(wasEditing ? '레시피를 수정했습니다.' : '레시피를 등록했습니다.');
 
     await refreshSelectedProduct(
       setError,
-      '레시피 등록은 완료되었지만 화면을 새로고침하지 못했습니다.',
+      wasEditing
+        ? '레시피 수정은 완료되었지만 화면을 새로고침하지 못했습니다.'
+        : '레시피 등록은 완료되었지만 화면을 새로고침하지 못했습니다.',
     );
   } catch (error) {
-    setError(requestFailureMessage(error, '레시피 등록에 실패했습니다.'));
+    setError(requestFailureMessage(error, editingRecipeId.value ? '레시피 수정에 실패했습니다.' : '레시피 등록에 실패했습니다.'));
   } finally {
     productActionLoading.value = null;
   }
@@ -946,7 +985,20 @@ function closeDetailDialogAfterAction() {
   detailDialog.value = false;
   editDialog.value = false;
   recipeDialog.value = false;
-  selectedProduct.value = null;
+}
+
+function createRecipeForm(existingRecipe) {
+  return {
+    name: existingRecipe.name ?? '',
+    description: existingRecipe.description ?? '',
+    ingredientsText: (existingRecipe.ingredients ?? [])
+      .map((ingredient) => `${ingredient.name},${ingredient.quantity},${ingredient.unit}`)
+      .join('\n'),
+    stepsText: (existingRecipe.steps ?? [])
+      .map((step) => step.description ?? '')
+      .filter(Boolean)
+      .join('\n'),
+  };
 }
 
 function createEmptyRecipe() {
@@ -996,14 +1048,38 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 직원관리 검색 영역과 동일한 배경/경계 톤을 사용합니다. */
 .product-toolbar {
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  overflow: hidden;
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  border: 1px solid rgba(var(--v-border-color), 0.14);
 }
 
+/* 검색은 한 줄 전체, 나머지 필터는 모바일에서도 두 칸씩 정돈합니다. */
 .product-toolbar-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "search search"
+    "category status"
+    "sales page-size"
+    "store store";
   gap: 10px;
+}
+
+.product-search-field { grid-area: search; }
+.product-category-filter { grid-area: category; }
+.product-status-filter { grid-area: status; }
+.product-sales-filter { grid-area: sales; }
+.product-page-size { grid-area: page-size; }
+.product-store-filter { grid-area: store; }
+
+.product-toolbar :deep(.v-field) {
+  --v-field-border-opacity: 0.18;
+}
+
+.product-toolbar :deep(.v-field--focused) {
+  --v-field-border-opacity: 0.34;
 }
 
 .product-pagination {
@@ -1027,6 +1103,7 @@ onMounted(() => {
 }
 
 .product-pagination :deep(.v-btn) {
+  flex: 0 0 36px;
   min-width: 36px;
   width: 36px;
   height: 36px;
@@ -1038,7 +1115,13 @@ onMounted(() => {
 }
 
 @media (max-width: 340px) {
+  .product-pagination {
+    width: calc(100% - 16px);
+    max-width: calc(100% - 16px);
+  }
+
   .product-pagination :deep(.v-btn) {
+    flex-basis: 32px;
     min-width: 32px;
     width: 32px;
     height: 32px;

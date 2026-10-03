@@ -79,6 +79,14 @@ class DatabaseSeeder extends Seeder
              * 제품, 생산 기록, 근무 코드 등 화면 확인용 데이터를 생성한다.
              */
             DemoDataSeeder::class,
+
+            /**
+             * 제품 관리 화면 검증용 제품 30종
+             *
+             * 실제 매장에서 납득 가능한 카테고리/담당 부서 조합과
+             * 상시/기간한정/취급중단/삭제 상태를 함께 검증합니다.
+             */
+            ProductSeeder::class,
         ]);
     }
 }

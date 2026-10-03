@@ -121,10 +121,12 @@ class ProductController extends Controller
 
         $validated = $this->validateProduct($request);
 
+        // 제품 담당 부서는 제품 자체의 속성입니다.
+        // product.manage 권한이 있는 점포 사용자는 자기 점포 안에서
+        // 주방/홀 담당 제품을 등록할 수 있고, 다른 점포는 계속 차단합니다.
         $this->access->assertStoreDepartment(
             $user,
-            (int) $validated['store_id'],
-            $validated['management_department']
+            (int) $validated['store_id']
         );
 
         $this->assertCategoryBelongsToStore(
@@ -183,10 +185,12 @@ class ProductController extends Controller
 
         $validated = $this->validateProduct($request, $product);
 
+        // 제품 담당 부서는 제품 자체의 속성입니다.
+        // product.manage 권한이 있는 점포 사용자는 자기 점포 안에서
+        // 주방/홀 담당 제품을 등록할 수 있고, 다른 점포는 계속 차단합니다.
         $this->access->assertStoreDepartment(
             $user,
-            (int) $validated['store_id'],
-            $validated['management_department']
+            (int) $validated['store_id']
         );
 
         $this->assertCategoryBelongsToStore(
@@ -362,7 +366,15 @@ class ProductController extends Controller
         $this->assertProductManageableByUser($user, $product);
 
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('recipes', 'name')
+                    ->where(fn ($query) => $query
+                        ->where('store_id', $product->store_id)
+                        ->where('product_id', $product->id)),
+            ],
             'description' => ['nullable', 'string'],
             'ingredients' => ['array'],
             'ingredients.*.name' => ['required', 'string'],
@@ -414,6 +426,90 @@ class ProductController extends Controller
         return response()->json([
             'message' => '레시피가 등록되었습니다.',
         ], 201);
+    }
+
+    /**
+     * 제품에 이미 등록된 레시피를 수정합니다.
+     *
+     * 현재 제품 상세 UI에서는 대표 레시피 한 건을 등록/수정하는 흐름을 사용합니다.
+     * 기존 재료와 공정은 transaction 안에서 교체하여 일부만 수정되는 상태를 방지합니다.
+     */
+    public function updateRecipe(Request $request, Product $product, Recipe $recipe)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'recipe.manage');
+        $this->assertProductManageableByUser($user, $product);
+
+        abort_unless(
+            $recipe->product_id === $product->id
+                && $recipe->store_id === $product->store_id,
+            404,
+            '해당 제품의 레시피를 찾을 수 없습니다.'
+        );
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('recipes', 'name')
+                    ->where(fn ($query) => $query
+                        ->where('store_id', $product->store_id)
+                        ->where('product_id', $product->id))
+                    ->ignore($recipe->id),
+            ],
+            'description' => ['nullable', 'string'],
+            'ingredients' => ['array'],
+            'ingredients.*.name' => ['required', 'string'],
+            'ingredients.*.quantity' => ['required', 'numeric', 'min:0'],
+            'ingredients.*.unit' => ['required', 'string'],
+            'steps' => ['array'],
+            'steps.*.description' => ['required', 'string'],
+        ]);
+
+        $oldData = $recipe->load(['ingredients', 'steps'])->toArray();
+
+        DB::transaction(function () use ($validated, $product, $recipe, $user) {
+            $recipe->update([
+                'department' => $product->management_department,
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'updated_by' => $user->id,
+            ]);
+
+            $recipe->ingredients()->delete();
+            $recipe->steps()->delete();
+
+            foreach ($validated['ingredients'] ?? [] as $index => $ingredient) {
+                $recipe->ingredients()->create([
+                    ...$ingredient,
+                    'sort_order' => $index,
+                ]);
+            }
+
+            foreach ($validated['steps'] ?? [] as $index => $step) {
+                $recipe->steps()->create([
+                    ...$step,
+                    'sort_order' => $index,
+                ]);
+            }
+        });
+
+        $this->audit->log(
+            $user,
+            'recipe',
+            'update',
+            Recipe::class,
+            $recipe->id,
+            $oldData,
+            $recipe->fresh()->load(['ingredients', 'steps'])->toArray(),
+            '레시피 수정'
+        );
+
+        return response()->json([
+            'message' => '레시피를 수정했습니다.',
+        ]);
     }
 
     /**
@@ -497,10 +593,11 @@ class ProductController extends Controller
      */
     private function assertProductManageableByUser($user, Product $product): void
     {
+        // 제품 관리는 부서가 아니라 점포 범위로 제한합니다.
+        // 이를 통해 주방/홀 담당 제품을 한 점포의 제품 관리자가 함께 관리할 수 있습니다.
         $this->access->assertStoreDepartment(
             $user,
-            $product->store_id,
-            $product->management_department
+            $product->store_id
         );
     }
 }
