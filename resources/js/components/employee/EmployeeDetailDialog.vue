@@ -29,7 +29,16 @@
             </div>
           </div>
 
-          <div class="d-flex align-center ga-1">
+          <div class="detail-header-actions">
+            <!-- 재직 상태를 먼저 보여주고 관리 메뉴는 헤더의 가장 오른쪽에 고정합니다. -->
+            <v-chip
+              size="small"
+              :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
+              variant="tonal"
+            >
+              {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
+            </v-chip>
+
             <!-- 자주 쓰지 않는 관리 기능은 상단 관리 메뉴에 모읍니다. -->
             <v-menu v-if="!employee.deleted_at && canManage" location="bottom end">
               <template #activator="{ props: menuProps }">
@@ -39,14 +48,6 @@
                 <v-list-item prepend-icon="mdi-lock-reset" title="비밀번호 초기화" @click="$emit('password-reset')" />
               </v-list>
             </v-menu>
-
-            <v-chip
-            size="small"
-            :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
-            variant="tonal"
-          >
-            {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
-          </v-chip>
           </div>
         </div>
       </div>
@@ -585,6 +586,14 @@ function formatDateTime(value) {
  */
 .min-width-0 {
   min-width: 0;
+}
+
+.detail-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 
 /*

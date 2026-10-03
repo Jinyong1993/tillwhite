@@ -148,20 +148,38 @@
       <!--
         클라이언트 페이지 이동
 
-        서버에 페이지 요청을 보내지 않고 filteredEmployees 결과를
-        현재 페이지 범위만 잘라서 표시합니다.
+        서버에 페이지 요청을 보내지 않고
+        filteredEmployees 결과를 현재 페이지 범위만 잘라서 표시합니다.
+
+        paginationRef는 페이지 변경 전후의
+        페이지네이션 화면 위치를 비교하기 위해 사용합니다.
+
+        예를 들어 마지막 페이지의 직원 수가 적은 상태에서
+        이전 페이지로 이동하여 직원 카드가 많아지더라도,
+        페이지네이션이 아래로 밀린 거리만큼 스크롤을 보정하여
+        사용자가 보고 있던 페이지 버튼 위치를 유지합니다.
       -->
       <div
         v-if="filteredEmployees.length > 0"
+        ref="paginationRef"
         class="d-flex flex-column align-center ga-2 mt-5"
       >
+        <!--
+          직원 목록 페이지네이션
+
+          모바일 화면에서 현재 페이지가 중간 구간으로 이동하면
+          이전/다음 버튼과 생략 표시(...)까지 함께 표시될 수 있으므로
+          total-visible을 4로 제한합니다.
+        -->
         <v-pagination
           v-model="currentPage"
           :length="totalPages"
-          :total-visible="5"
+          :total-visible="4"
           class="employee-pagination"
           rounded="circle"
+          @update:model-value="handlePageChange"
         />
+
         <div class="text-caption text-medium-emphasis">
           {{ pageStart }}–{{ pageEnd }} / {{ filteredEmployees.length }}명
         </div>
@@ -287,6 +305,7 @@
 <script setup>
 import {
   computed,
+  nextTick,
   onMounted,
   reactive,
   ref,
@@ -451,6 +470,121 @@ const searchQuery = ref('');
 const statusFilter = ref('all');
 const itemsPerPage = ref(10);
 const currentPage = ref(1);
+
+/**
+ * 페이지네이션 영역의 DOM 참조입니다.
+ *
+ * 페이지를 변경했을 때 직원 카드 개수가 달라지면
+ * 직원 목록의 전체 높이가 달라지고,
+ * 목록 아래에 있는 페이지네이션 위치도 함께 이동합니다.
+ *
+ * 페이지 변경 전후의 페이지네이션 위치를 비교하여
+ * 사용자가 보고 있던 화면 위치를 유지하기 위해 사용합니다.
+ */
+const paginationRef = ref(null);
+
+
+/**
+ * 페이지 버튼을 눌렀을 때
+ * 페이지네이션의 현재 화면상 위치를 임시 저장합니다.
+ */
+let paginationViewportTop = null;
+
+
+/**
+ * 직원 목록 페이지를 변경할 때 실행합니다.
+ *
+ * 예:
+ *
+ * 12페이지에 직원이 2명만 있는 상태에서
+ * 페이지네이션 버튼이 화면에 보이고 있다고 가정합니다.
+ *
+ * 이 상태에서 11페이지를 눌러 직원이 10명으로 늘어나면
+ * 직원 목록 높이가 커지면서 페이지네이션이 아래로 밀립니다.
+ *
+ * 브라우저의 기존 스크롤 위치는 그대로이므로
+ * 페이지네이션은 화면 아래로 사라질 수 있습니다.
+ *
+ * 따라서:
+ *
+ * 1. 페이지 변경 직후 기존 페이지네이션의 화면 위치를 기억합니다.
+ * 2. Vue가 새로운 직원 목록을 렌더링할 때까지 기다립니다.
+ * 3. 새 페이지네이션 위치를 다시 확인합니다.
+ * 4. 이동한 거리만큼 화면을 스크롤합니다.
+ *
+ * 결과적으로 직원 수가 달라져도
+ * 페이지네이션은 사용자가 방금 보고 있던
+ * 화면상의 위치에 최대한 그대로 유지됩니다.
+ */
+async function handlePageChange() {
+  if (!paginationRef.value) {
+    return;
+  }
+
+  /*
+   * v-model 값은 이미 변경됐지만,
+   * DOM은 아직 이전 직원 목록을 표시하고 있는 시점입니다.
+   *
+   * 따라서 이 순간의 페이지네이션 위치가
+   * 사용자가 버튼을 눌렀을 때 보고 있던 위치입니다.
+   */
+  paginationViewportTop =
+    paginationRef.value.getBoundingClientRect().top;
+
+  /*
+   * currentPage 변경에 따른 직원 카드 목록이
+   * 실제 DOM에 반영될 때까지 기다립니다.
+   */
+  await nextTick();
+
+  if (
+    !paginationRef.value
+    || paginationViewportTop === null
+  ) {
+    return;
+  }
+
+  /*
+   * 새로운 직원 목록이 렌더링된 뒤
+   * 페이지네이션의 새로운 화면 위치를 확인합니다.
+   */
+  const newPaginationViewportTop =
+    paginationRef.value.getBoundingClientRect().top;
+
+  /*
+   * 페이지 변경 전후에 페이지네이션이
+   * 이동한 거리를 계산합니다.
+   *
+   * 예:
+   *
+   * 변경 전: 650px
+   * 변경 후: 1450px
+   *
+   * 차이: +800px
+   *
+   * 화면도 아래로 800px 이동시키면
+   * 페이지네이션은 다시 약 650px 위치에 나타납니다.
+   */
+  const scrollDifference =
+    newPaginationViewportTop - paginationViewportTop;
+
+  if (scrollDifference !== 0) {
+    window.scrollBy({
+      top: scrollDifference,
+
+      /*
+       * 여기서는 smooth를 사용하지 않습니다.
+       *
+       * 사용자가 페이지를 눌렀을 때
+       * 페이지네이션이 움직이지 않은 것처럼 느껴지는 것이
+       * 목적이기 때문에 즉시 위치를 보정합니다.
+       */
+      behavior: 'auto',
+    });
+  }
+
+  paginationViewportTop = null;
+}
 
 const statusFilterItems = [
   { title: '전체', value: 'all' },
@@ -1623,26 +1757,71 @@ onMounted(() => {
   --v-field-border-opacity: 0.34;
 }
 
-/* 페이지 번호가 많아져도 모바일 앱 너비 밖으로 잘리지 않도록 터치 영역을 유지하며 압축합니다. */
+/*
+ * 직원 목록 페이지네이션
+ *
+ * 페이지네이션 전체는 부모 영역 안에서만 사용합니다.
+ * 좌우에 동일한 여백을 주어 이전/다음 화살표가
+ * 화면 밖으로 밀려나지 않도록 합니다.
+ */
 .employee-pagination {
-  max-width: 100%;
+  width: calc(100% - 8px);
+  max-width: calc(100% - 8px);
+
+  margin-inline: auto;
+
+  box-sizing: border-box;
 }
+
+/*
+ * Vuetify 페이지네이션 내부 목록
+ *
+ * 내부 목록 자체의 너비를 다시 줄이지 않습니다.
+ * 바깥 .employee-pagination에서 이미 좌우 여백을
+ * 확보했기 때문에 여기서 추가 계산을 하면
+ * 한쪽 화살표가 밀려날 수 있습니다.
+ */
 .employee-pagination :deep(.v-pagination__list) {
   width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
   justify-content: center;
   gap: 2px;
 }
+
+/*
+ * 페이지 번호 / 이전 / 다음 버튼
+ *
+ * 모든 버튼을 동일한 크기로 고정하여
+ * 왼쪽/오른쪽 화살표의 크기 차이 때문에
+ * 한쪽만 밀리는 현상을 방지합니다.
+ */
 .employee-pagination :deep(.v-btn) {
+  flex: 0 0 36px;
   min-width: 36px;
   width: 36px;
   height: 36px;
 }
 
+/*
+ * 매우 작은 모바일 화면
+ *
+ * 340px 이하에서는 버튼 크기만 약간 줄여
+ * 페이지네이션 전체가 화면 안에 들어오도록 합니다.
+ */
 @media (max-width: 340px) {
+  .employee-pagination {
+    width: calc(100% - 16px);
+    max-width: calc(100% - 16px);
+  }
+
   .employee-pagination :deep(.v-btn) {
-    min-width: 34px;
-    width: 34px;
-    height: 34px;
+    flex-basis: 32px;
+
+    min-width: 32px;
+    width: 32px;
+    height: 32px;
   }
 }
 </style>
