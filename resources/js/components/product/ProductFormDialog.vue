@@ -33,7 +33,15 @@
       <v-divider />
 
       <div class="product-form-scroll">
-        <div class="required-guide text-caption text-medium-emphasis">* 표시는 필수 입력 항목입니다.</div>
+        <div class="required-guide">
+          <v-alert
+            type="info"
+            variant="tonal"
+            density="compact"
+          >
+            * 표시는 필수 입력 항목입니다.
+          </v-alert>
+        </div>
         <!-- 기본 정보 -->
         <section class="product-form-section">
           <div class="product-form-section-header">
@@ -190,33 +198,10 @@
 
       <v-divider />
 
-      <v-card-actions class="product-form-actions">
-        <div
-          v-if="!isEdit"
-          class="draft-actions"
-        >
-          <v-btn
-            size="small"
-            variant="text"
-            prepend-icon="mdi-content-save-outline"
-            :disabled="loading || !hasChanges"
-            @click="saveDraft"
-          >
-            임시저장
-          </v-btn>
-
-          <v-btn
-            size="small"
-            variant="text"
-            prepend-icon="mdi-delete-sweep-outline"
-            :disabled="loading || !hasDraftAndInput"
-            @click="clearDraft"
-          >
-            전체삭제
-          </v-btn>
-        </div>
+      <div class="product-form-actions">
         <v-btn
           variant="text"
+          prepend-icon="mdi-close"
           :disabled="loading"
           @click="requestClose"
         >
@@ -225,16 +210,38 @@
 
         <v-spacer />
 
-        <v-btn
-          variant="flat"
-          prepend-icon="mdi-content-save-outline"
-          :loading="loading"
-          :disabled="!canSubmit"
-          @click="submit"
-        >
-          {{ isEdit ? '저장' : '제품 등록' }}
-        </v-btn>
-      </v-card-actions>
+        <div class="product-form-action-buttons">
+          <template v-if="!isEdit">
+            <v-btn
+              variant="text"
+              prepend-icon="mdi-delete-sweep-outline"
+              :disabled="loading || !hasDraftAndInput"
+              @click="clearDraft"
+            >
+              전체삭제
+            </v-btn>
+
+            <v-btn
+              variant="flat"
+              prepend-icon="mdi-content-save-outline"
+              :disabled="loading || !hasChanges"
+              @click="saveDraft"
+            >
+              임시저장
+            </v-btn>
+          </template>
+
+          <v-btn
+            variant="flat"
+            :prepend-icon="isEdit ? 'mdi-content-save-check-outline' : 'mdi-package-variant-plus'"
+            :loading="loading"
+            :disabled="!canSubmit"
+            @click="submit"
+          >
+            {{ isEdit ? '저장' : '등록' }}
+          </v-btn>
+        </div>
+      </div>
     </v-card>
   </v-dialog>
 
@@ -666,18 +673,18 @@ function createPayload() {
   gap: 2px;
 }
 
-.draft-actions {
+.product-form-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 14px 20px;
+  background: rgb(var(--v-theme-surface));
 }
 
-.product-form-actions {
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 16px 20px;
-  background: rgb(var(--v-theme-surface));
+.product-form-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .min-width-0 {
@@ -686,7 +693,7 @@ function createPayload() {
 
 @media (max-width: 480px) {
   .product-form-dialog {
-    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 16px);
   }
 
   .product-form-header,
@@ -695,14 +702,46 @@ function createPayload() {
     padding-left: 16px;
   }
 
-  .draft-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  .required-guide {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .product-form-actions {
+    align-items: stretch;
+    padding: 12px 16px;
+  }
+
+  .product-form-action-buttons {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
 }
 
-.product-form-actions {
-    padding: 12px 16px;
+@media (max-width: 390px) {
+  .product-form-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .product-form-actions > .v-btn {
+    justify-self: start;
+  }
+
+  .product-form-actions > .v-spacer {
+    display: none;
+  }
+
+  .product-form-action-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .product-form-action-buttons .v-btn:last-child {
+    grid-column: 2;
   }
 }
 </style>

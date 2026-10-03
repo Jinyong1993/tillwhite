@@ -37,13 +37,53 @@
           사용자가 비활성/퇴사와 삭제를 혼동하지 않도록 합니다.
         -->
         <v-chip
+          v-if="employee.deleted_at"
           class="flex-shrink-0"
           size="small"
-          :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
-          :prepend-icon="employee.deleted_at ? 'mdi-delete-clock-outline' : undefined"
+          prepend-icon="mdi-delete-clock-outline"
           variant="tonal"
         >
-          {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
+          삭제됨
+        </v-chip>
+
+        <v-menu
+          v-else-if="canManage"
+          location="bottom end"
+        >
+          <template #activator="{ props: menuProps }">
+            <v-chip
+              v-bind="menuProps"
+              class="flex-shrink-0 employee-status-chip--interactive"
+              size="small"
+              :color="employmentStatusColor(employee.employment_status)"
+              variant="tonal"
+              append-icon="mdi-chevron-down"
+              :disabled="loading"
+            >
+              {{ employmentStatus(employee.employment_status) }}
+            </v-chip>
+          </template>
+
+          <v-list density="compact" min-width="140">
+            <v-list-item
+              v-for="status in statusOptions"
+              :key="status.value"
+              :title="status.title"
+              :prepend-icon="status.icon"
+              :disabled="employee.employment_status === status.value || loading"
+              @click="$emit('status-change', status.value)"
+            />
+          </v-list>
+        </v-menu>
+
+        <v-chip
+          v-else
+          class="flex-shrink-0"
+          size="small"
+          :color="employmentStatusColor(employee.employment_status)"
+          variant="tonal"
+        >
+          {{ employmentStatus(employee.employment_status) }}
         </v-chip>
       </div>
 
@@ -174,11 +214,26 @@ defineProps({
     type: Object,
     required: true,
   },
+  canManage: {
+    type: Boolean,
+    default: false,
+  },
+  loading: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 defineEmits([
   'detail',
+  'status-change',
 ]);
+
+const statusOptions = [
+  { title: '재직', value: 'active', icon: 'mdi-check-circle-outline' },
+  { title: '휴직', value: 'leave', icon: 'mdi-pause-circle-outline' },
+  { title: '퇴사', value: 'resigned', icon: 'mdi-account-off-outline' },
+];
 
 /**
  * 값이 없는 경우
@@ -278,6 +333,10 @@ function employmentStatusColor(value) {
 
 .employee-card--deleted:hover {
   opacity: 0.76;
+}
+
+.employee-status-chip--interactive {
+  cursor: pointer;
 }
 
 /*

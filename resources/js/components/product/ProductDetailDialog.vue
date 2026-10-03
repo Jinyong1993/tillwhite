@@ -21,7 +21,7 @@
               {{ product.name ?? '제품 상세' }}
             </div>
 
-            <div class="text-body-2 text-medium-emphasis mt-1">
+            <div class="detail-product-category">
               {{ product.category?.name ?? '카테고리 없음' }}
             </div>
           </div>
@@ -258,6 +258,7 @@
             :recipe="product.recipes?.[0] ?? null"
             :can-manage="canManageRecipe"
             @edit="$emit('recipe')"
+            @edit-part="$emit('recipe-part', $event)"
           />
         </section>
 
@@ -474,6 +475,7 @@ const emit = defineEmits([
   'delete',
   'restore',
   'recipe',
+  'recipe-part',
 ]);
 
 
@@ -799,6 +801,15 @@ function departmentName(value) {
 
 
 /* 헤더 상태 / 관리 버튼 */
+.detail-product-category {
+  margin-top: 4px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .detail-header-actions {
   display: flex;
   flex: 0 0 auto;

@@ -34,10 +34,19 @@
         <v-btn
           block
           prepend-icon="mdi-shape-plus-outline"
-          variant="tonal"
+          variant="flat"
           @click="openCategoryDialog(can, setError)"
         >
           카테고리 관리
+
+          <v-chip
+            v-if="!can('product.manage')"
+            class="ml-2"
+            size="x-small"
+            variant="tonal"
+          >
+            권한 없음
+          </v-chip>
         </v-btn>
       </div>
 
@@ -70,7 +79,10 @@
           v-for="product in paginatedProducts"
           :key="product.id"
           :product="product"
+          :can-manage="canManageProduct(product, can)"
+          :loading="productActionLoading === 'toggle'"
           @detail="openDetailDialog($event, user, setError)"
+          @status-change="requestCardProductStatus(product, $event)"
         />
       </div>
 
@@ -156,6 +168,7 @@
         @delete="requestProductAction('delete')"
         @restore="requestProductAction('restore')"
         @recipe="openRecipeDialog"
+        @recipe-part="openRecipePartDialog"
       />
 
       <!-- 제품 수정 -->
@@ -192,77 +205,113 @@
         @cancel="clearConfirmDialog"
       />
 
-      <!--
-        기존 레시피 등록 기능은 그대로 유지합니다.
-        제품 상세에서 레시피 버튼을 눌렀을 때만 표시합니다.
-      -->
+      <!-- 레시피는 전체 수정과 재료/공정 단위의 빠른 수정을 같은 데이터 흐름으로 처리합니다. -->
       <v-dialog
         v-model="recipeDialog"
-        max-width="520"
+        max-width="620"
         persistent
       >
-        <v-card rounded="lg">
-          <v-card-title class="d-flex align-center ga-2 pa-5 pb-3">
-            <v-icon :icon="editingRecipeId ? 'mdi-notebook-edit-outline' : 'mdi-notebook-plus-outline'" />
-            {{ editingRecipeId ? '레시피 수정' : '레시피 등록' }}
-          </v-card-title>
+        <v-card class="recipe-dialog" rounded="lg">
+          <div class="recipe-dialog-header">
+            <div class="recipe-dialog-header-icon">
+              <v-icon :icon="recipeDialogIcon" size="22" />
+            </div>
+            <div class="min-width-0">
+              <div class="text-h6 font-weight-bold">{{ recipeDialogTitle }}</div>
+              <div class="text-body-2 text-medium-emphasis mt-1">{{ recipeDialogSubtitle }}</div>
+            </div>
+          </div>
 
           <v-divider />
 
-          <v-card-text class="recipe-scroll pa-5">
-            <v-text-field
-              v-model="recipe.name"
-              label="레시피명 *"
-              variant="outlined"
-            />
+          <div class="recipe-scroll">
+            <v-alert class="mb-5" type="info" variant="tonal" density="compact">
+              * 표시는 필수 입력 항목입니다. 재료와 공정은 저장된 순서대로 표시됩니다.
+            </v-alert>
 
-            <v-textarea
-              v-model="recipe.description"
-              label="설명"
-              variant="outlined"
-              auto-grow
-            />
+            <section v-if="recipeEditMode === 'full' || recipeEditMode === 'basic'" class="recipe-form-section">
+              <div class="recipe-form-section-title"><v-icon icon="mdi-notebook-outline" size="18" />기본 내용</div>
+              <v-text-field v-model="recipe.name" label="레시피명 *" variant="outlined" />
+              <v-textarea v-model="recipe.description" label="설명" variant="outlined" auto-grow rows="2" />
+            </section>
 
-            <v-textarea
-              v-model="recipe.ingredientsText"
-              label="재료 (한 줄에 이름,수량,단위)"
-              placeholder="강력분,100,g"
-              variant="outlined"
-              auto-grow
-            />
+            <section v-if="recipeEditMode === 'full' || recipeEditMode === 'ingredient'" class="recipe-form-section">
+              <div class="recipe-form-section-title"><v-icon icon="mdi-scale-balance" size="18" />재료</div>
+              <div class="recipe-form-hint">재료를 하나씩 추가해 레시피를 완성해보세요.</div>
 
-            <v-textarea
-              v-model="recipe.stepsText"
-              label="공정 (한 줄에 한 단계)"
-              placeholder="재료를 계량한다."
-              variant="outlined"
-              auto-grow
-            />
-          </v-card-text>
+              <div class="recipe-builder-list">
+                <div
+                  v-for="(ingredient, index) in visibleRecipeIngredients"
+                  :key="ingredient._key"
+                  class="recipe-builder-item"
+                >
+                  <div class="recipe-builder-number">{{ String(actualIngredientIndex(index) + 1).padStart(2, '0') }}</div>
+                  <div class="recipe-ingredient-fields">
+                    <v-text-field v-model="ingredient.name" label="재료명 *" variant="outlined" density="comfortable" hide-details />
+                    <v-number-input v-model="ingredient.quantity" label="수량 *" variant="outlined" density="comfortable" :min="0" hide-details />
+                    <v-text-field v-model="ingredient.unit" label="단위 *" placeholder="g" variant="outlined" density="comfortable" hide-details />
+                  </div>
+                  <v-btn
+                    v-if="recipeEditMode === 'full'"
+                    icon="mdi-close"
+                    size="small"
+                    variant="text"
+                    aria-label="재료 삭제"
+                    @click="removeRecipeIngredient(actualIngredientIndex(index))"
+                  />
+                </div>
+              </div>
+
+              <v-btn
+                v-if="recipeEditMode === 'full'"
+                class="mt-3"
+                variant="tonal"
+                prepend-icon="mdi-plus"
+                @click="addRecipeIngredient"
+              >
+                재료 추가
+              </v-btn>
+            </section>
+
+            <section v-if="recipeEditMode === 'full' || recipeEditMode === 'step'" class="recipe-form-section">
+              <div class="recipe-form-section-title"><v-icon icon="mdi-format-list-numbered" size="18" />공정</div>
+              <div class="recipe-form-hint">한 단계씩 추가하면 공정 번호는 자동으로 정리됩니다.</div>
+
+              <div class="recipe-builder-list">
+                <div
+                  v-for="(step, index) in visibleRecipeSteps"
+                  :key="step._key"
+                  class="recipe-builder-item recipe-builder-item--step"
+                >
+                  <div class="recipe-builder-number">{{ String(actualStepIndex(index) + 1).padStart(2, '0') }}</div>
+                  <v-textarea v-model="step.description" label="공정 내용 *" variant="outlined" density="comfortable" auto-grow rows="2" hide-details />
+                  <div v-if="recipeEditMode === 'full'" class="recipe-step-actions">
+                    <v-btn icon="mdi-chevron-up" size="small" variant="text" :disabled="actualStepIndex(index) === 0" aria-label="공정 위로 이동" @click="moveRecipeStep(actualStepIndex(index), -1)" />
+                    <v-btn icon="mdi-chevron-down" size="small" variant="text" :disabled="actualStepIndex(index) === recipe.steps.length - 1" aria-label="공정 아래로 이동" @click="moveRecipeStep(actualStepIndex(index), 1)" />
+                    <v-btn icon="mdi-close" size="small" variant="text" aria-label="공정 삭제" @click="removeRecipeStep(actualStepIndex(index))" />
+                  </div>
+                </div>
+              </div>
+
+              <v-btn
+                v-if="recipeEditMode === 'full'"
+                class="mt-3"
+                variant="tonal"
+                prepend-icon="mdi-plus"
+                @click="addRecipeStep"
+              >
+                다음 공정 추가
+              </v-btn>
+            </section>
+          </div>
 
           <v-divider />
 
-          <v-card-actions class="pa-4 px-5">
-            <v-btn
-              variant="text"
-              :disabled="productActionLoading === 'recipe'"
-              @click="recipeDialog = false"
-            >
-              취소
-            </v-btn>
-
+          <div class="recipe-dialog-actions">
+            <v-btn variant="text" prepend-icon="mdi-close" :disabled="productActionLoading === 'recipe'" @click="recipeDialog = false">취소</v-btn>
             <v-spacer />
-
-            <v-btn
-              variant="flat"
-              prepend-icon="mdi-content-save-outline"
-              :loading="productActionLoading === 'recipe'"
-              :disabled="!recipe.name.trim()"
-              @click="saveRecipe(setError, setSuccess)"
-            >
-              {{ editingRecipeId ? '수정 저장' : '등록' }}
-            </v-btn>
-          </v-card-actions>
+            <v-btn variant="flat" prepend-icon="mdi-content-save-outline" :loading="productActionLoading === 'recipe'" :disabled="!canSaveRecipe" @click="saveRecipe(setError, setSuccess)">{{ editingRecipeId ? '저장' : '등록' }}</v-btn>
+          </div>
         </v-card>
       </v-dialog>
     </template>
@@ -336,8 +385,11 @@ const confirmDialog = reactive({
 });
 
 /** 레시피 등록/수정 입력 상태 */
+let recipeRowKey = 0;
 const recipe = reactive(createEmptyRecipe());
 const editingRecipeId = ref(null);
+const recipeEditMode = ref('full');
+const recipeEditIndex = ref(null);
 
 const statusFilterItems = [
   { title: '전체', value: 'all' },
@@ -357,6 +409,46 @@ const itemsPerPageOptions = [
   { title: '10개', value: 10 },
   { title: '30개', value: 30 },
 ];
+
+const recipeDialogTitle = computed(() => {
+  if (!editingRecipeId.value) return '레시피 등록';
+  if (recipeEditMode.value === 'ingredient') return '재료 수정';
+  if (recipeEditMode.value === 'step') return '공정 수정';
+  if (recipeEditMode.value === 'basic') return '레시피 기본 내용 수정';
+  return '레시피 수정';
+});
+
+const recipeDialogSubtitle = computed(() => {
+  if (recipeEditMode.value === 'ingredient') return '선택한 재료만 빠르게 수정합니다.';
+  if (recipeEditMode.value === 'step') return '선택한 공정 단계만 빠르게 수정합니다.';
+  if (recipeEditMode.value === 'basic') return '레시피명과 설명을 수정합니다.';
+  return '재료와 공정을 순서대로 추가해 레시피를 완성합니다.';
+});
+
+const recipeDialogIcon = computed(() => {
+  if (recipeEditMode.value === 'ingredient') return 'mdi-scale-balance';
+  if (recipeEditMode.value === 'step') return 'mdi-format-list-numbered';
+  return editingRecipeId.value ? 'mdi-notebook-edit-outline' : 'mdi-notebook-plus-outline';
+});
+
+const visibleRecipeIngredients = computed(() => {
+  if (recipeEditMode.value !== 'ingredient') return recipe.ingredients;
+  const item = recipe.ingredients[recipeEditIndex.value];
+  return item ? [item] : [];
+});
+
+const visibleRecipeSteps = computed(() => {
+  if (recipeEditMode.value !== 'step') return recipe.steps;
+  const item = recipe.steps[recipeEditIndex.value];
+  return item ? [item] : [];
+});
+
+const canSaveRecipe = computed(() => {
+  if (!recipe.name.trim()) return false;
+  if (recipe.ingredients.some((item) => !item.name.trim() || item.quantity === null || item.quantity === '' || Number(item.quantity) < 0 || !item.unit.trim())) return false;
+  if (recipe.steps.some((step) => !step.description.trim())) return false;
+  return productActionLoading.value !== 'recipe';
+});
 
 const categoryFilterItems = computed(() => {
   const source = storeFilter.value === 'all'
@@ -767,8 +859,8 @@ function openEditDialog() {
  * 프론트의 버튼 표시를 위한 보조 검사입니다.
  * 실제 수정 가능 여부는 Laravel에서 다시 검사합니다.
  */
-function canManageSelectedProduct(can) {
-  if (!selectedProduct.value || !can('product.manage')) {
+function canManageProduct(product, can) {
+  if (!product || product.deleted_at || !can('product.manage')) {
     return false;
   }
 
@@ -776,7 +868,11 @@ function canManageSelectedProduct(can) {
     return true;
   }
 
-  return Number(currentUser.value?.store?.id) === Number(selectedProduct.value.store_id);
+  return Number(currentUser.value?.store?.id) === Number(product.store_id);
+}
+
+function canManageSelectedProduct(can) {
+  return canManageProduct(selectedProduct.value, can);
 }
 
 function canManageSelectedRecipe(can) {
@@ -860,6 +956,23 @@ async function saveProductEdit(payload, setError, setSuccess) {
   } finally {
     productActionLoading.value = null;
   }
+}
+
+/**
+ * 제품 카드의 상태 선택도 상세 화면과 같은 확인/API 흐름을 사용합니다.
+ * 현재 상태를 다시 선택한 경우에는 아무 요청도 보내지 않습니다.
+ */
+function requestCardProductStatus(product, nextActive) {
+  if (!product || product.deleted_at || productActionLoading.value) {
+    return;
+  }
+
+  if (Boolean(product.is_active) === Boolean(nextActive)) {
+    return;
+  }
+
+  selectedProduct.value = product;
+  requestProductAction('toggle');
 }
 
 /** 상세 화면의 취급중단/삭제/복구 버튼에서 공통 확인창을 엽니다. */
@@ -989,47 +1102,63 @@ async function executeConfirmedAction(setError, setSuccess) {
   }
 }
 
-/**
- * 레시피가 없으면 등록 모드, 이미 있으면 첫 번째 대표 레시피 수정 모드로 엽니다.
- * 등록 직후 다시 열었을 때 빈 등록창이 뜨지 않도록 현재 상세 데이터에서 값을 채웁니다.
- */
+/** 레시피 전체 등록/수정 화면을 엽니다. */
 function openRecipeDialog() {
-  if (!selectedProduct.value || selectedProduct.value.deleted_at) {
-    return;
-  }
+  if (!selectedProduct.value || selectedProduct.value.deleted_at) return;
 
   const existingRecipe = selectedProduct.value.recipes?.[0] ?? null;
-
   editingRecipeId.value = existingRecipe?.id ?? null;
-  Object.assign(
-    recipe,
-    existingRecipe
-      ? createRecipeForm(existingRecipe)
-      : createEmptyRecipe(),
-  );
-
+  recipeEditMode.value = 'full';
+  recipeEditIndex.value = null;
+  Object.assign(recipe, existingRecipe ? createRecipeForm(existingRecipe) : createEmptyRecipe());
   recipeDialog.value = true;
 }
 
+/** 상세 카드에서 선택한 재료/공정/기본 내용만 빠르게 수정합니다. */
+function openRecipePartDialog(part) {
+  const existingRecipe = selectedProduct.value?.recipes?.[0] ?? null;
+  if (!existingRecipe || !part?.type) return;
+
+  editingRecipeId.value = existingRecipe.id;
+  recipeEditMode.value = part.type;
+  recipeEditIndex.value = Number.isInteger(part.index) ? part.index : null;
+  Object.assign(recipe, createRecipeForm(existingRecipe));
+  recipeDialog.value = true;
+}
+
+function actualIngredientIndex(index) {
+  return recipeEditMode.value === 'ingredient' ? recipeEditIndex.value : index;
+}
+
+function actualStepIndex(index) {
+  return recipeEditMode.value === 'step' ? recipeEditIndex.value : index;
+}
+
+function addRecipeIngredient() {
+  recipe.ingredients.push(createIngredientRow());
+}
+
+function removeRecipeIngredient(index) {
+  recipe.ingredients.splice(index, 1);
+}
+
+function addRecipeStep() {
+  recipe.steps.push(createStepRow());
+}
+
+function removeRecipeStep(index) {
+  recipe.steps.splice(index, 1);
+}
+
+function moveRecipeStep(index, direction) {
+  const target = index + direction;
+  if (target < 0 || target >= recipe.steps.length) return;
+  const [step] = recipe.steps.splice(index, 1);
+  recipe.steps.splice(target, 0, step);
+}
+
 async function saveRecipe(setError, setSuccess) {
-  if (!selectedProduct.value || productActionLoading.value || !recipe.name.trim()) {
-    return;
-  }
-
-  let ingredients;
-
-  try {
-    ingredients = parseIngredients(recipe.ingredientsText);
-  } catch (error) {
-    setError(error.message);
-    return;
-  }
-
-  const steps = recipe.stepsText
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((description) => ({ description }));
+  if (!selectedProduct.value || !canSaveRecipe.value) return;
 
   productActionLoading.value = 'recipe';
 
@@ -1037,8 +1166,12 @@ async function saveRecipe(setError, setSuccess) {
     const payload = {
       name: recipe.name.trim(),
       description: recipe.description.trim() || null,
-      ingredients,
-      steps,
+      ingredients: recipe.ingredients.map((item) => ({
+        name: item.name.trim(),
+        quantity: Number(item.quantity),
+        unit: item.unit.trim(),
+      })),
+      steps: recipe.steps.map((step) => ({ description: step.description.trim() })),
     };
 
     if (editingRecipeId.value) {
@@ -1047,17 +1180,23 @@ async function saveRecipe(setError, setSuccess) {
         payload,
       );
     } else {
-      await window.axios.post(
-        `/tillwhite/api/products/${selectedProduct.value.id}/recipes`,
-        payload,
-      );
+      await window.axios.post(`/tillwhite/api/products/${selectedProduct.value.id}/recipes`, payload);
     }
 
     const wasEditing = Boolean(editingRecipeId.value);
+    const successMessage = recipeEditMode.value === 'ingredient'
+      ? `재료 ${Number(recipeEditIndex.value) + 1}번을 수정했습니다.`
+      : recipeEditMode.value === 'step'
+        ? `공정 ${Number(recipeEditIndex.value) + 1}을(를) 수정했습니다.`
+        : wasEditing
+          ? '레시피를 수정했습니다.'
+          : '레시피를 등록했습니다.';
 
     recipeDialog.value = false;
     editingRecipeId.value = null;
-    setSuccess(wasEditing ? '레시피를 수정했습니다.' : '레시피를 등록했습니다.');
+    recipeEditMode.value = 'full';
+    recipeEditIndex.value = null;
+    setSuccess(successMessage);
 
     await refreshSelectedProduct(
       setError,
@@ -1066,44 +1205,50 @@ async function saveRecipe(setError, setSuccess) {
         : '레시피 등록은 완료되었지만 화면을 새로고침하지 못했습니다.',
     );
   } catch (error) {
-    setError(
-      requestFailureMessage(
-        error,
-        editingRecipeId.value
-          ? '레시피 수정에 실패했습니다.'
-          : '레시피 등록에 실패했습니다.',
-      ),
-    );
+    setError(requestFailureMessage(error, editingRecipeId.value ? '레시피 수정에 실패했습니다.' : '레시피 등록에 실패했습니다.'));
   } finally {
     productActionLoading.value = null;
   }
 }
 
-/** 재료 입력은 "이름,수량,단위" 세 값이 모두 정상일 때만 서버로 보냅니다. */
-function parseIngredients(text) {
-  return String(text ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      const [name, quantity, unit, ...extra] = line
-        .split(',')
-        .map((value) => value.trim());
+function createIngredientRow(ingredient = {}) {
+  recipeRowKey += 1;
+  return {
+    _key: `ingredient-${recipeRowKey}`,
+    name: ingredient.name ?? '',
+    quantity: ingredient.quantity ?? null,
+    unit: ingredient.unit ?? '',
+  };
+}
 
-      if (extra.length > 0 || !name || !unit || quantity === '' || Number.isNaN(Number(quantity))) {
-        throw new Error(`${index + 1}번째 재료를 "재료명,수량,단위" 형식으로 입력해주세요.`);
-      }
+function createStepRow(step = {}) {
+  recipeRowKey += 1;
+  return {
+    _key: `step-${recipeRowKey}`,
+    description: step.description ?? '',
+  };
+}
 
-      if (Number(quantity) < 0) {
-        throw new Error(`${index + 1}번째 재료 수량은 0 이상이어야 합니다.`);
-      }
+function createRecipeForm(existingRecipe) {
+  return {
+    name: existingRecipe.name ?? '',
+    description: existingRecipe.description ?? '',
+    ingredients: [...(existingRecipe.ingredients ?? [])]
+      .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+      .map(createIngredientRow),
+    steps: [...(existingRecipe.steps ?? [])]
+      .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+      .map(createStepRow),
+  };
+}
 
-      return {
-        name,
-        quantity: Number(quantity),
-        unit,
-      };
-    });
+function createEmptyRecipe() {
+  return {
+    name: '',
+    description: '',
+    ingredients: [createIngredientRow()],
+    steps: [createStepRow()],
+  };
 }
 
 /** 목록과 현재 상세정보를 서버의 최신 상태로 맞춥니다. */
@@ -1180,29 +1325,6 @@ function closeDetailDialogAfterAction() {
   recipeDialog.value = false;
 }
 
-function createRecipeForm(existingRecipe) {
-  return {
-    name: existingRecipe.name ?? '',
-    description: existingRecipe.description ?? '',
-    ingredientsText: (existingRecipe.ingredients ?? [])
-      .map((ingredient) => `${ingredient.name},${ingredient.quantity},${ingredient.unit}`)
-      .join('\n'),
-    stepsText: (existingRecipe.steps ?? [])
-      .map((step) => step.description ?? '')
-      .filter(Boolean)
-      .join('\n'),
-  };
-}
-
-function createEmptyRecipe() {
-  return {
-    name: '',
-    description: '',
-    ingredientsText: '',
-    stepsText: '',
-  };
-}
-
 function salesTypeName(value) {
   return value === 'limited' ? '기간 한정' : '상시';
 }
@@ -1274,14 +1396,154 @@ onMounted(() => {
   height: 36px;
 }
 
+.recipe-dialog {
+  display: flex;
+  max-height: min(92dvh, 780px);
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.recipe-dialog-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+}
+
+.recipe-dialog-header-icon {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
 .recipe-scroll {
-  max-height: min(70vh, 650px);
+  min-height: 0;
+  padding: 20px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.recipe-form-section + .recipe-form-section {
+  margin-top: 24px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.recipe-form-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.recipe-form-hint {
+  margin-bottom: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 0.76rem;
+}
+
+.recipe-builder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recipe-builder-item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 10px;
+}
+
+.recipe-builder-number {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-primary), 0.08);
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.recipe-ingredient-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.5fr) minmax(90px, 0.7fr) minmax(80px, 0.6fr);
+  gap: 8px;
+}
+
+.recipe-builder-item--step {
+  align-items: flex-start;
+}
+
+.recipe-step-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recipe-dialog-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 14px 20px;
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .recipe-dialog {
+    max-height: calc(100dvh - 16px);
+  }
+
+  .recipe-dialog-header,
+  .recipe-scroll,
+  .recipe-dialog-actions {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .recipe-ingredient-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .recipe-ingredient-fields > :first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 360px) {
   .product-primary-actions {
     grid-template-columns: 1fr;
+  }
+
+  .recipe-builder-item {
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: flex-start;
+  }
+
+  .recipe-builder-item > .v-btn,
+  .recipe-step-actions {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  .recipe-step-actions {
+    flex-direction: row;
   }
 }
 

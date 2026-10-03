@@ -80,7 +80,10 @@
           v-for="employee in paginatedEmployees"
           :key="employee.id"
           :employee="employee"
+          :can-manage="canManageEmployeeCard(employee, can)"
+          :loading="employeeActionLoading === 'status'"
           @detail="openDetailDialog($event, setError)"
+          @status-change="requestCardEmployeeStatus(employee, $event)"
         />
       </div>
 
@@ -1395,6 +1398,35 @@ function openPasswordResetDialog() {
   passwordResetDialog.value = true;
 }
 
+/** 직원 카드에서 상태를 바꿀 수 있는지 화면 표시용으로 판단합니다. */
+function canManageEmployeeCard(employee, can) {
+  return Boolean(
+    employee
+    && !employee.deleted_at
+    && can('employee.manage')
+    && employee.role?.code !== 'super_admin'
+  );
+}
+
+/**
+ * 카드에서 선택한 재직 상태는 확인창을 거쳐 기존 상태 변경 API로 전달합니다.
+ * 카드와 상세 화면이 서로 다른 서버 로직을 갖지 않도록 같은 엔드포인트를 사용합니다.
+ */
+function requestCardEmployeeStatus(employee, status) {
+  if (!employee || employee.deleted_at || employeeActionLoading.value || employee.employment_status === status) {
+    return;
+  }
+
+  const names = { active: '재직', leave: '휴직', resigned: '퇴사' };
+  selectedEmployee.value = employee;
+  employeeConfirm.action = 'status';
+  employeeConfirm.payload = status;
+  employeeConfirm.title = '직원 재직 상태를 변경하시겠습니까?';
+  employeeConfirm.message = `${employee.name} 직원의 상태를 ${names[status] ?? status}(으)로 변경합니다.`;
+  employeeConfirm.confirmText = '변경';
+  employeeConfirm.open = true;
+}
+
 /** 삭제/복구 확인창의 문구와 실행 작업을 설정합니다. */
 async function changeEmployeeStatus(status, setError, setSuccess) {
   if (!selectedEmployee.value || employeeActionLoading.value) return;
@@ -1571,6 +1603,13 @@ async function executeEmployeeAction(setError, setSuccess) {
     }
 
     await saveEmployeeEdit(payload, setError, setSuccess);
+    return;
+  }
+
+  if (action === 'status') {
+    const status = employeeConfirm.payload;
+    clearEmployeeConfirm();
+    await changeEmployeeStatus(status, setError, setSuccess);
     return;
   }
 
