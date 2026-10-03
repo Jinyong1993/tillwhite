@@ -67,8 +67,18 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 신규 제품 등록
     Route::post('/products', [ProductController::class, 'store']);
 
+    // 제품 상세정보 조회 (삭제 제품도 상세/복구를 위해 조회 가능)
+    Route::get('/products/{product}', [ProductController::class, 'show'])->withTrashed();
+
+    // 제품 기본정보 및 판매정보 수정
+    Route::put('/products/{product}', [ProductController::class, 'update']);
+
     // 제품 사용/중지 상태 변경
     Route::put('/products/{product}/toggle', [ProductController::class, 'toggle']);
+
+    // 제품 Soft Delete 및 복구
+    Route::delete('/products/{product}', [ProductController::class, 'destroy'])->withTrashed();
+    Route::put('/products/{product}/restore', [ProductController::class, 'restore'])->withTrashed();
 
     // 제품 레시피 등록
     Route::post('/products/{product}/recipes', [ProductController::class, 'recipe']);

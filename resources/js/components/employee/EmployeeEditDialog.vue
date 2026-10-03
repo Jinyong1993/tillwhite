@@ -105,12 +105,27 @@ const employmentStatuses = [
   { title: '퇴사', value: 'resigned' },
 ];
 
-const form = reactive({ employee_code: '', name: '', phone: '', birth_date: '', store_id: null, department: 'kitchen', position_id: null, role_id: null, hired_at: '', employment_status: 'active' });
+const form = reactive({
+  employee_code: '',
+  name: '',
+  phone: '',
+  birth_date: '',
+  store_id: null,
+  department: 'kitchen',
+  position_id: null,
+  role_id: null,
+  hired_at: '',
+  employment_status: 'active',
+});
 const initialForm = ref('');
 
 /** 현재 부서에서 실제로 선택 가능한 역할만 표시합니다. */
 const availableRoles = computed(() => {
-  const allowed = { kitchen: ['staff', 'kitchen_head'], hall: ['staff', 'hall_manager'], head_office: ['head_office_staff', 'head_office_manager'] };
+  const allowed = {
+    kitchen: ['staff', 'kitchen_head'],
+    hall: ['staff', 'hall_manager'],
+    head_office: ['head_office_staff', 'head_office_manager'],
+  };
   return props.roles.filter((role) => (allowed[form.department] ?? []).includes(role.code));
 });
 
@@ -121,7 +136,9 @@ const hasChanges = computed(() => Boolean(initialForm.value) && snapshot() !== i
 
 /** 상세조회에서 받은 최신 직원 값을 수정 양식에 복사합니다. */
 watch(() => [props.modelValue, props.employee], () => {
-  if (!props.modelValue || !props.employee) return;
+  if (!props.modelValue || !props.employee) {
+    return;
+  }
   Object.assign(form, {
     employee_code: props.employee.employee_code ?? '',
     name: props.employee.name ?? '',
@@ -140,13 +157,25 @@ watch(() => [props.modelValue, props.employee], () => {
 
 /** 본사로 변경하면 점포를 자동 제거하고, 부서와 맞지 않는 역할도 초기화합니다. */
 watch(() => form.department, (value) => {
-  if (value === 'head_office') form.store_id = null;
-  if (!availableRoles.value.some((role) => role.id === form.role_id)) form.role_id = null;
+  if (value === 'head_office') {
+    form.store_id = null;
+  }
+
+  if (!availableRoles.value.some((role) => role.id === form.role_id)) {
+    form.role_id = null;
+  }
 });
 
 function requestClose() {
-  if (props.loading) return;
-  if (hasChanges.value) { discardDialog.value = true; return; }
+  if (props.loading) {
+    return;
+  }
+
+  if (hasChanges.value) {
+    discardDialog.value = true;
+    return;
+  }
+
   emit('close');
 }
 function discardChanges() {
@@ -154,13 +183,40 @@ function discardChanges() {
   emit('close');
 }
 function handleDialogChange(value) {
-  if (!value) requestClose();
+  if (!value) {
+    requestClose();
+  }
 }
 </script>
 
 <style scoped>
-.edit-scroll { max-height: min(70vh, 650px); overflow-y: auto; }
-.edit-section-title { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 16px; }
-.edit-fields, .edit-grid { display: grid; grid-template-columns: 1fr; gap: 4px; }
-.head-office-info { min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)); border-radius: 4px; }
+.edit-scroll {
+  max-height: min(70vh, 650px);
+  overflow-y: auto;
+}
+
+.edit-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-weight: 700;
+}
+
+.edit-fields,
+.edit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.head-office-info {
+  display: flex;
+  align-items: center;
+  min-height: 56px;
+  padding: 10px 12px;
+  gap: 12px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 4px;
+}
 </style>

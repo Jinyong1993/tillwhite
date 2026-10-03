@@ -5,9 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Product extends Model
 {
+    use SoftDeletes;
     /**
      * 대량 할당 가능한 제품 속성
      *
@@ -37,6 +39,9 @@ class Product extends Model
         'name',
         'production_department',
         'management_department',
+        'sales_type',
+        'sales_start_date',
+        'sales_end_date',
         'sort_order',
         'is_active',
     ];
@@ -50,6 +55,8 @@ class Product extends Model
     protected function casts(): array
     {
         return [
+            'sales_start_date' => 'date',
+            'sales_end_date' => 'date',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
         ];
