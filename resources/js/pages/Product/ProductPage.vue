@@ -11,115 +11,55 @@
     :title="pageTitle"
   >
     <template #default="{ user, can, setError, setSuccess }">
-      <!-- 제품 등록 -->
-      <v-btn
-        block
-        class="mb-5"
-        prepend-icon="mdi-package-variant-plus"
-        variant="flat"
-        @click="openRegisterDialog(user, can, setError)"
-      >
-        제품 등록
-
-        <v-chip
-          v-if="!can('product.manage')"
-          class="ml-2"
-          size="x-small"
-          variant="tonal"
+      <!-- 제품 등록 / 카테고리 관리 -->
+      <div class="product-primary-actions mb-5">
+        <v-btn
+          block
+          prepend-icon="mdi-package-variant-plus"
+          variant="flat"
+          @click="openRegisterDialog(user, can, setError)"
         >
-          권한 없음
-        </v-chip>
-      </v-btn>
+          제품 등록
 
-      <!-- 검색 / 필터 -->
-      <v-card
-        class="product-toolbar mb-5"
-        variant="flat"
-        rounded="lg"
-      >
-        <v-card-text>
-          <div class="product-toolbar-grid">
-            <v-text-field
-              class="product-search-field"
-              v-model="searchQuery"
-              prepend-inner-icon="mdi-magnify"
-              label="제품 검색"
-              placeholder="제품명"
-              variant="outlined"
-              density="comfortable"
-              clearable
-              hide-details
-            />
+          <v-chip
+            v-if="!can('product.manage')"
+            class="ml-2"
+            size="x-small"
+            variant="tonal"
+          >
+            권한 없음
+          </v-chip>
+        </v-btn>
 
-            <v-select
-              class="product-category-filter"
-              v-model="categoryFilter"
-              :items="categoryFilterItems"
-              label="카테고리"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
+        <v-btn
+          block
+          prepend-icon="mdi-shape-plus-outline"
+          variant="tonal"
+          @click="openCategoryDialog(can, setError)"
+        >
+          카테고리 관리
+        </v-btn>
+      </div>
 
-            <v-select
-              class="product-status-filter"
-              v-model="statusFilter"
-              :items="statusFilterItems"
-              label="상태"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-
-            <v-select
-              class="product-sales-filter"
-              v-model="salesTypeFilter"
-              :items="salesTypeFilterItems"
-              label="판매 유형"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-
-            <v-select
-              v-if="visibleStores.length > 1"
-              class="product-store-filter"
-              v-model="storeFilter"
-              :items="storeFilterItems"
-              label="점포"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-
-            <v-select
-              class="product-page-size"
-              v-model="itemsPerPage"
-              :items="itemsPerPageOptions"
-              label="페이지당"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-          </div>
-
-          <div class="d-flex align-center justify-space-between flex-wrap ga-2 mt-3">
-            <div class="text-caption text-medium-emphasis">
-              전체 {{ products.length }}개 · 검색 결과 {{ filteredProducts.length }}개
-            </div>
-
-            <v-btn
-              v-if="hasActiveFilters"
-              size="small"
-              variant="text"
-              prepend-icon="mdi-filter-remove-outline"
-              @click="resetFilters"
-            >
-              검색 초기화
-            </v-btn>
-          </div>
-        </v-card-text>
-      </v-card>
+      <!-- 검색 / 필터: 제품 전용 컴포넌트로 분리하여 페이지 책임을 단순화합니다. -->
+      <ProductSearchFilter
+        v-model:search-query="searchQuery"
+        v-model:store-filter="storeFilter"
+        v-model:category-filter="categoryFilter"
+        v-model:status-filter="statusFilter"
+        v-model:sales-type-filter="salesTypeFilter"
+        v-model:items-per-page="itemsPerPage"
+        :store-items="storeFilterItems"
+        :category-items="categoryFilterItems"
+        :status-items="statusFilterItems"
+        :sales-type-items="salesTypeFilterItems"
+        :page-size-items="itemsPerPageOptions"
+        :show-store="visibleStores.length > 1"
+        :total="products.length"
+        :filtered="filteredProducts.length"
+        :has-active-filters="hasActiveFilters"
+        @reset="resetFilters"
+      />
 
       <!-- 제품 카드 목록 -->
       <div
@@ -194,9 +134,12 @@
         :stores="visibleStores"
         :categories="categories"
         :user="currentUser"
-        :loading="productActionLoading === 'create'"
+        :draft="productDraft"
+        :loading="['create', 'draft', 'clear-draft'].includes(productActionLoading)"
         @close="registerDialog = false"
         @save="saveProduct($event, setError, setSuccess)"
+        @draft="requestSaveProductDraft($event, setError, setSuccess)"
+        @clear-draft="requestClearProductDraft(setError, setSuccess)"
       />
 
       <!-- 제품 상세 -->
@@ -225,6 +168,16 @@
         :loading="productActionLoading === 'edit'"
         @close="editDialog = false"
         @save="requestProductEdit($event, setError, setSuccess)"
+      />
+
+      <ProductCategoryDialog
+        v-model="categoryDialog"
+        :categories="categories"
+        :stores="visibleStores"
+        :loading="productActionLoading === 'category'"
+        @create="createCategory($event, setError, setSuccess)"
+        @rename="renameCategory($event, setError, setSuccess)"
+        @toggle="toggleCategory($event, setError, setSuccess)"
       />
 
       <!-- 삭제/복구/취급상태/중요 수정 확인 -->
@@ -329,6 +282,8 @@ import {
 import AppShell from '../../components/layout/AppShell.vue';
 import ConfirmDialog from '../../components/common/ConfirmDialog.vue';
 import ProductCard from '../../components/product/ProductCard.vue';
+import ProductSearchFilter from '../../components/product/ProductSearchFilter.vue';
+import ProductCategoryDialog from '../../components/product/ProductCategoryDialog.vue';
 import ProductDetailDialog from '../../components/product/ProductDetailDialog.vue';
 import ProductFormDialog from '../../components/product/ProductFormDialog.vue';
 import { useAppLoading } from '../../composables/useAppLoading';
@@ -348,12 +303,14 @@ const visibleStores = ref([]);
 /** 현재 화면 사용자 및 제품 선택 상태 */
 const currentUser = ref(null);
 const selectedProduct = ref(null);
+const productDraft = ref(null);
 
 /** 다이얼로그 상태 */
 const registerDialog = ref(false);
 const detailDialog = ref(false);
 const editDialog = ref(false);
 const recipeDialog = ref(false);
+const categoryDialog = ref(false);
 
 /** 제품 API 중복 요청을 막기 위한 현재 작업 상태 */
 const productActionLoading = ref(null);
@@ -401,16 +358,19 @@ const itemsPerPageOptions = [
   { title: '30개', value: 30 },
 ];
 
-const categoryFilterItems = computed(() => [
-  { title: '전체', value: 'all' },
-  ...categories.value
-    .filter((category) => storeFilter.value === 'all'
-      || Number(category.store_id) === Number(storeFilter.value))
-    .map((category) => ({
-      title: category.name,
-      value: String(category.id),
-    })),
-]);
+const categoryFilterItems = computed(() => {
+  const source = storeFilter.value === 'all'
+    ? categories.value
+    : categories.value.filter((category) => Number(category.store_id) === Number(storeFilter.value));
+
+  const names = [...new Set(source.map((category) => category.name).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'ko-KR'));
+
+  return [
+    { title: '전체', value: 'all' },
+    ...names.map((name) => ({ title: name, value: name })),
+  ];
+});
 
 const storeFilterItems = computed(() => [
   { title: '전체', value: 'all' },
@@ -443,7 +403,7 @@ const filteredProducts = computed(() => {
       || (statusFilter.value === 'inactive' && !isDeleted && !product.is_active);
 
     const categoryMatched = categoryFilter.value === 'all'
-      || String(product.product_category_id) === String(categoryFilter.value);
+      || String(product.category?.name ?? '') === String(categoryFilter.value);
 
     const salesTypeMatched = salesTypeFilter.value === 'all'
       || product.sales_type === salesTypeFilter.value;
@@ -525,15 +485,212 @@ async function initialLoad() {
   }
 }
 
-/** 제품 등록 버튼은 항상 보이되 실제 권한이 없으면 친절한 오류만 표시합니다. */
-function openRegisterDialog(user, can, setError) {
+function openCategoryDialog(can, setError) {
+  if (!can('product.manage')) {
+    setError('카테고리를 관리할 권한이 없습니다.');
+    return;
+  }
+
+  categoryDialog.value = true;
+}
+
+async function runCategoryRequest(
+  request,
+  successMessage,
+  setError,
+  setSuccess,
+) {
+  if (productActionLoading.value) {
+    return;
+  }
+
+  productActionLoading.value = 'category';
+
+  try {
+    await request();
+    setSuccess(successMessage);
+    await load();
+  } catch (error) {
+    setError(
+      requestFailureMessage(
+        error,
+        '카테고리 처리에 실패했습니다.',
+      ),
+    );
+  } finally {
+    productActionLoading.value = null;
+  }
+}
+
+function createCategory(payload, setError, setSuccess) {
+  return runCategoryRequest(
+    () => window.axios.post(
+      '/tillwhite/api/product-categories',
+      payload,
+    ),
+    '카테고리를 등록했습니다.',
+    setError,
+    setSuccess,
+  );
+}
+
+function renameCategory({ category, name }, setError, setSuccess) {
+  return runCategoryRequest(
+    () => window.axios.put(
+      `/tillwhite/api/product-categories/${category.id}`,
+      { name },
+    ),
+    '카테고리를 수정했습니다.',
+    setError,
+    setSuccess,
+  );
+}
+
+function toggleCategory(category, setError, setSuccess) {
+  const successMessage = category.is_active
+    ? '카테고리 사용을 중단했습니다.'
+    : '카테고리를 다시 사용합니다.';
+
+  return runCategoryRequest(
+    () => window.axios.put(
+      `/tillwhite/api/product-categories/${category.id}/toggle`,
+    ),
+    successMessage,
+    setError,
+    setSuccess,
+  );
+}
+
+/** 제품 등록 권한과 Laravel Session draft를 확인한 뒤 등록창을 엽니다. */
+async function openRegisterDialog(user, can, setError) {
   if (!can('product.manage')) {
     setError('제품을 등록할 권한이 없습니다.');
     return;
   }
 
+  if (productActionLoading.value) {
+    return;
+  }
+
   currentUser.value = user;
-  registerDialog.value = true;
+  productActionLoading.value = 'draft-load';
+
+  try {
+    const response = await window.axios.get(
+      '/tillwhite/api/products/draft',
+    );
+
+    productDraft.value = response.data.draft ?? null;
+    registerDialog.value = true;
+  } catch (error) {
+    setError(
+      errorMessage(
+        error,
+        '제품 등록 정보를 준비하지 못했습니다.',
+      ),
+    );
+  } finally {
+    productActionLoading.value = null;
+  }
+}
+
+/** 제품 등록 draft 저장 전 직원관리와 동일하게 공통 확인창을 표시합니다. */
+function requestSaveProductDraft(payload, setError, setSuccess) {
+  if (productActionLoading.value) {
+    return;
+  }
+
+  confirmDialog.action = 'draft';
+  confirmDialog.title = '임시저장하시겠습니까?';
+  confirmDialog.message = '현재 입력된 제품 등록 내용을 로그인 세션에 임시저장합니다.';
+  confirmDialog.confirmText = '임시저장';
+  confirmDialog.payload = {
+    payload,
+    setError,
+    setSuccess,
+  };
+  confirmDialog.open = true;
+}
+
+/** 제품 등록 draft 전체삭제 전 공통 확인창을 표시합니다. */
+function requestClearProductDraft(setError, setSuccess) {
+  if (productActionLoading.value) {
+    return;
+  }
+
+  confirmDialog.action = 'clear-draft';
+  confirmDialog.title = '입력 내용을 전체 삭제하시겠습니까?';
+  confirmDialog.message = '현재 입력 내용과 로그인 세션에 임시저장된 제품 등록 내용을 모두 삭제합니다.';
+  confirmDialog.confirmText = '전체삭제';
+  confirmDialog.payload = {
+    setError,
+    setSuccess,
+  };
+  confirmDialog.open = true;
+}
+
+/** 현재 제품 등록 내용을 Laravel Session에 임시저장합니다. */
+async function saveProductDraft(payload, setError, setSuccess) {
+  if (productActionLoading.value) {
+    return;
+  }
+
+  productActionLoading.value = 'draft';
+
+  try {
+    const response = await window.axios.put(
+      '/tillwhite/api/products/draft',
+      payload,
+    );
+
+    productDraft.value = response.data.draft ?? null;
+    clearConfirmDialog(true);
+    registerDialog.value = false;
+    setSuccess('제품 등록 내용을 임시저장했습니다.');
+  } catch (error) {
+    setError(
+      requestFailureMessage(
+        error,
+        '제품 등록 내용을 임시저장하지 못했습니다.',
+      ),
+    );
+  } finally {
+    productActionLoading.value = null;
+  }
+}
+
+/** Laravel Session draft와 현재 등록 폼을 함께 초기화합니다. */
+async function clearProductDraft(setError, setSuccess) {
+  if (productActionLoading.value) {
+    return;
+  }
+
+  productActionLoading.value = 'clear-draft';
+
+  try {
+    await window.axios.delete(
+      '/tillwhite/api/products/draft',
+    );
+
+    productDraft.value = null;
+    clearConfirmDialog(true);
+
+    // modelValue를 다시 열어 폼이 빈 draft를 기준으로 확실히 초기화되게 합니다.
+    registerDialog.value = false;
+    await nextTick();
+    registerDialog.value = true;
+
+    setSuccess('제품 등록 입력 내용을 전체 삭제했습니다.');
+  } catch (error) {
+    setError(
+      requestFailureMessage(
+        error,
+        '제품 등록 입력 내용을 삭제하지 못했습니다.',
+      ),
+    );
+  } finally {
+    productActionLoading.value = null;
+  }
 }
 
 /** 신규 제품을 저장합니다. */
@@ -548,6 +705,7 @@ async function saveProduct(payload, setError, setSuccess) {
     await window.axios.post('/tillwhite/api/products', payload);
 
     registerDialog.value = false;
+    productDraft.value = null;
     setSuccess('제품을 등록했습니다.');
 
     await refreshListAfterAction(
@@ -720,7 +878,10 @@ function requestProductAction(action) {
     },
     delete: {
       title: '제품을 삭제하시겠습니까?',
-      message: `${selectedProduct.value.name} 제품은 목록에서 삭제 상태가 되지만 과거 생산·폐기·가격·레시피 기록은 보존되며 복구할 수 있습니다.`,
+      message: (
+        `${selectedProduct.value.name} 제품은 목록에서 삭제 상태가 되지만 `
+        + '과거 생산·폐기·가격·레시피 기록은 보존되며 복구할 수 있습니다.'
+      ),
       confirmText: '삭제',
     },
     restore: {
@@ -746,6 +907,31 @@ async function executeConfirmedAction(setError, setSuccess) {
   const action = confirmDialog.action;
 
   if (!action || productActionLoading.value) {
+    return;
+  }
+
+  if (action === 'draft') {
+    const saved = confirmDialog.payload;
+
+    if (!saved?.payload) {
+      return;
+    }
+
+    await saveProductDraft(
+      saved.payload,
+      saved.setError ?? setError,
+      saved.setSuccess ?? setSuccess,
+    );
+    return;
+  }
+
+  if (action === 'clear-draft') {
+    const saved = confirmDialog.payload;
+
+    await clearProductDraft(
+      saved?.setError ?? setError,
+      saved?.setSuccess ?? setSuccess,
+    );
     return;
   }
 
@@ -880,7 +1066,14 @@ async function saveRecipe(setError, setSuccess) {
         : '레시피 등록은 완료되었지만 화면을 새로고침하지 못했습니다.',
     );
   } catch (error) {
-    setError(requestFailureMessage(error, editingRecipeId.value ? '레시피 수정에 실패했습니다.' : '레시피 등록에 실패했습니다.'));
+    setError(
+      requestFailureMessage(
+        error,
+        editingRecipeId.value
+          ? '레시피 수정에 실패했습니다.'
+          : '레시피 등록에 실패했습니다.',
+      ),
+    );
   } finally {
     productActionLoading.value = null;
   }
@@ -1048,38 +1241,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 직원관리 검색 영역과 동일한 배경/경계 톤을 사용합니다. */
-.product-toolbar {
-  overflow: hidden;
-  background: rgba(var(--v-theme-on-surface), 0.025);
-  border: 1px solid rgba(var(--v-border-color), 0.14);
-}
-
-/* 검색은 한 줄 전체, 나머지 필터는 모바일에서도 두 칸씩 정돈합니다. */
-.product-toolbar-grid {
+.product-primary-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas:
-    "search search"
-    "category status"
-    "sales page-size"
-    "store store";
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-}
-
-.product-search-field { grid-area: search; }
-.product-category-filter { grid-area: category; }
-.product-status-filter { grid-area: status; }
-.product-sales-filter { grid-area: sales; }
-.product-page-size { grid-area: page-size; }
-.product-store-filter { grid-area: store; }
-
-.product-toolbar :deep(.v-field) {
-  --v-field-border-opacity: 0.18;
-}
-
-.product-toolbar :deep(.v-field--focused) {
-  --v-field-border-opacity: 0.34;
 }
 
 .product-pagination {
@@ -1092,10 +1257,10 @@ onMounted(() => {
 .product-pagination :deep(.v-pagination__list) {
   width: 100%;
   max-width: 100%;
-  margin: 0;
-  padding: 0;
   justify-content: center;
   gap: 2px;
+  margin: 0;
+  padding: 0;
 }
 
 .product-pagination :deep(.v-pagination__list > li) {
@@ -1104,14 +1269,20 @@ onMounted(() => {
 
 .product-pagination :deep(.v-btn) {
   flex: 0 0 36px;
-  min-width: 36px;
   width: 36px;
+  min-width: 36px;
   height: 36px;
 }
 
 .recipe-scroll {
   max-height: min(70vh, 650px);
   overflow-y: auto;
+}
+
+@media (max-width: 360px) {
+  .product-primary-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 340px) {
@@ -1122,8 +1293,8 @@ onMounted(() => {
 
   .product-pagination :deep(.v-btn) {
     flex-basis: 32px;
-    min-width: 32px;
     width: 32px;
+    min-width: 32px;
     height: 32px;
   }
 }

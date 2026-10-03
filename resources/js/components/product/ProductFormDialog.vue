@@ -21,7 +21,11 @@
           </div>
 
           <div class="text-body-2 text-medium-emphasis mt-1">
-            {{ isEdit ? '제품의 기본 정보와 판매 정보를 수정합니다.' : '새로운 제품의 기본 정보와 판매 정보를 등록합니다.' }}
+            {{
+              isEdit
+                ? '제품의 기본 정보와 판매 정보를 수정합니다.'
+                : '새로운 제품의 기본 정보와 판매 정보를 등록합니다.'
+            }}
           </div>
         </div>
       </div>
@@ -29,6 +33,7 @@
       <v-divider />
 
       <div class="product-form-scroll">
+        <div class="required-guide text-caption text-medium-emphasis">* 표시는 필수 입력 항목입니다.</div>
         <!-- 기본 정보 -->
         <section class="product-form-section">
           <div class="product-form-section-header">
@@ -88,6 +93,7 @@
               prepend-inner-icon="mdi-package-variant-closed"
               variant="outlined"
               maxlength="255"
+              :rules="[requiredRule, nameLengthRule]"
               :disabled="loading"
             />
 
@@ -98,6 +104,7 @@
               variant="outlined"
               :min="0"
               :step="100"
+              :rules="[requiredRule, priceRule]"
               :disabled="loading"
             />
           </div>
@@ -184,6 +191,30 @@
       <v-divider />
 
       <v-card-actions class="product-form-actions">
+        <div
+          v-if="!isEdit"
+          class="draft-actions"
+        >
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-content-save-outline"
+            :disabled="loading || !hasChanges"
+            @click="saveDraft"
+          >
+            임시저장
+          </v-btn>
+
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-delete-sweep-outline"
+            :disabled="loading || !hasDraftAndInput"
+            @click="clearDraft"
+          >
+            전체삭제
+          </v-btn>
+        </div>
         <v-btn
           variant="text"
           :disabled="loading"
@@ -262,6 +293,10 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  draft: {
+    type: Object,
+    default: null,
+  },
   stores: {
     type: Array,
     default: () => [],
@@ -284,19 +319,33 @@ const emit = defineEmits([
   'update:modelValue',
   'close',
   'save',
+  'draft',
+  'clear-draft',
 ]);
 
 const discardDialog = ref(false);
 const initialSnapshot = ref('');
 
 const departments = [
-  { title: '주방', value: 'kitchen' },
-  { title: '홀', value: 'hall' },
+  {
+    title: '주방',
+    value: 'kitchen',
+  },
+  {
+    title: '홀',
+    value: 'hall',
+  },
 ];
 
 const salesTypes = [
-  { title: '상시 제품', value: 'regular' },
-  { title: '기간 한정 제품', value: 'limited' },
+  {
+    title: '상시 제품',
+    value: 'regular',
+  },
+  {
+    title: '기간 한정 제품',
+    value: 'limited',
+  },
 ];
 
 const form = reactive(createEmptyForm());
@@ -305,22 +354,29 @@ const isEdit = computed(() => Boolean(props.product?.id));
 const isSuperAdmin = computed(() => props.user?.role?.code === 'super_admin');
 const storeLocked = computed(() => !isSuperAdmin.value);
 
-/** 고정 점포는 선택 UI 대신 이름만 표시합니다. */
+/** 일반 점포 사용자는 선택 UI 대신 자신의 점포명을 표시합니다. */
 const lockedStoreName = computed(() => props.user?.store?.name ?? '-');
 
-/** 선택한 점포에서 현재 사용 가능한 카테고리만 표시합니다. */
-const availableCategories = computed(() => props.categories.filter(
-  (category) => Number(category.store_id) === Number(form.store_id)
-    && category.is_active !== false,
-));
+/** 현재 선택한 점포에서 사용 가능한 카테고리만 표시합니다. */
+const availableCategories = computed(() => {
+  return props.categories.filter((category) => {
+    return Number(category.store_id) === Number(form.store_id)
+      && category.is_active !== false;
+  });
+});
 
-/** 최초 상태와 현재 입력값을 비교하여 변경 여부를 판단합니다. */
-const hasChanges = computed(
-  () => Boolean(initialSnapshot.value)
-    && snapshot() !== initialSnapshot.value,
-);
+/** 최초 상태와 현재 입력값을 비교하여 실제 변경 여부를 판단합니다. */
+const hasChanges = computed(() => {
+  return Boolean(initialSnapshot.value)
+    && snapshot() !== initialSnapshot.value;
+});
 
-/** 필수값과 기간한정 날짜 조건을 모두 만족해야 저장할 수 있습니다. */
+/** 서버에 저장된 draft 또는 현재 작성 중인 내용이 있는지 확인합니다. */
+const hasDraftAndInput = computed(() => {
+  return hasChanges.value || Boolean(props.draft);
+});
+
+/** 필수값과 기간한정 날짜 조건을 모두 만족해야 최종 저장할 수 있습니다. */
 const canSubmit = computed(() => {
   const hasRequiredFields = Boolean(
     form.store_id
@@ -331,6 +387,7 @@ const canSubmit = computed(() => {
     && form.sales_type
     && form.price !== null
     && form.price !== undefined
+    && Number.isInteger(Number(form.price))
     && Number(form.price) >= 0,
   );
 
@@ -348,63 +405,103 @@ const canSubmit = computed(() => {
     }
   }
 
-  return isEdit.value ? hasChanges.value : true;
+  return isEdit.value
+    ? hasChanges.value
+    : true;
 });
 
-/** 다이얼로그가 열릴 때 등록/수정 모드에 맞는 값을 준비합니다. */
+/** 다이얼로그가 열릴 때 수정 데이터 또는 Laravel Session draft를 적용합니다. */
 watch(
-  () => [props.modelValue, props.product, props.user],
+  () => [
+    props.modelValue,
+    props.product,
+    props.draft,
+    props.user,
+  ],
   () => {
     if (!props.modelValue) {
       return;
     }
 
-    Object.assign(
-      form,
-      props.product
-        ? createFormFromProduct(props.product)
-        : createEmptyForm(),
-    );
+    const initialForm = props.product
+      ? createFormFromProduct(props.product)
+      : createFormFromDraft(props.draft);
 
-    /** 일반 점포 직원은 자기 점포만 자동 고정합니다. 담당 부서는 제품 특성에 맞게 직접 선택합니다. */
+    Object.assign(form, initialForm);
+
+    // 일반 점포 사용자는 서버 권한 범위와 동일하게 자신의 점포로 고정합니다.
     if (!isSuperAdmin.value) {
       form.store_id = props.user?.store?.id ?? null;
     }
 
-    if (!availableCategories.value.some(
-      (category) => Number(category.id) === Number(form.product_category_id),
-    )) {
-      form.product_category_id = null;
-    }
+    clearUnavailableCategory();
 
     discardDialog.value = false;
     initialSnapshot.value = snapshot();
   },
-  { immediate: true },
+  {
+    immediate: true,
+  },
 );
 
-/** 점포를 바꾸면 이전 점포의 카테고리 선택값을 자동 제거합니다. */
+/** 점포를 바꾸면 이전 점포의 카테고리 선택값을 제거합니다. */
 watch(
   () => form.store_id,
   () => {
-    if (!availableCategories.value.some(
-      (category) => Number(category.id) === Number(form.product_category_id),
-    )) {
-      form.product_category_id = null;
-    }
+    clearUnavailableCategory();
   },
 );
 
-/** 상시 제품으로 바꾸면 기간한정 날짜를 서버에 남기지 않습니다. */
+/** 상시 제품으로 바꾸면 기간한정 날짜를 폼에 남기지 않습니다. */
 watch(
   () => form.sales_type,
   (value) => {
-    if (value === 'regular') {
-      form.sales_start_date = '';
-      form.sales_end_date = '';
+    if (value !== 'regular') {
+      return;
     }
+
+    form.sales_start_date = '';
+    form.sales_end_date = '';
   },
 );
+
+const requiredRule = (value) => {
+  const valid = value !== null
+    && value !== undefined
+    && String(value).trim() !== '';
+
+  return valid || '필수 입력 항목입니다.';
+};
+
+const nameLengthRule = (value) => {
+  return String(value ?? '').trim().length <= 255
+    || '255자 이하로 입력해주세요.';
+};
+
+const priceRule = (value) => {
+  const number = Number(value);
+
+  return Number.isInteger(number) && number >= 0
+    || '판매가는 0 이상의 정수로 입력해주세요.';
+};
+
+/** 현재 입력 내용을 Laravel Session 임시저장 API로 전달합니다. */
+function saveDraft() {
+  if (isEdit.value || props.loading || !hasChanges.value) {
+    return;
+  }
+
+  emit('draft', createPayload());
+}
+
+/** 전체삭제 확인과 실제 Session draft 삭제는 부모 화면에서 처리합니다. */
+function clearDraft() {
+  if (isEdit.value || props.loading || !hasDraftAndInput.value) {
+    return;
+  }
+
+  emit('clear-draft');
+}
 
 function createEmptyForm() {
   return {
@@ -418,6 +515,14 @@ function createEmptyForm() {
     sales_start_date: '',
     sales_end_date: '',
     sort_order: 0,
+  };
+}
+
+/** Laravel Session의 제품 등록 draft를 폼 형태로 변환합니다. */
+function createFormFromDraft(draft) {
+  return {
+    ...createEmptyForm(),
+    ...(draft && typeof draft === 'object' ? draft : {}),
   };
 }
 
@@ -436,8 +541,21 @@ function createFormFromProduct(product) {
   };
 }
 
+/** 현재 점포에서 사용할 수 없는 카테고리 선택값을 정리합니다. */
+function clearUnavailableCategory() {
+  const available = availableCategories.value.some((category) => {
+    return Number(category.id) === Number(form.product_category_id);
+  });
+
+  if (!available) {
+    form.product_category_id = null;
+  }
+}
+
 function snapshot() {
-  return JSON.stringify({ ...form });
+  return JSON.stringify({
+    ...form,
+  });
 }
 
 function requestClose() {
@@ -469,18 +587,25 @@ function submit() {
     return;
   }
 
-  emit('save', {
+  emit('save', createPayload());
+}
+
+/** 등록/수정 및 draft 저장에 사용할 요청 데이터를 만듭니다. */
+function createPayload() {
+  return {
     ...form,
-    name: String(form.name).trim(),
-    price: Number(form.price),
+    name: String(form.name ?? '').trim(),
+    price: form.price === null || form.price === ''
+      ? null
+      : Number(form.price),
     sort_order: Number(form.sort_order ?? 0),
     sales_start_date: form.sales_type === 'limited'
-      ? form.sales_start_date
+      ? form.sales_start_date || null
       : null,
     sales_end_date: form.sales_type === 'limited'
-      ? form.sales_end_date
+      ? form.sales_end_date || null
       : null,
-  });
+  };
 }
 </script>
 
@@ -512,6 +637,10 @@ function submit() {
   border-radius: 10px;
 }
 
+.required-guide {
+  padding: 14px 20px 0;
+}
+
 .product-form-scroll {
   min-height: 0;
   overflow-y: auto;
@@ -537,8 +666,16 @@ function submit() {
   gap: 2px;
 }
 
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 .product-form-actions {
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 4px;
   padding: 16px 20px;
   background: rgb(var(--v-theme-surface));
 }
@@ -558,7 +695,13 @@ function submit() {
     padding-left: 16px;
   }
 
-  .product-form-actions {
+  .draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.product-form-actions {
     padding: 12px 16px;
   }
 }

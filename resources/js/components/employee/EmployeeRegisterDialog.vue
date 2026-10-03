@@ -46,6 +46,7 @@
         ref="scrollAreaRef"
         class="register-scroll-area"
       >
+          <div class="text-caption text-medium-emphasis mb-4">* 표시는 필수 입력 항목입니다.</div>
         <!--
           등록 검증 공통 알림
 

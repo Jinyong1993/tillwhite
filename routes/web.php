@@ -64,6 +64,11 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 제품 및 관련 정보 조회
     Route::get('/products', [ProductController::class, 'index']);
 
+    // 제품 등록 임시저장 조회 / 저장 / 전체삭제 (Laravel Session)
+    Route::get('/products/draft', [ProductController::class, 'draft']);
+    Route::put('/products/draft', [ProductController::class, 'saveDraft']);
+    Route::delete('/products/draft', [ProductController::class, 'deleteDraft']);
+
     // 신규 제품 등록
     Route::post('/products', [ProductController::class, 'store']);
 
@@ -79,6 +84,11 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 제품 Soft Delete 및 복구
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->withTrashed();
     Route::put('/products/{product}/restore', [ProductController::class, 'restore'])->withTrashed();
+
+    // 제품 카테고리 등록 / 수정 / 사용상태 변경
+    Route::post('/product-categories', [ProductController::class, 'categoryStore']);
+    Route::put('/product-categories/{category}', [ProductController::class, 'categoryUpdate']);
+    Route::put('/product-categories/{category}/toggle', [ProductController::class, 'categoryToggle']);
 
     // 제품 레시피 등록 / 수정
     Route::post('/products/{product}/recipes', [ProductController::class, 'recipe']);
@@ -216,6 +226,7 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::put('/employees/{user}', [AdminController::class, 'employeeUpdate']);
 
     // 직원 비밀번호 초기화
+    Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
     Route::put('/employees/{user}/password', [AdminController::class, 'employeePasswordReset']);
 
     // 직원 Soft Delete 및 복구

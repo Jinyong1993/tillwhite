@@ -47,7 +47,7 @@
       </v-card-title>
 
       <!-- 확인 메시지 -->
-      <v-card-text class="text-body-1">
+      <v-card-text class="text-body-1 confirm-message">
         {{ message }}
       </v-card-text>
 
@@ -230,4 +230,5 @@ function handleModelValue(value) {
 </script>
 <style scoped>
 .v-card-text { white-space: pre-line; }
+.confirm-message { white-space: pre-line; overflow-wrap: anywhere; }
 </style>

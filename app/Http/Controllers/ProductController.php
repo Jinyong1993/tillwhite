@@ -108,6 +108,145 @@ class ProductController extends Controller
     }
 
     /**
+     * 현재 로그인 세션에 저장된 제품 등록 draft를 조회합니다.
+     */
+    public function draft(Request $request)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+
+        return response()->json([
+            'draft' => $request->session()->get(
+                'product_registration_draft'
+            ),
+        ]);
+    }
+
+    /**
+     * 작성 중인 제품 등록 내용을 Laravel Session에 임시저장합니다.
+     *
+     * 임시저장은 완성된 제품 등록이 아니므로 대부분의 항목은 nullable로 받습니다.
+     * 값이 입력된 경우에는 형식, 점포 범위, 카테고리 소속 관계를 서버에서 검증합니다.
+     */
+    public function saveDraft(Request $request)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+
+        $validated = $request->validate([
+            'store_id' => [
+                'nullable',
+                'integer',
+                'exists:stores,id',
+            ],
+            'product_category_id' => [
+                'nullable',
+                'integer',
+                'exists:product_categories,id',
+            ],
+            'name' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
+            'price' => [
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+            'production_department' => [
+                'nullable',
+                'in:kitchen,hall',
+            ],
+            'management_department' => [
+                'nullable',
+                'in:kitchen,hall',
+            ],
+            'sales_type' => [
+                'nullable',
+                'in:regular,limited',
+            ],
+            'sales_start_date' => [
+                'nullable',
+                'date',
+            ],
+            'sales_end_date' => [
+                'nullable',
+                'date',
+            ],
+            'sort_order' => [
+                'nullable',
+                'integer',
+                'min:0',
+            ],
+        ]);
+
+        $storeId = isset($validated['store_id'])
+            ? (int) $validated['store_id']
+            : null;
+
+        $categoryId = isset($validated['product_category_id'])
+            ? (int) $validated['product_category_id']
+            : null;
+
+        if ($storeId !== null) {
+            $this->access->assertStoreDepartment(
+                $user,
+                $storeId
+            );
+        }
+
+        if ($categoryId !== null && $storeId !== null) {
+            $this->assertCategoryBelongsToStore(
+                $categoryId,
+                $storeId
+            );
+        }
+
+        // 점포를 아직 선택하지 않았다면 카테고리만 단독으로 저장하지 않습니다.
+        if ($categoryId !== null && $storeId === null) {
+            throw ValidationException::withMessages([
+                'product_category_id' => '카테고리를 저장하려면 점포를 먼저 선택해주세요.',
+            ]);
+        }
+
+        if (($validated['sales_type'] ?? 'regular') === 'regular') {
+            $validated['sales_start_date'] = null;
+            $validated['sales_end_date'] = null;
+        }
+
+        $request->session()->put(
+            'product_registration_draft',
+            $validated
+        );
+
+        return response()->json([
+            'message' => '제품 등록 내용이 임시저장되었습니다.',
+            'draft' => $validated,
+        ]);
+    }
+
+    /**
+     * 현재 로그인 세션의 제품 등록 draft를 삭제합니다.
+     */
+    public function deleteDraft(Request $request)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+
+        $request->session()->forget(
+            'product_registration_draft'
+        );
+
+        return response()->json([
+            'message' => '제품 등록 임시저장 내용이 삭제되었습니다.',
+        ]);
+    }
+
+    /**
      * 신규 제품을 등록합니다.
      *
      * 제품 기본정보와 최초 가격은 하나의 transaction에서 저장하여
@@ -153,6 +292,9 @@ class ProductController extends Controller
 
             return $product;
         });
+
+        // 최종 등록이 완료되면 현재 로그인 세션의 제품 등록 draft는 더 이상 필요하지 않습니다.
+        $request->session()->forget('product_registration_draft');
 
         $this->audit->log(
             $user,
@@ -509,6 +651,145 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => '레시피를 수정했습니다.',
+        ]);
+    }
+
+    /**
+     * 제품 카테고리를 등록합니다.
+     */
+    public function categoryStore(Request $request)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+
+        $validated = $request->validate([
+            'store_id' => [
+                'required',
+                'integer',
+                'exists:stores,id',
+            ],
+            'name' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('product_categories', 'name')
+                    ->where(fn ($query) => $query->where(
+                        'store_id',
+                        $request->integer('store_id')
+                    )),
+            ],
+        ]);
+
+        $this->access->assertStoreDepartment(
+            $user,
+            (int) $validated['store_id']
+        );
+
+        $category = ProductCategory::create([
+            ...$validated,
+            'sort_order' => 0,
+            'is_active' => true,
+        ]);
+
+        $this->audit->log(
+            $user,
+            'product_category',
+            'create',
+            ProductCategory::class,
+            $category->id,
+            null,
+            $category->toArray(),
+            '제품 카테고리 등록'
+        );
+
+        return response()->json([
+            'message' => '카테고리를 등록했습니다.',
+        ], 201);
+    }
+
+    /**
+     * 제품 카테고리 이름을 수정합니다.
+     */
+    public function categoryUpdate(Request $request, ProductCategory $category)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+        $this->access->assertStoreDepartment(
+            $user,
+            (int) $category->store_id
+        );
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('product_categories', 'name')
+                    ->where(fn ($query) => $query->where(
+                        'store_id',
+                        $category->store_id
+                    ))
+                    ->ignore($category->id),
+            ],
+        ]);
+
+        $oldData = $category->toArray();
+
+        $category->update($validated);
+
+        $this->audit->log(
+            $user,
+            'product_category',
+            'update',
+            ProductCategory::class,
+            $category->id,
+            $oldData,
+            $category->toArray(),
+            '제품 카테고리 수정'
+        );
+
+        return response()->json([
+            'message' => '카테고리를 수정했습니다.',
+        ]);
+    }
+
+    /**
+     * 카테고리 사용 / 사용중단 상태를 변경합니다.
+     * 연결된 제품과 과거 기록은 삭제하지 않습니다.
+     */
+    public function categoryToggle(Request $request, ProductCategory $category)
+    {
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.manage');
+        $this->access->assertStoreDepartment(
+            $user,
+            (int) $category->store_id
+        );
+
+        $oldData = $category->toArray();
+
+        $category->update([
+            'is_active' => ! $category->is_active,
+        ]);
+
+        $this->audit->log(
+            $user,
+            'product_category',
+            'update',
+            ProductCategory::class,
+            $category->id,
+            $oldData,
+            $category->toArray(),
+            '제품 카테고리 상태 변경'
+        );
+
+        return response()->json([
+            'message' => $category->is_active
+                ? '카테고리를 다시 사용합니다.'
+                : '카테고리 사용을 중단했습니다.',
         ]);
     }
 

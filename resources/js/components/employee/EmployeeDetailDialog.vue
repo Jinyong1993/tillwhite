@@ -33,19 +33,47 @@
             <!-- 재직 상태를 먼저 보여주고 관리 메뉴는 헤더의 가장 오른쪽에 고정합니다. -->
             <v-chip
               size="small"
-              :color="employee.deleted_at ? undefined : employmentStatusColor(employee.employment_status)"
+              :color="
+                employee.deleted_at
+                  ? undefined
+                  : employmentStatusColor(employee.employment_status)
+              "
               variant="tonal"
+              :clickable="!employee.deleted_at && canManage"
+              :append-icon="
+                !employee.deleted_at && canManage
+                  ? 'mdi-chevron-down'
+                  : undefined
+              "
+              @click="openStatusDialog"
             >
-              {{ employee.deleted_at ? '삭제됨' : employmentStatus(employee.employment_status) }}
+              {{
+                employee.deleted_at
+                  ? '삭제됨'
+                  : employmentStatus(employee.employment_status)
+              }}
             </v-chip>
 
             <!-- 자주 쓰지 않는 관리 기능은 상단 관리 메뉴에 모읍니다. -->
-            <v-menu v-if="!employee.deleted_at && canManage" location="bottom end">
+            <v-menu
+              v-if="!employee.deleted_at && canManage"
+              location="bottom end"
+            >
               <template #activator="{ props: menuProps }">
-                <v-btn v-bind="menuProps" icon="mdi-dots-vertical" size="small" variant="text" aria-label="직원 관리 메뉴" />
-              </template>
+                <v-btn
+                  v-bind="menuProps"
+                  icon="mdi-dots-vertical"
+                  size="small"
+                  variant="text"
+                  aria-label="직원 관리 메뉴"
+                />
+</template>
               <v-list density="compact" min-width="190">
-                <v-list-item prepend-icon="mdi-lock-reset" title="비밀번호 초기화" @click="$emit('password-reset')" />
+                <v-list-item
+                  prepend-icon="mdi-lock-reset"
+                  title="비밀번호 초기화"
+                  @click="$emit('password-reset')"
+                />
               </v-list>
             </v-menu>
           </div>
@@ -335,14 +363,70 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+  <!-- 재직 상태 변경 -->
+  <v-dialog
+    v-model="statusDialog"
+    max-width="380"
+    persistent
+  >
+    <v-card rounded="lg">
+      <v-card-title class="pa-5 pb-2">
+        재직 상태 변경
+      </v-card-title>
+
+      <v-card-text class="px-5">
+        <div class="text-body-2 text-medium-emphasis mb-3">
+          현재 상태: {{ employmentStatus(employee?.employment_status) }}
+        </div>
+
+        <v-radio-group
+          v-model="nextStatus"
+          hide-details
+        >
+          <v-radio
+            label="재직"
+            value="active"
+          />
+          <v-radio
+            label="휴직"
+            value="leave"
+          />
+          <v-radio
+            label="퇴사"
+            value="resigned"
+          />
+        </v-radio-group>
+      </v-card-text>
+
+      <v-card-actions class="px-5 pb-4">
+        <v-btn
+          variant="text"
+          @click="statusDialog = false"
+        >
+          취소
+        </v-btn>
+
+        <v-spacer />
+
+        <v-btn
+          variant="flat"
+          :disabled="nextStatus === employee?.employment_status"
+          @click="submitStatus"
+        >
+          변경
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup>
+import { ref } from 'vue';
 /**
  * 직원 상세보기 다이얼로그입니다.
  * 상세 정보 표시와 관리 동작 진입만 담당하며 실제 API 요청은 EmployeePage가 처리합니다.
  */
-defineProps({
+const props = defineProps({
   modelValue: { type: Boolean, default: false },
   employee: { type: Object, default: null },
   canManage: { type: Boolean, default: false },
@@ -354,8 +438,25 @@ const emit = defineEmits([
   'delete',
   'restore',
   'password-reset',
+  'status-change',
   'close',
 ]);
+
+
+const statusDialog = ref(false);
+const nextStatus = ref('active');
+
+function openStatusDialog() {
+  if (!props.employee || props.employee.deleted_at || !props.canManage) return;
+  nextStatus.value = props.employee.employment_status;
+  statusDialog.value = true;
+}
+
+function submitStatus() {
+  if (nextStatus.value === props.employee?.employment_status) return;
+  emit('status-change', nextStatus.value);
+  statusDialog.value = false;
+}
 
 function handleDialogChange(value) {
   emit('update:modelValue', value);

@@ -100,5 +100,7 @@ function close() {
   margin: 0;
   transform: translateX(-50%);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>

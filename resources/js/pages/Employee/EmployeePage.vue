@@ -50,65 +50,18 @@
         </v-chip>
       </v-btn>
 
-      <!--
-        직원 검색 / 상태 필터 / 페이지 표시 개수
-
-        직원 데이터는 페이지 최초 진입 시 서버에서 한 번 전체 조회합니다.
-        이후 검색, 상태 필터, 페이지 이동은 브라우저의 Vue 상태만 사용하므로
-        키보드 입력마다 서버 요청이나 별도 로딩이 발생하지 않습니다.
-      -->
-      <v-card class="employee-toolbar mb-5" variant="flat" rounded="lg">
-        <v-card-text>
-          <div class="employee-toolbar-grid">
-            <v-text-field
-              class="employee-search-field"
-              v-model="searchQuery"
-              prepend-inner-icon="mdi-magnify"
-              label="직원 검색"
-              placeholder="이름, 사번, 연락처"
-              variant="outlined"
-              density="comfortable"
-              clearable
-              hide-details
-            />
-
-            <v-select
-              class="employee-status-filter"
-              v-model="statusFilter"
-              :items="statusFilterItems"
-              label="상태"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-
-            <v-select
-              class="employee-page-size"
-              v-model="itemsPerPage"
-              :items="itemsPerPageOptions"
-              label="페이지당"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-          </div>
-
-          <div class="d-flex align-center justify-space-between flex-wrap ga-2 mt-3">
-            <div class="text-caption text-medium-emphasis">
-              전체 {{ data.employees.length }}명 · 검색 결과 {{ filteredEmployees.length }}명
-            </div>
-            <v-btn
-              v-if="searchQuery || statusFilter !== 'all'"
-              size="small"
-              variant="text"
-              prepend-icon="mdi-filter-remove-outline"
-              @click="resetEmployeeFilters"
-            >
-              검색 초기화
-            </v-btn>
-          </div>
-        </v-card-text>
-      </v-card>
+      <!-- 직원 검색/필터는 기존 UX를 그대로 유지하면서 전용 컴포넌트로 분리합니다. -->
+      <EmployeeSearchFilter
+        v-model:search-query="searchQuery"
+        v-model:status-filter="statusFilter"
+        v-model:items-per-page="itemsPerPage"
+        :status-items="statusFilterItems"
+        :page-size-items="itemsPerPageOptions"
+        :total="data.employees.length"
+        :filtered="filteredEmployees.length"
+        :has-active-filters="Boolean(searchQuery || statusFilter !== 'all')"
+        @reset="resetEmployeeFilters"
+      />
 
       <!--
         직원 목록
@@ -141,7 +94,16 @@
           <v-icon icon="mdi-account-search-outline" size="36" class="mb-3 text-medium-emphasis" />
           <div class="font-weight-medium">검색 결과가 없습니다.</div>
           <div class="text-caption text-medium-emphasis mt-1">다른 이름이나 연락처로 검색해보세요.</div>
-          <v-btn v-if="searchQuery || statusFilter !== 'all'" class="mt-4" size="small" variant="tonal" prepend-icon="mdi-filter-remove-outline" @click="resetEmployeeFilters">검색/필터 초기화</v-btn>
+          <v-btn
+            v-if="searchQuery || statusFilter !== 'all'"
+            class="mt-4"
+            size="small"
+            variant="tonal"
+            prepend-icon="mdi-filter-remove-outline"
+            @click="resetEmployeeFilters"
+          >
+            검색/필터 초기화
+          </v-btn>
         </v-card-text>
       </v-card>
 
@@ -262,6 +224,7 @@
         @close="closeDetailDialog"
         @edit="openEditDialog"
         @password-reset="openPasswordResetDialog"
+        @status-change="changeEmployeeStatus($event, setError, setSuccess)"
         @delete="requestEmployeeAction('delete')"
         @restore="requestEmployeeAction('restore')"
       />
@@ -315,6 +278,7 @@ import {
 import AppShell from '../../components/layout/AppShell.vue';
 import ConfirmDialog from '../../components/common/ConfirmDialog.vue';
 import EmployeeCard from '../../components/employee/EmployeeCard.vue';
+import EmployeeSearchFilter from '../../components/employee/EmployeeSearchFilter.vue';
 import EmployeeDetailDialog from '../../components/employee/EmployeeDetailDialog.vue';
 import EmployeeEditDialog from '../../components/employee/EmployeeEditDialog.vue';
 import EmployeePasswordResetDialog from '../../components/employee/EmployeePasswordResetDialog.vue';
@@ -1432,6 +1396,20 @@ function openPasswordResetDialog() {
 }
 
 /** 삭제/복구 확인창의 문구와 실행 작업을 설정합니다. */
+async function changeEmployeeStatus(status, setError, setSuccess) {
+  if (!selectedEmployee.value || employeeActionLoading.value) return;
+  employeeActionLoading.value = 'status';
+  try {
+    await window.axios.put(`/tillwhite/api/employees/${selectedEmployee.value.id}/status`, { employment_status: status });
+    setSuccess('직원 재직 상태를 변경했습니다.');
+    await refreshEmployeeData(setError, '상태 변경은 완료되었지만 화면을 새로고침하지 못했습니다.');
+  } catch (error) {
+    setError(errorMessage(error, '직원 재직 상태 변경에 실패했습니다.'));
+  } finally {
+    employeeActionLoading.value = null;
+  }
+}
+
 function requestEmployeeAction(action) {
   if (!selectedEmployee.value || employeeActionLoading.value) return;
   employeeConfirm.action = action;
@@ -1448,17 +1426,50 @@ function requestEmployeeAction(action) {
  * 소속/역할/재직 상태처럼 영향이 큰 값이 변경되면 실제 API 호출 전에 변경 내용을 확인합니다.
  */
 function requestEmployeeEditSave(payload, setError, setSuccess) {
-  if (!selectedEmployee.value || employeeActionLoading.value) return;
+  if (!selectedEmployee.value || employeeActionLoading.value) {
+    return;
+  }
 
   const employee = selectedEmployee.value;
   const changes = [];
-  const statusNames = { active: '재직', leave: '휴직', resigned: '퇴사' };
-  const storeName = (id) => data.value.stores.find((store) => Number(store.id) === Number(id))?.name ?? '본사';
-  const roleName = (id) => data.value.roles.find((role) => Number(role.id) === Number(id))?.name ?? '-';
+  const statusNames = {
+    active: '재직',
+    leave: '휴직',
+    resigned: '퇴사',
+  };
 
-  if (Number(payload.store_id ?? 0) !== Number(employee.store?.id ?? 0)) changes.push(`소속 점포: ${employee.store?.name ?? '본사'} → ${storeName(payload.store_id)}`);
-  if (Number(payload.role_id) !== Number(employee.role?.id)) changes.push(`권한 역할: ${employee.role?.name ?? '-'} → ${roleName(payload.role_id)}`);
-  if (payload.employment_status !== employee.employment_status) changes.push(`재직 상태: ${statusNames[employee.employment_status] ?? employee.employment_status} → ${statusNames[payload.employment_status] ?? payload.employment_status}`);
+  const storeName = (id) => {
+    return data.value.stores.find((store) => {
+      return Number(store.id) === Number(id);
+    })?.name ?? '본사';
+  };
+
+  const roleName = (id) => {
+    return data.value.roles.find((role) => {
+      return Number(role.id) === Number(id);
+    })?.name ?? '-';
+  };
+
+  if (Number(payload.store_id ?? 0) !== Number(employee.store?.id ?? 0)) {
+    changes.push(
+      `소속 점포: ${employee.store?.name ?? '본사'} → ${storeName(payload.store_id)}`,
+    );
+  }
+
+  if (Number(payload.role_id) !== Number(employee.role?.id)) {
+    changes.push(
+      `권한 역할: ${employee.role?.name ?? '-'} → ${roleName(payload.role_id)}`,
+    );
+  }
+
+  if (payload.employment_status !== employee.employment_status) {
+    const beforeStatus = statusNames[employee.employment_status]
+      ?? employee.employment_status;
+    const afterStatus = statusNames[payload.employment_status]
+      ?? payload.employment_status;
+
+    changes.push(`재직 상태: ${beforeStatus} → ${afterStatus}`);
+  }
 
   if (changes.length > 0) {
     employeeConfirm.action = 'edit';
@@ -1475,68 +1486,147 @@ function requestEmployeeEditSave(payload, setError, setSuccess) {
 
 /** 직원 수정 요청과 이후 목록/상세 재조회는 서로 분리해서 처리합니다. */
 async function saveEmployeeEdit(payload, setError, setSuccess) {
-  if (!selectedEmployee.value || employeeActionLoading.value) return;
+  if (!selectedEmployee.value || employeeActionLoading.value) {
+    return;
+  }
+
   employeeActionLoading.value = 'edit';
+
   try {
-    await window.axios.put(`/tillwhite/api/employees/${selectedEmployee.value.id}`, payload);
+    await window.axios.put(
+      `/tillwhite/api/employees/${selectedEmployee.value.id}`,
+      payload,
+    );
   } catch (error) {
-    setError(error.response ? errorMessage(error, '직원 정보 수정에 실패했습니다.') : '서버 응답을 확인하지 못했습니다. 직원 정보가 이미 수정되었을 수 있으므로 다시 확인해주세요.');
+    const message = error.response
+      ? errorMessage(error, '직원 정보 수정에 실패했습니다.')
+      : '서버 응답을 확인하지 못했습니다. 직원 정보가 이미 수정되었을 수 있으므로 다시 확인해주세요.';
+
+    setError(message);
     employeeActionLoading.value = null;
     return;
   }
+
   editDialog.value = false;
   employeeActionLoading.value = null;
   clearEmployeeConfirm();
   setSuccess('직원 정보를 수정했습니다.');
-  await refreshEmployeeData(setError, '직원 정보 수정은 완료되었지만 화면을 새로고침하지 못했습니다.');
+
+  await refreshEmployeeData(
+    setError,
+    '직원 정보 수정은 완료되었지만 화면을 새로고침하지 못했습니다.',
+  );
 }
 
 /** 새 비밀번호는 이 요청에서만 사용하며 목록/상세 데이터에는 저장하지 않습니다. */
 async function saveEmployeePassword(payload, setError, setSuccess) {
-  if (!selectedEmployee.value || employeeActionLoading.value) return;
+  if (!selectedEmployee.value || employeeActionLoading.value) {
+    return;
+  }
+
   employeeActionLoading.value = 'password';
+
   try {
-    await window.axios.put(`/tillwhite/api/employees/${selectedEmployee.value.id}/password`, payload);
+    await window.axios.put(
+      `/tillwhite/api/employees/${selectedEmployee.value.id}/password`,
+      payload,
+    );
   } catch (error) {
-    setError(error.response ? errorMessage(error, '비밀번호 초기화에 실패했습니다.') : '서버 응답을 확인하지 못했습니다. 비밀번호가 이미 변경되었을 수 있으므로 다시 확인해주세요.');
+    const message = error.response
+      ? errorMessage(error, '비밀번호 초기화에 실패했습니다.')
+      : '서버 응답을 확인하지 못했습니다. 비밀번호가 이미 변경되었을 수 있으므로 다시 확인해주세요.';
+
+    setError(message);
     employeeActionLoading.value = null;
     return;
   }
+
   passwordResetDialog.value = false;
   employeeActionLoading.value = null;
   setSuccess('직원 비밀번호를 초기화했습니다.');
-  await refreshEmployeeData(setError, '비밀번호 초기화는 완료되었지만 화면을 새로고침하지 못했습니다.');
+
+  await refreshEmployeeData(
+    setError,
+    '비밀번호 초기화는 완료되었지만 화면을 새로고침하지 못했습니다.',
+  );
 }
 
 /** 확인창에서 선택한 Soft Delete 또는 복구 작업을 실행합니다. */
 async function executeEmployeeAction(setError, setSuccess) {
-  if (!selectedEmployee.value || !employeeConfirm.action || employeeActionLoading.value) return;
+  if (
+    !selectedEmployee.value
+    || !employeeConfirm.action
+    || employeeActionLoading.value
+  ) {
+    return;
+  }
+
   const action = employeeConfirm.action;
 
   if (action === 'edit') {
     const payload = employeeConfirm.payload;
-    if (!payload) return;
+
+    if (!payload) {
+      return;
+    }
+
     await saveEmployeeEdit(payload, setError, setSuccess);
     return;
   }
 
   employeeActionLoading.value = action;
+
   try {
     if (action === 'delete') {
-      await window.axios.delete(`/tillwhite/api/employees/${selectedEmployee.value.id}`);
+      await window.axios.delete(
+        `/tillwhite/api/employees/${selectedEmployee.value.id}`,
+      );
     } else {
-      await window.axios.put(`/tillwhite/api/employees/${selectedEmployee.value.id}/restore`);
+      await window.axios.put(
+        `/tillwhite/api/employees/${selectedEmployee.value.id}/restore`,
+      );
     }
   } catch (error) {
-    setError(error.response ? errorMessage(error, action === 'delete' ? '직원 삭제에 실패했습니다.' : '직원 복구에 실패했습니다.') : `서버 응답을 확인하지 못했습니다. 직원이 이미 ${action === 'delete' ? '삭제' : '복구'}되었을 수 있으므로 목록을 다시 확인해주세요.`);
+    const fallback = action === 'delete'
+      ? '직원 삭제에 실패했습니다.'
+      : '직원 복구에 실패했습니다.';
+
+    const uncertainState = action === 'delete'
+      ? '삭제'
+      : '복구';
+
+    const message = error.response
+      ? errorMessage(error, fallback)
+      : (
+        '서버 응답을 확인하지 못했습니다. '
+        + `직원이 이미 ${uncertainState}되었을 수 있으므로 목록을 다시 확인해주세요.`
+      );
+
+    setError(message);
     employeeActionLoading.value = null;
     return;
   }
+
   employeeActionLoading.value = null;
   clearEmployeeConfirm();
   closeDetailDialog();
-  setSuccess(action === 'delete' ? '직원을 삭제했습니다.' : '직원을 복구했습니다.');
-  try { await load(); } catch (error) { setError(`직원 ${action === 'delete' ? '삭제' : '복구'}는 완료되었지만 직원 목록을 새로고침하지 못했습니다.`); }
+  setSuccess(
+    action === 'delete'
+      ? '직원을 삭제했습니다.'
+      : '직원을 복구했습니다.',
+  );
+
+  try {
+    await load();
+  } catch (error) {
+    const actionName = action === 'delete'
+      ? '삭제'
+      : '복구';
+
+    setError(
+      `직원 ${actionName}는 완료되었지만 직원 목록을 새로고침하지 못했습니다.`,
+    );
+  }
 }
 
 /** 변경 성공 후 목록과 현재 상세정보를 최신 서버 상태로 맞춥니다. */
