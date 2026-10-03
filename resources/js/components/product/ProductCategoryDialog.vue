@@ -308,7 +308,7 @@
         입력을 취소하시겠습니까?
       </v-card-title>
 
-      <v-card-text class="px-5 pb-5 text-body-2">
+      <v-card-text class="px-5 pb-5 app-supporting-text">
         저장하지 않은 카테고리 입력 내용은 사라집니다.
       </v-card-text>
 
@@ -364,6 +364,7 @@ const emit = defineEmits([
   'create',
   'rename',
   'toggle',
+  'reorder',
 ]);
 
 const ITEMS_PER_PAGE = 10;
@@ -682,7 +683,7 @@ function add() {
   emit('create', pendingCreate.value);
 }
 
-// 수정할 카테고리와 현재 이름을 보관한 뒤 수정 다이얼로그를 엽니다.
+/** 수정할 카테고리와 현재 이름을 보관한 뒤 수정 다이얼로그를 엽니다. */
 function openRenameDialog(category) {
   if (props.loading) {
     return;
@@ -693,12 +694,14 @@ function openRenameDialog(category) {
   renameDialog.value = true;
 }
 
-// 수정 작업이 끝나면 다음 수정에 이전 값이 남지 않도록 관련 상태를 초기화합니다.
+/**
+ * 수정 다이얼로그 상태를 초기화합니다.
+ *
+ * 사용자의 수동 닫기는 requestCloseRenameDialog()에서 로딩을 차단합니다.
+ * 저장 성공 후 목록 반영을 감지한 내부 닫기는 API 마무리 중에도 실행되어야 하므로
+ * 이 함수 자체에서는 loading 상태를 다시 검사하지 않습니다.
+ */
 function closeRenameDialog() {
-  if (props.loading) {
-    return;
-  }
-
   renameDialog.value = false;
   renameTarget.value = null;
   renameName.value = '';

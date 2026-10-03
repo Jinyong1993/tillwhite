@@ -6,13 +6,32 @@
     @update:model-value="handleDialogChange"
   >
     <v-card rounded="lg" class="employee-edit-dialog">
-      <v-card-title class="pa-5 pb-2">직원 정보 수정</v-card-title>
-      <v-card-subtitle class="px-5 pb-4">{{ employee?.name }} · {{ employee?.employee_code }}</v-card-subtitle>
+      <!-- 직원 등록 다이얼로그와 같은 입력형 헤더 계층을 사용합니다. -->
+      <div class="edit-header">
+        <div class="edit-header-icon">
+          <v-icon icon="mdi-account-edit-outline" size="22" />
+        </div>
+
+        <div class="min-width-0">
+          <div class="text-h6 font-weight-bold">직원 정보 수정</div>
+          <div class="app-supporting-text text-medium-emphasis mt-1">
+            {{ employee?.name ?? '-' }} · {{ employee?.employee_code ?? '-' }}
+          </div>
+        </div>
+      </div>
+
       <v-divider />
 
       <!-- 직원 등록 화면과 같은 정보 구조와 입력 스타일을 사용합니다. -->
       <v-card-text class="pa-5 edit-scroll">
-          <div class="text-caption text-medium-emphasis mb-4">* 표시는 필수 입력 항목입니다.</div>
+        <v-alert
+          class="app-supporting-alert mb-4"
+          type="info"
+          variant="tonal"
+          density="compact"
+        >
+          * 표시는 필수 입력 항목입니다.
+        </v-alert>
         <section class="edit-section">
           <div class="edit-section-title"><v-icon icon="mdi-account-outline" size="18" /> 기본 정보</div>
           <div class="edit-fields">
@@ -154,7 +173,7 @@
   <v-dialog v-model="discardDialog" max-width="360" persistent>
     <v-card rounded="lg">
       <v-card-title class="pa-5 pb-2">수정을 취소하시겠습니까?</v-card-title>
-      <v-card-text class="px-5 pb-5 text-body-2">수정한 내용이 저장되지 않습니다.</v-card-text>
+      <v-card-text class="px-5 pb-5 app-supporting-text">수정한 내용이 저장되지 않습니다.</v-card-text>
       <v-divider />
       <v-card-actions class="pa-4 px-5">
         <v-btn variant="text" @click="discardDialog = false">아니오</v-btn>
@@ -272,6 +291,7 @@ function discardChanges() {
   discardDialog.value = false;
   emit('close');
 }
+/** 다이얼로그 외부 닫기 요청도 작성 내용 확인 절차를 거치도록 전달합니다. */
 function handleDialogChange(value) {
   if (!value) {
     requestClose();
@@ -280,6 +300,28 @@ function handleDialogChange(value) {
 </script>
 
 <style scoped>
+.edit-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 20px;
+}
+
+.edit-header-icon {
+  display: flex;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 10px;
+}
+
+.min-width-0 {
+  min-width: 0;
+}
+
 .edit-scroll {
   max-height: min(70vh, 650px);
   overflow-y: auto;

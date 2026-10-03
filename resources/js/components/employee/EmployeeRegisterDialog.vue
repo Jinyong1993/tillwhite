@@ -28,7 +28,7 @@
             직원 등록
           </div>
 
-          <div class="text-caption text-medium-emphasis mt-1">
+          <div class="app-supporting-text text-medium-emphasis mt-1">
             새로운 직원의 기본 정보와 소속 정보를 등록합니다.
           </div>
         </div>
@@ -46,7 +46,14 @@
         ref="scrollAreaRef"
         class="register-scroll-area"
       >
-          <div class="text-caption text-medium-emphasis mb-4">* 표시는 필수 입력 항목입니다.</div>
+        <v-alert
+          class="app-supporting-alert mb-4"
+          type="info"
+          variant="tonal"
+          density="compact"
+        >
+          * 표시는 필수 입력 항목입니다.
+        </v-alert>
         <!--
           등록 검증 공통 알림
 

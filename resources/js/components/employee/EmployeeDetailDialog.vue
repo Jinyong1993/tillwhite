@@ -67,7 +67,8 @@
                   variant="text"
                   aria-label="직원 관리 메뉴"
                 />
-</template>
+              </template>
+
               <v-list density="compact" min-width="190">
                 <v-list-item
                   prepend-icon="mdi-lock-reset"
@@ -308,9 +309,9 @@
             <div class="detail-value">{{ historyAt(employee.management_history?.updated, employee.updated_at) }}</div>
 
             <div class="detail-label">삭제자</div>
-            <div class="detail-value">{{ historyActor(employee.management_history?.deleted) }}</div>
+            <div class="detail-value">{{ employee.deleted_at ? historyActor(employee.management_history?.deleted) : '-' }}</div>
             <div class="detail-label">삭제일</div>
-            <div class="detail-value">{{ historyAt(employee.management_history?.deleted, employee.deleted_at) }}</div>
+            <div class="detail-value">{{ employee.deleted_at ? historyAt(employee.management_history?.deleted, employee.deleted_at) : '-' }}</div>
           </div>
 
           <details
@@ -392,7 +393,7 @@
       </v-card-title>
 
       <v-card-text class="px-5">
-        <div class="text-body-2 text-medium-emphasis mb-3">
+        <div class="app-supporting-text text-medium-emphasis mb-3">
           현재 상태: {{ employmentStatus(employee?.employment_status) }}
         </div>
 
@@ -610,7 +611,7 @@ function formatDate(value) {
  * 현재 브라우저 시간대로 변환하여 표시합니다.
  */
 function auditActionText(action) {
-  return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
+  return { create: '등록', update: '수정', delete: '삭제', restore: '복구' }[action] ?? '-';
 }
 
 /** 등록·수정·삭제 작업자 이름을 표시하며 누락 시 하이픈을 사용합니다. */

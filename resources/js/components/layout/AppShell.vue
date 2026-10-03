@@ -212,6 +212,8 @@ const {
   can,
 } = useSession();
 
+let alertTimer = null;
+
 /**
  * 공통 알림을 설정합니다.
  *
@@ -225,8 +227,6 @@ const {
  * 새로운 알림 종류가 필요해도
  * 별도의 상태를 추가할 필요가 없습니다.
  */
-let alertTimer = null;
-
 function setAlert(type, message) {
   if (alertTimer) {
     window.clearTimeout(alertTimer);

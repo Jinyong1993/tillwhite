@@ -564,7 +564,12 @@ class ProductController extends Controller
         $oldData = $product->toArray();
 
         DB::transaction(function () use ($product, $user) {
+            // 복구는 삭제 상태만 되돌리는 작업이므로 마지막 실제 정보 수정일은 유지합니다.
+            $productUpdatedAt = $product->updated_at;
             $product->restore();
+            $product->timestamps = false;
+            $product->forceFill(['updated_at' => $productUpdatedAt])->saveQuietly();
+            $product->timestamps = true;
 
             // 제품 삭제 때문에 함께 삭제된 레시피만 자동 복구합니다.
             // 사용자가 직접 삭제한 레시피(deletion_source=manual)는 삭제 상태를 유지합니다.
@@ -574,16 +579,20 @@ class ProductController extends Controller
                 ->get()
                 ->each(function (Recipe $recipe) use ($user) {
                     $recipeOldData = $recipe->toArray();
+                    $recipeUpdatedAt = $recipe->updated_at;
                     $recipe->restore();
+                    $recipe->timestamps = false;
                     $recipe->forceFill([
                         'deleted_by' => null,
                         'deletion_source' => null,
-                    ])->save();
+                        'updated_at' => $recipeUpdatedAt,
+                    ])->saveQuietly();
+                    $recipe->timestamps = true;
 
                     $this->audit->log(
                         $user,
                         'recipe',
-                        'update',
+                        'restore',
                         Recipe::class,
                         $recipe->id,
                         $recipeOldData,
@@ -596,7 +605,7 @@ class ProductController extends Controller
         $this->audit->log(
             $user,
             'product',
-            'update',
+            'restore',
             Product::class,
             $product->id,
             $oldData,
@@ -645,6 +654,17 @@ class ProductController extends Controller
             'ingredients.*.unit' => ['nullable', 'string', 'max:50'],
             'steps' => ['array'],
             'steps.*.description' => ['required', 'string'],
+        ], [
+            'name.required' => '레시피명을 입력해주세요.',
+            'name.max' => '레시피명은 255자 이하로 입력해주세요.',
+            'name.unique' => '이미 등록된 레시피명입니다.',
+            'ingredients.array' => '재료 목록 형식이 올바르지 않습니다.',
+            'ingredients.*.name.required' => '재료명을 입력해주세요.',
+            'ingredients.*.quantity.numeric' => '사용량은 숫자로 입력해주세요.',
+            'ingredients.*.quantity.min' => '사용량은 0 이상으로 입력해주세요.',
+            'ingredients.*.unit.max' => '단위는 50자 이하로 입력해주세요.',
+            'steps.array' => '공정 목록 형식이 올바르지 않습니다.',
+            'steps.*.description.required' => '공정 내용을 입력해주세요.',
         ]);
 
         $recipe = DB::transaction(function () use ($validated, $product, $user) {
@@ -743,6 +763,17 @@ class ProductController extends Controller
             'ingredients.*.unit' => ['nullable', 'string', 'max:50'],
             'steps' => ['array'],
             'steps.*.description' => ['required', 'string'],
+        ], [
+            'name.required' => '레시피명을 입력해주세요.',
+            'name.max' => '레시피명은 255자 이하로 입력해주세요.',
+            'name.unique' => '이미 등록된 레시피명입니다.',
+            'ingredients.array' => '재료 목록 형식이 올바르지 않습니다.',
+            'ingredients.*.name.required' => '재료명을 입력해주세요.',
+            'ingredients.*.quantity.numeric' => '사용량은 숫자로 입력해주세요.',
+            'ingredients.*.quantity.min' => '사용량은 0 이상으로 입력해주세요.',
+            'ingredients.*.unit.max' => '단위는 50자 이하로 입력해주세요.',
+            'steps.array' => '공정 목록 형식이 올바르지 않습니다.',
+            'steps.*.description.required' => '공정 내용을 입력해주세요.',
         ]);
 
         $oldData = $recipe->load(['ingredients', 'steps'])->toArray();
@@ -929,10 +960,19 @@ class ProductController extends Controller
         }
 
         $oldData = $recipe->toArray();
+        $recipeUpdatedAt = $recipe->updated_at;
         $recipe->restore();
-        $recipe->forceFill(['deleted_by' => null, 'deletion_source' => null])->save();
 
-        $this->audit->log($user, 'recipe', 'update', Recipe::class, $recipe->id, $oldData, $recipe->fresh()->toArray(), '레시피 복구');
+        // 복구 이력은 감사 로그에 남기되 마지막 실제 레시피 수정일은 변경하지 않습니다.
+        $recipe->timestamps = false;
+        $recipe->forceFill([
+            'deleted_by' => null,
+            'deletion_source' => null,
+            'updated_at' => $recipeUpdatedAt,
+        ])->saveQuietly();
+        $recipe->timestamps = true;
+
+        $this->audit->log($user, 'recipe', 'restore', Recipe::class, $recipe->id, $oldData, $recipe->fresh()->toArray(), '레시피 복구');
 
         return response()->json(['message' => '레시피를 복구했습니다.']);
     }
@@ -957,7 +997,7 @@ class ProductController extends Controller
             ],
             'copy_recipe' => ['required', 'boolean'],
         ], [
-            'name.required' => '새 제품명을 입력해주세요.',
+            'name.required' => '제품명을 입력해주세요.',
             'name.max' => '제품명은 255자 이하로 입력해주세요.',
             'name.unique' => '같은 점포에 동일한 제품명이 이미 등록되어 있습니다.',
             'copy_recipe.required' => '레시피 복사 여부를 선택해주세요.',

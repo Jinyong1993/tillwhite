@@ -11,7 +11,7 @@
       </v-card-title>
 
       <v-card-text class="px-5 pb-5">
-        <div class="text-body-2 text-medium-emphasis mb-5">
+        <div class="app-supporting-text text-medium-emphasis mb-5">
           {{ employee?.name }}님의 새로운 비밀번호를 입력해주세요.
         </div>
 

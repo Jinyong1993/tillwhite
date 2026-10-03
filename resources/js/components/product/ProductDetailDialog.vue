@@ -240,18 +240,36 @@
             </div>
 
             <!--
-              레시피가 등록된 경우 상세 화면에서도
-              바로 수정할 수 있도록 접근 경로를 제공합니다.
+              카드 헤더에는 자주 쓰지 않는 복제 계열 기능만 더보기 메뉴로 모읍니다.
+              삭제·제품 보기·수정/복구는 공정 아래의 카드 액션 영역에서 제공합니다.
             -->
-            <v-btn
-              v-if="hasRecipe && !product.deleted_at"
-              size="small"
-              variant="text"
-              prepend-icon="mdi-pencil-outline"
-              @click="requestRecipeEdit"
+            <v-menu
+              v-if="hasRecipe && !product.deleted_at && !displayedRecipe?.deleted_at"
+              location="bottom end"
             >
-              {{ displayedRecipe?.deleted_at ? '레시피 복구' : '레시피 수정' }}
-            </v-btn>
+              <template #activator="{ props: menuProps }">
+                <v-btn
+                  v-bind="menuProps"
+                  icon="mdi-dots-vertical"
+                  size="small"
+                  variant="text"
+                  aria-label="레시피 더보기"
+                />
+              </template>
+
+              <v-list density="compact" min-width="230">
+                <v-list-item
+                  prepend-icon="mdi-package-variant-plus"
+                  title="새 제품 만들기"
+                  @click="requestRecipeCreateProduct"
+                />
+                <v-list-item
+                  prepend-icon="mdi-content-copy"
+                  title="복사"
+                  @click="requestRecipeCopy"
+                />
+              </v-list>
+            </v-menu>
           </div>
 
           <ProductRecipeCard
@@ -290,8 +308,8 @@
             <InfoItem label="등록일" :value="historyAt(product.management_history?.created, product.created_at)" />
             <InfoItem label="수정자" :value="historyActor(product.management_history?.updated)" />
             <InfoItem label="수정일" :value="historyAt(product.management_history?.updated, product.updated_at)" />
-            <InfoItem label="삭제자" :value="historyActor(product.management_history?.deleted)" />
-            <InfoItem label="삭제일" :value="historyAt(product.management_history?.deleted, product.deleted_at)" />
+            <InfoItem label="삭제자" :value="product.deleted_at ? historyActor(product.management_history?.deleted) : '-'" />
+            <InfoItem label="삭제일" :value="product.deleted_at ? historyAt(product.management_history?.deleted, product.deleted_at) : '-'" />
           </div>
 
           <details
@@ -384,7 +402,7 @@
 
       <v-card-text class="px-5">
         <!-- 현재 상태 -->
-        <div class="text-body-2 text-medium-emphasis mb-3">
+        <div class="app-supporting-text text-medium-emphasis mb-3">
           현재 상태:
           {{ product?.is_active ? '취급중' : '취급중단' }}
         </div>
@@ -681,6 +699,16 @@ function requestRecipeEdit() {
   emit('recipe');
 }
 
+/** 새 제품 만들기 역시 레시피 관리 권한을 확인한 뒤 상위 화면으로 전달합니다. */
+function requestRecipeCreateProduct() {
+  if (!props.canManageRecipe) {
+    emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
+    return;
+  }
+
+  emit('recipe-create-product');
+}
+
 /** 레시피 복사 역시 같은 권한 안내 규칙을 사용합니다. */
 function requestRecipeCopy() {
   if (!props.canManageRecipe) {
@@ -761,7 +789,7 @@ function formatDate(value) {
  * 등록 / 수정 / 삭제 일시 표시
  */
 function auditActionText(action) {
-  return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
+  return { create: '등록', update: '수정', delete: '삭제', restore: '복구' }[action] ?? '-';
 }
 
 /** 관리 이력의 작업자 이름을 표시하고 누락 시 하이픈을 사용합니다. */

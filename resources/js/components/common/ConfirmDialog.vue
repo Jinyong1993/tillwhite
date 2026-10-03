@@ -47,7 +47,7 @@
       </v-card-title>
 
       <!-- 확인 메시지 -->
-      <v-card-text class="text-body-1 confirm-message">
+      <v-card-text class="app-supporting-text confirm-message">
         {{ message }}
       </v-card-text>
 

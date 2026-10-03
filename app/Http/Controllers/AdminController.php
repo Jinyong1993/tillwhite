@@ -1461,13 +1461,21 @@ class AdminController extends Controller
                 abort_if($lockedUser->store_id !== $actor->store_id, 403, '해당 직원을 복구할 권한이 없습니다.');
             }
             $before = ['deleted_at' => $lockedUser->deleted_at?->toISOString()];
+            $lastUpdatedAt = $lockedUser->updated_at;
             $lockedUser->restore();
+
+            // 복구는 삭제 상태만 되돌리므로 마지막 실제 직원 정보 수정일은 유지합니다.
+            $lockedUser->timestamps = false;
+            $lockedUser->forceFill(['updated_at' => $lastUpdatedAt])->saveQuietly();
+            $lockedUser->timestamps = true;
+
             $this->audit->log($actor, 'employee', 'restore', User::class, $lockedUser->id, $before, ['deleted_at' => null], '직원 복구');
         });
 
         return response()->json(['message' => '직원을 복구했습니다.']);
     }
 
+    /** 직원 변경 이력 비교에 필요한 업무 필드만 안전하게 추출합니다. */
     private function employeeAuditSnapshot(User $user): array
     {
         return [
@@ -1487,6 +1495,7 @@ class AdminController extends Controller
         ];
     }
 
+    /** 선택한 역할이 직원의 부서 규칙과 일치하는지 서버에서 최종 검증합니다. */
     private function ensureEmployeeRoleMatchesDepartment(
         ?string $department,
         Role $role

@@ -257,7 +257,7 @@
         입력을 취소하시겠습니까?
       </v-card-title>
 
-      <v-card-text class="px-5 pb-5 text-body-2">
+      <v-card-text class="px-5 pb-5 app-supporting-text">
         저장하지 않은 내용은 사라집니다.
       </v-card-text>
 

@@ -39,15 +39,16 @@
         class="recent-viewed mb-5"
       >
         <span class="recent-viewed-label">최근 본 항목</span>
-        <v-btn
+        <v-chip
           v-for="item in recentViewed"
           :key="`${item.type}-${item.id}`"
+          class="recent-viewed-chip"
           size="small"
-          variant="text"
+          variant="tonal"
           @click="openRecentItem(item, user, setError)"
         >
           {{ item.title }}
-        </v-btn>
+        </v-chip>
       </div>
 
       <!-- 검색 / 필터: 제품 전용 컴포넌트로 분리하여 페이지 책임을 단순화합니다. -->
@@ -209,7 +210,7 @@
         <v-card rounded="lg">
           <v-card-title class="pa-5 pb-2">레시피 복사</v-card-title>
           <v-card-text class="px-5">
-            <div class="text-body-2 text-medium-emphasis mb-4">
+            <div class="app-supporting-text text-medium-emphasis mb-4">
               원본은 그대로 유지하고 같은 점포의 다른 제품에 새 레시피를 만듭니다.
             </div>
             <v-select
@@ -226,7 +227,7 @@
             <v-btn
               variant="text"
               :disabled="productActionLoading === 'recipe-copy'"
-              @click="recipeCopyDialog = false"
+              @click="requestCloseRecipeCopyDialog"
             >
               취소
             </v-btn>
@@ -249,14 +250,18 @@
         persistent
       >
         <v-card rounded="lg">
-          <v-card-title class="pa-5 pb-2">{{ cloneFromRecipe ? '이 레시피를 기반으로 새 제품 만들기' : '제품 복제' }}</v-card-title>
+          <v-card-title class="pa-5 pb-2">{{ cloneFromRecipe ? '새 제품 만들기' : '제품 복사' }}</v-card-title>
           <v-card-text class="px-5">
             <div class="clone-dialog-description text-medium-emphasis mb-4">
-              원본은 변경하지 않고 별도 ID의 새 제품을 생성합니다.
+              {{
+                cloneFromRecipe
+                  ? '이 레시피를 기반으로 새 제품을 만듭니다. 원본 제품 정보는 변경하지 않고 별도의 새 제품을 생성합니다.'
+                  : '원본 제품 정보는 변경하지 않고 별도의 새 제품을 생성합니다.'
+              }}
             </div>
             <v-text-field
               v-model="cloneProductName"
-              label="새 제품명 *"
+              label="제품명 *"
               variant="outlined"
               :disabled="productActionLoading === 'clone-product'"
             />
@@ -271,7 +276,7 @@
             <v-btn
               variant="text"
               :disabled="productActionLoading === 'clone-product'"
-              @click="cloneProductDialog = false"
+              @click="requestCloseCloneProductDialog"
             >
               취소
             </v-btn>
@@ -319,7 +324,12 @@
           <v-divider />
 
           <div class="recipe-scroll">
-            <v-alert class="recipe-required-guide mb-5" type="info" variant="tonal" density="compact">
+            <v-alert
+              class="recipe-required-guide app-supporting-alert mb-5"
+              type="info"
+              variant="tonal"
+              density="compact"
+            >
               * 표시는 필수 입력 항목입니다. 재료와 공정은 저장된 순서대로 표시됩니다.
             </v-alert>
 
@@ -470,8 +480,8 @@
                 <span>등록일</span><strong>{{ recipeHistoryAt(recipeManagementInfo?.management_history?.created, recipeManagementInfo?.created_at) }}</strong>
                 <span>수정자</span><strong>{{ recipeHistoryActor(recipeManagementInfo?.management_history?.updated) }}</strong>
                 <span>수정일</span><strong>{{ recipeHistoryAt(recipeManagementInfo?.management_history?.updated, recipeManagementInfo?.updated_at) }}</strong>
-                <span>삭제자</span><strong>{{ recipeHistoryActor(recipeManagementInfo?.management_history?.deleted) }}</strong>
-                <span>삭제일</span><strong>{{ recipeHistoryAt(recipeManagementInfo?.management_history?.deleted, recipeManagementInfo?.deleted_at) }}</strong>
+                <span>삭제자</span><strong>{{ recipeManagementInfo?.deleted_at ? recipeHistoryActor(recipeManagementInfo?.management_history?.deleted) : '-' }}</strong>
+                <span>삭제일</span><strong>{{ recipeManagementInfo?.deleted_at ? recipeHistoryAt(recipeManagementInfo?.management_history?.deleted, recipeManagementInfo?.deleted_at) : '-' }}</strong>
               </div>
             </section>
           </div>
@@ -546,6 +556,7 @@ const cloneProductDialog = ref(false);
 const cloneProductName = ref('');
 const cloneWithRecipe = ref(false);
 const cloneFromRecipe = ref(false);
+const cloneInitialSnapshot = ref('');
 const recentViewed = ref([]);
 
 /** 제품 API 중복 요청을 막기 위한 현재 작업 상태 */
@@ -1392,6 +1403,19 @@ async function executeConfirmedAction(setError, setSuccess) {
     return;
   }
 
+  if (action === 'clone-product-discard') {
+    cloneProductDialog.value = false;
+    clearConfirmDialog(true);
+    return;
+  }
+
+  if (action === 'recipe-copy-discard') {
+    recipeCopyDialog.value = false;
+    recipeCopyTargetId.value = null;
+    clearConfirmDialog(true);
+    return;
+  }
+
   if (action === 'recipe-save') {
     const saved = confirmDialog.payload;
     await saveRecipe(saved?.setError ?? setError, saved?.setSuccess ?? setSuccess);
@@ -1514,7 +1538,35 @@ function openCloneProductDialog(fromRecipe = false) {
   cloneFromRecipe.value = fromRecipe;
   cloneWithRecipe.value = fromRecipe ? true : Boolean(activeSelectedRecipe.value);
   cloneProductName.value = `${selectedProduct.value.name ?? ''} 복사본`.trim();
+  cloneInitialSnapshot.value = JSON.stringify({
+    name: cloneProductName.value,
+    copyRecipe: cloneWithRecipe.value,
+  });
   cloneProductDialog.value = true;
+}
+
+/** 제품 복제/새 제품 만들기에서 입력이 바뀐 경우 닫기 전에 유실 여부를 확인합니다. */
+function requestCloseCloneProductDialog() {
+  if (productActionLoading.value === 'clone-product') {
+    return;
+  }
+
+  const currentSnapshot = JSON.stringify({
+    name: cloneProductName.value,
+    copyRecipe: cloneWithRecipe.value,
+  });
+
+  if (cloneInitialSnapshot.value && currentSnapshot !== cloneInitialSnapshot.value) {
+    openConfirm(
+      'clone-product-discard',
+      '작성을 취소하시겠습니까?',
+      '저장하지 않은 새 제품 입력 내용은 사라집니다.',
+      '예',
+    );
+    return;
+  }
+
+  cloneProductDialog.value = false;
 }
 
 /** 새 제품과 선택한 레시피 복사본을 서버에서 하나의 트랜잭션으로 생성합니다. */
@@ -1642,6 +1694,25 @@ function openRecipeCopyDialog() {
 
   recipeCopyTargetId.value = null;
   recipeCopyDialog.value = true;
+}
+
+/** 복사 대상을 선택한 뒤 취소하면 선택 내용이 사라짐을 한 번 확인합니다. */
+function requestCloseRecipeCopyDialog() {
+  if (productActionLoading.value === 'recipe-copy') {
+    return;
+  }
+
+  if (recipeCopyTargetId.value) {
+    openConfirm(
+      'recipe-copy-discard',
+      '작성을 취소하시겠습니까?',
+      '선택한 레시피 복사 대상은 저장되지 않습니다.',
+      '예',
+    );
+    return;
+  }
+
+  recipeCopyDialog.value = false;
 }
 
 /** 레시피 복사 전에 대상 제품과 작업 내용을 확인합니다. */
@@ -2191,6 +2262,18 @@ onMounted(() => {
   gap: 6px;
 }
 
+/* 최근 본 항목은 실행 버튼과 구분되는 탐색용 칩으로 표시합니다. */
+.recent-viewed-chip {
+  max-width: min(240px, 100%);
+}
+
+.recent-viewed-chip :deep(.v-chip__content) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .recent-viewed-label {
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 0.76rem;
@@ -2397,24 +2480,21 @@ onMounted(() => {
 }
 
 @media (max-width: 340px) {
-  .recipe-dialog-header-icon { flex-basis: 36px; width: 36px; height: 36px; }
-  .recipe-dialog-actions { gap: 6px; }
-  .recipe-dialog-actions .v-btn { min-width: 0; }
-  .recent-viewed {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
+  .recipe-dialog-header-icon {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
 
-.recent-viewed-label {
-  color: rgba(var(--v-theme-on-surface), 0.62);
-  font-size: 0.76rem;
-  font-weight: 700;
-}
+  .recipe-dialog-actions {
+    gap: 6px;
+  }
 
-.product-pagination {
+  .recipe-dialog-actions .v-btn {
+    min-width: 0;
+  }
+
+  .product-pagination {
     width: calc(100% - 16px);
     max-width: calc(100% - 16px);
   }

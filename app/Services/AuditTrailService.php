@@ -32,6 +32,7 @@ class AuditTrailService
     /**
      * 대상의 변경 이력을 최신순으로 반환합니다.
      * 상세 화면에서는 요약 정보와 분리해 필요할 때만 펼쳐볼 수 있습니다.
+     * 복구는 현재 삭제 정보에는 포함하지 않지만 과거 작업 이력에는 반드시 보존합니다.
      */
     public function history(string $targetType, int $targetId, int $limit = 30): array
     {
@@ -39,7 +40,7 @@ class AuditTrailService
             ->with('user:id,name')
             ->where('target_type', $targetType)
             ->where('target_id', $targetId)
-            ->whereIn('action', ['create', 'update', 'delete'])
+            ->whereIn('action', ['create', 'update', 'delete', 'restore'])
             ->latest('created_at')
             ->limit($limit)
             ->get()
@@ -56,6 +57,7 @@ class AuditTrailService
             ->all();
     }
 
+    /** 감사 로그 한 건을 화면에서 사용할 공통 이력 구조로 변환합니다. */
     private function entry($log): ?array
     {
         if (! $log) {

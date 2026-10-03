@@ -231,37 +231,7 @@
       v-if="!parentDeleted"
       class="recipe-actions mt-4"
     >
-      <v-btn
-        size="small"
-        variant="text"
-        prepend-icon="mdi-package-variant"
-        @click="$emit('view-product')"
-      >
-        제품 보기
-      </v-btn>
-
-      <v-btn
-        v-if="!recipe.deleted_at"
-        size="small"
-        variant="text"
-        prepend-icon="mdi-package-variant-plus"
-        @click="requestAction('create-product')"
-      >
-        새 제품 만들기
-      </v-btn>
-
-      <v-btn
-        v-if="!recipe.deleted_at"
-        size="small"
-        variant="text"
-        prepend-icon="mdi-content-copy"
-        @click="requestAction('copy')"
-      >
-        복사
-      </v-btn>
-
-      <v-spacer />
-
+      <!-- 위험 동작은 왼쪽, 조회·수정 같은 주 동작은 오른쪽에 배치합니다. -->
       <v-btn
         v-if="!recipe.deleted_at"
         color="error"
@@ -271,6 +241,17 @@
         @click="requestAction('delete')"
       >
         삭제
+      </v-btn>
+
+      <v-spacer />
+
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-package-variant"
+        @click="$emit('view-product')"
+      >
+        제품 보기
       </v-btn>
 
       <v-btn
@@ -308,7 +289,7 @@
       <div class="recipe-history-label">수정</div>
       <div>{{ historyText(recipe.management_history?.updated, recipe.updated_at) }}</div>
       <div class="recipe-history-label">삭제</div>
-      <div>{{ historyText(recipe.management_history?.deleted, recipe.deleted_at) }}</div>
+      <div>{{ recipe.deleted_at ? historyText(recipe.management_history?.deleted, recipe.deleted_at) : '- · -' }}</div>
     </div>
 
     <details
@@ -473,7 +454,7 @@ function requestAction(action) {
 
 /** 감사 로그 동작 코드를 사용자에게 보여줄 한글 이름으로 변환합니다. */
 function auditActionText(action) {
-  return { create: '등록', update: '수정', delete: '삭제' }[action] ?? '-';
+  return { create: '등록', update: '수정', delete: '삭제', restore: '복구' }[action] ?? '-';
 }
 
 /** 관리 이력의 작업자와 일시를 카드용 한 줄 문자열로 만듭니다. */
