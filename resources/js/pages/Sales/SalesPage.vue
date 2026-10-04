@@ -20,7 +20,7 @@
         variant="outlined"
         class="mb-3"
       >
-        <v-card-text>
+        <v-card-text class="app-dialog-body">
           <div class="text-caption">
             조회 매출 합계
           </div>
@@ -52,7 +52,7 @@
         v-model="dialog"
         max-width="400"
       >
-        <v-card title="간편 매출 등록">
+        <v-card title="간편 매출 등록" class="app-dialog-card">
           <v-card-text>
             <!--
               현재 데모에서는 복수 제품을 한 번에 입력하지 않고
@@ -110,7 +110,7 @@
             />
           </v-card-text>
 
-          <v-card-actions>
+          <v-card-actions class="app-dialog-footer">
             <v-spacer />
 
             <!-- 매출 등록 취소 -->

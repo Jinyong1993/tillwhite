@@ -31,12 +31,12 @@ import {
  *
  * API 요청이 빠르게 끝나더라도
  * 로딩 화면이 순간적으로 깜빡이지 않도록
- * 최소 1초 동안 표시합니다.
+ * 짧은 깜빡임만 막을 정도로 최소 0.25초 동안 표시합니다.
  *
  * API 요청 자체가 1초 이상 걸렸다면
  * 추가로 기다리지 않습니다.
  */
-const MINIMUM_LOADING_MS = 1000;
+const MINIMUM_LOADING_MS = 250;
 
 // 공통 전체 화면 로딩 표시 여부
 const loading = ref(false);

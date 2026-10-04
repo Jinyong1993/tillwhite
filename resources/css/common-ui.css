@@ -18,3 +18,40 @@
     font-size: 0.72rem;
     line-height: 1.4;
 }
+
+/*
+ * 공통 다이얼로그 기본 구조입니다.
+ * 제목과 주요 액션은 항상 보이게 두고 내용 영역만 스크롤하여
+ * 긴 폼이나 상세 정보에서도 닫기/저장 위치를 잃지 않게 합니다.
+ */
+.app-dialog-card {
+    display: flex;
+    flex-direction: column;
+    max-height: min(92dvh, 820px);
+    overflow: hidden;
+}
+
+.app-dialog-header {
+    flex: 0 0 auto;
+    background: rgb(var(--v-theme-surface));
+    border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.app-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.app-dialog-footer {
+    flex: 0 0 auto;
+    background: rgb(var(--v-theme-surface));
+    border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+@media (max-width: 600px) {
+    .app-dialog-card {
+        max-height: calc(100dvh - 16px);
+    }
+}

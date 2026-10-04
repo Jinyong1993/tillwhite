@@ -24,10 +24,10 @@
     max-width="420"
     @update:model-value="handleModelValue"
   >
-    <v-card rounded="lg">
+    <v-card rounded="lg" class="app-dialog-card">
       <!-- 확인창 제목 -->
       <v-card-title
-        class="d-flex align-center justify-space-between"
+        class="app-dialog-header d-flex align-center justify-space-between"
       >
         <span>{{ title }}</span>
 
@@ -52,7 +52,7 @@
       </v-card-text>
 
       <!-- 확인창 버튼 -->
-      <v-card-actions class="px-4 pb-4">
+      <v-card-actions class="app-dialog-footer px-4 pb-4">
         <!--
           아니오 버튼
 

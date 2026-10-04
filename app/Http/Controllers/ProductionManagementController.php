@@ -165,29 +165,113 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '생산 0개를 확인했습니다.']);
     }
 
-    /** 제품의 로스·폐기·기타 출고·다음 날 이월을 한 번의 트랜잭션으로 저장합니다. */
+    /**
+     * 제품의 한 가지 수량 처리 업무만 저장합니다.
+     *
+     * 화면에서 로스·폐기·기타 출고·이월을 각각 독립적으로 수정하므로
+     * 선택하지 않은 업무 기록을 빈 배열로 덮어쓰지 않도록 서버에서도 분리 처리합니다.
+     */
     public function saveFlow(Request $request): JsonResponse
     {
         $user = $this->user($request);
         $this->accessService->requirePermission($user, 'production.update');
-        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'losses' => ['array'], 'losses.*.reason_code' => ['required', 'string', 'max:60'], 'losses.*.reason_text' => ['nullable', 'string', 'max:120'], 'losses.*.quantity' => ['required', 'integer', 'min:1'], 'wastes' => ['array'], 'wastes.*.reason_code' => ['required', 'string', 'max:60'], 'wastes.*.reason_text' => ['nullable', 'string', 'max:120'], 'wastes.*.quantity' => ['required', 'integer', 'min:1'], 'other_outflows' => ['array'], 'other_outflows.*.reason_code' => ['required', 'string', 'max:60'], 'other_outflows.*.reason_text' => ['nullable', 'string', 'max:120'], 'other_outflows.*.quantity' => ['required', 'integer', 'min:1'], 'carryover_out' => ['required', 'integer', 'min:0'], 'carryover_source' => ['nullable', Rule::in(['today', 'incoming'])], 'note' => ['nullable', 'string', 'max:1000']]);
+
+        $data = $request->validate([
+            'store_id' => ['required', 'integer', 'exists:stores,id'],
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'work_date' => ['required', 'date_format:Y-m-d'],
+            'type' => ['required', Rule::in(['loss', 'waste', 'other_outflow', 'carryover'])],
+            'reasons' => ['array'],
+            'reasons.*.reason_code' => ['required_unless:type,carryover', 'string', 'max:60'],
+            'reasons.*.reason_text' => ['nullable', 'string', 'max:120'],
+            'reasons.*.quantity' => ['required_unless:type,carryover', 'integer', 'min:1'],
+            'quantity' => ['required_if:type,carryover', 'nullable', 'integer', 'min:0'],
+            'carryover_source' => ['nullable', Rule::in(['today', 'incoming'])],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
+
         DB::transaction(function () use ($data, $user) {
             $storeId = (int) $data['store_id'];
             $productId = (int) $data['product_id'];
             $date = $data['work_date'];
-            $this->replaceLosses($storeId, $productId, $date, $data['losses'] ?? [], $data['note'] ?? null, $user->id);
-            $this->replaceWastes($storeId, $productId, $date, $data['wastes'] ?? [], $data['note'] ?? null, $user->id);
-            $this->replaceOutflows($storeId, $productId, $date, $data['other_outflows'] ?? [], $data['note'] ?? null, $user->id);
-            $this->replaceCarryover($storeId, $productId, $date, (int) $data['carryover_out'], $data['carryover_source'] ?? 'today', $user->id);
-            ProductionConfirmation::updateOrCreate(['store_id' => $storeId, 'product_id' => $productId, 'work_date' => $date], ['loss_confirmed' => true, 'waste_confirmed' => true, 'disposition_confirmed' => true, 'confirmed_by' => $user->id]);
+            $type = $data['type'];
+            $reasons = $data['reasons'] ?? [];
+            $note = $data['note'] ?? null;
+
+            if ($type === 'loss') {
+                $this->replaceLosses($storeId, $productId, $date, $reasons, $note, $user->id);
+                $this->confirmFlowField($storeId, $productId, $date, 'loss_confirmed', $user->id);
+            } elseif ($type === 'waste') {
+                $this->replaceWastes($storeId, $productId, $date, $reasons, $note, $user->id);
+                $this->confirmFlowField($storeId, $productId, $date, 'waste_confirmed', $user->id);
+            } elseif ($type === 'other_outflow') {
+                $this->replaceOutflows($storeId, $productId, $date, $reasons, $note, $user->id);
+                $this->confirmFlowField($storeId, $productId, $date, 'disposition_confirmed', $user->id);
+            } else {
+                $this->replaceCarryover(
+                    $storeId,
+                    $productId,
+                    $date,
+                    (int) ($data['quantity'] ?? 0),
+                    $data['carryover_source'] ?? 'today',
+                    $user->id,
+                );
+                $this->confirmFlowField($storeId, $productId, $date, 'disposition_confirmed', $user->id);
+            }
+
             $daily = $this->dailyService->build($storeId, $date);
             $row = collect($daily['rows'])->firstWhere('id', $productId);
-            abort_if(($row['mismatch'] ?? false) === true, 422, '처리 수량이 사용 가능한 수량보다 많습니다. 입력값을 다시 확인해주세요.');
+            abort_if(
+                ($row['mismatch'] ?? false) === true,
+                422,
+                '처리 수량이 사용 가능한 수량보다 많습니다. 입력값을 다시 확인해주세요.',
+            );
         });
-        $this->auditService->log($user, 'production', 'update', Product::class, (int) $data['product_id'], null, $data, '제품 수량 처리 저장');
-        return response()->json(['message' => '제품 마감 수량을 저장했습니다.']);
+
+        $labels = [
+            'loss' => '로스',
+            'waste' => '폐기',
+            'other_outflow' => '기타 출고',
+            'carryover' => '이월',
+        ];
+        $label = $labels[$data['type']];
+
+        $this->auditService->log(
+            $user,
+            'production',
+            'update',
+            Product::class,
+            (int) $data['product_id'],
+            null,
+            $data,
+            "{$label} 처리 저장",
+        );
+
+        return response()->json(['message' => "{$label} 처리를 저장했습니다."]);
+    }
+
+    /** 선택한 수량 처리 항목의 확인 상태만 갱신합니다. */
+    private function confirmFlowField(
+        int $storeId,
+        int $productId,
+        string $date,
+        string $field,
+        int $userId,
+    ): void {
+        ProductionConfirmation::updateOrCreate(
+            [
+                'store_id' => $storeId,
+                'product_id' => $productId,
+                'work_date' => $date,
+            ],
+            [
+                $field => true,
+                'confirmed_by' => $userId,
+            ],
+        );
     }
 
     /** 미입력 로스 또는 폐기만 일괄 0개로 확인하며 기존 입력은 건드리지 않습니다. */

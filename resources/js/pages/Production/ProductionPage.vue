@@ -18,20 +18,22 @@
         <v-spacer />
         <span class="app-supporting-text text-medium-emphasis">{{ currentStoreName }}</span>
       </div>
-      <v-progress-linear v-if="loading" indeterminate class="mb-3" />
+
       <AppErrorState
-        v-if="loadError"
+        v-if="loadError && !ready"
         :message="loadError"
         :loading="loading"
-        @retry="loadPage"
+        @retry="loadPage({ force: true })"
       />
-      <div v-if="ready" v-show="!loading && !loadError">
+
+      <div v-if="ready">
         <v-tabs v-model="tab" grow density="compact">
           <v-tab value="list">목록</v-tab>
           <v-tab value="calendar">캘린더</v-tab>
           <v-tab value="analysis">분석</v-tab>
           <v-tab value="statistics">통계</v-tab>
         </v-tabs>
+
         <v-window v-model="tab" class="mt-4">
           <v-window-item value="list">
             <ProductionDailyTab
@@ -39,16 +41,20 @@
               :options="options"
               :store-id="storeId"
               :work-date="workDate"
+              :refreshing="loading"
               :can-mutate="can('production.create') || can('production.update')"
               :can-correct="can('production.correct')"
               @update:work-date="changeDate"
-              @reload="loadPage"
+              @reload="reloadCurrentDate"
               @error="setError"
               @success="showSuccess"
             />
           </v-window-item>
+
           <v-window-item value="calendar">
+            <!-- 캘린더는 실제 탭에 진입할 때만 마운트하여 최초 페이지 로딩을 가볍게 유지합니다. -->
             <ProductionCalendarTab
+              v-if="tab === 'calendar'"
               :store-id="storeId"
               :work-date="workDate"
               :products="options.products || []"
@@ -57,15 +63,19 @@
               @success="showSuccess"
             />
           </v-window-item>
+
           <v-window-item value="analysis">
             <ProductionAnalysisTab
+              v-if="tab === 'analysis'"
               :store-id="storeId"
               :work-date="workDate"
               @error="setError"
             />
           </v-window-item>
+
           <v-window-item value="statistics">
             <ProductionStatisticsTab
+              v-if="tab === 'statistics'"
               :store-id="storeId"
               :work-date="workDate"
               @error="setError"
@@ -73,6 +83,7 @@
           </v-window-item>
         </v-window>
       </div>
+
       <AppAlert v-model="successMessage" type="success" />
     </template>
   </AppShell>
@@ -84,17 +95,18 @@ import { useRouter } from 'vue-router';
 import AppAlert from '../../components/common/AppAlert.vue';
 import AppErrorState from '../../components/common/AppErrorState.vue';
 import AppShell from '../../components/layout/AppShell.vue';
-import ProductionDailyTab from '../../components/production/ProductionDailyTab.vue';
-import ProductionCalendarTab from '../../components/production/ProductionCalendarTab.vue';
 import ProductionAnalysisTab from '../../components/production/ProductionAnalysisTab.vue';
+import ProductionCalendarTab from '../../components/production/ProductionCalendarTab.vue';
+import ProductionDailyTab from '../../components/production/ProductionDailyTab.vue';
 import ProductionStatisticsTab from '../../components/production/ProductionStatisticsTab.vue';
 import { useAppLoading } from '../../composables/useAppLoading';
 import { useSession } from '../../composables/useSession';
-import { toLocalDateString } from '../../utils/localDate';
+import { addLocalDays, toLocalDateString } from '../../utils/localDate';
 
 const router = useRouter();
 const { completePageLoading, cancelLoading } = useAppLoading();
 const { clear } = useSession();
+
 const appShellRef = ref(null);
 const pageTitle = '생산·폐기 관리';
 const tab = ref('list');
@@ -106,6 +118,9 @@ const successMessage = ref('');
 const loadError = ref('');
 const loading = ref(false);
 const ready = ref(false);
+
+const dailyCache = new Map();
+const optionsCache = new Map();
 let activeRequest = null;
 let disposed = false;
 
@@ -115,30 +130,51 @@ const currentStoreName = computed(() => (
   || '-'
 ));
 
-/** 점포·날짜에 맞는 선택 목록과 일일 데이터를 순서대로 불러옵니다. */
-async function loadPage() {
-  // 날짜를 빠르게 바꾸면 이전 응답이 새 날짜의 화면을 덮어쓰지 않게 합니다.
+/** 점포와 날짜 조합을 캐시 키로 변환합니다. */
+function cacheKey(date, targetStoreId) {
+  return `${targetStoreId || 'auto'}:${date}`;
+}
+
+/** API 오류를 사용자가 이해할 수 있는 공통 조회 메시지로 변환합니다. */
+function getLoadErrorMessage(error) {
+  if (error.code === 'ECONNABORTED') {
+    return '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.';
+  }
+
+  return error.response?.data?.message
+    || (error.response || error.request
+      ? '생산·폐기 정보를 불러오지 못했습니다. 다시 시도해주세요.'
+      : error.message || '생산·폐기 정보를 불러오지 못했습니다.');
+}
+
+/** 선택 날짜의 옵션과 일일 데이터를 조회합니다. 이미 확인한 날짜는 캐시를 우선 사용합니다. */
+async function loadPage({ force = false, date = workDate.value } = {}) {
   activeRequest?.abort();
+
   const controller = new AbortController();
   activeRequest = controller;
-  const date = workDate.value;
   const requestedStoreId = storeId.value;
+  const requestedKey = cacheKey(date, requestedStoreId);
+
   loading.value = true;
   loadError.value = '';
 
   try {
-    const { data: nextOptions } = await window.axios.get(
-      '/tillwhite/api/production-management/options',
-      {
+    let nextOptions = !force ? optionsCache.get(requestedKey) : null;
+    let selectedStoreId = requestedStoreId;
+
+    if (!nextOptions) {
+      const response = await window.axios.get('/tillwhite/api/production-management/options', {
         params: { date, store_id: requestedStoreId || undefined },
         signal: controller.signal,
         timeout: 20000,
-      },
-    );
+      });
+      nextOptions = response.data;
+    }
 
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) return false;
 
-    const selectedStoreId = requestedStoreId
+    selectedStoreId = selectedStoreId
       || nextOptions.stores?.find((store) => store.name === '무역점')?.id
       || nextOptions.stores?.[0]?.id;
 
@@ -146,40 +182,43 @@ async function loadPage() {
       throw new Error('조회할 수 있는 점포가 없습니다. 소속 점포를 확인해주세요.');
     }
 
-    const { data: nextDaily } = await window.axios.get(
-      '/tillwhite/api/production-management/daily',
-      {
+    const resolvedKey = cacheKey(date, selectedStoreId);
+    let nextDaily = !force ? dailyCache.get(resolvedKey) : null;
+
+    if (!nextDaily) {
+      const response = await window.axios.get('/tillwhite/api/production-management/daily', {
         params: { date, store_id: selectedStoreId },
         signal: controller.signal,
         timeout: 20000,
-      },
-    );
+      });
+      nextDaily = response.data;
+    }
 
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) return false;
 
-    // 두 요청이 모두 성공한 데이터만 함께 반영하여 서로 다른 날짜의 혼합을 막습니다.
+    optionsCache.set(resolvedKey, nextOptions);
+    dailyCache.set(resolvedKey, nextDaily);
     options.value = nextOptions;
     storeId.value = selectedStoreId;
     daily.value = nextDaily;
+    workDate.value = date;
     ready.value = true;
+
+    prefetchAdjacentDates(date, selectedStoreId);
+    return true;
   } catch (error) {
-    if (controller.signal.aborted || disposed) return;
+    if (controller.signal.aborted || disposed) return false;
 
     if (error.response?.status === 401) {
-      // 인증 실패를 빈 목록으로 숨기지 않고 재로그인하도록 안내합니다.
       clear();
       cancelLoading();
       await router.replace({ name: 'login', query: { sessionExpired: '1' } });
-      return;
+      return false;
     }
 
-    loadError.value = error.response?.data?.message
-      || (error.code === 'ECONNABORTED'
-        ? '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
-        : error.response || error.request
-          ? '생산·폐기 정보를 불러오지 못했습니다. 다시 시도해주세요.'
-          : error.message || '생산·폐기 정보를 불러오지 못했습니다.');
+    loadError.value = getLoadErrorMessage(error);
     appShellRef.value?.setError(loadError.value);
+    return false;
   } finally {
     if (activeRequest === controller) {
       loading.value = false;
@@ -188,32 +227,73 @@ async function loadPage() {
   }
 }
 
-/** 점포 선택 변경은 한 번의 조회 흐름으로 처리하여 중복 요청을 방지합니다. */
+/** 현재 날짜 양옆 데이터를 조용히 미리 받아 날짜 이동 체감 속도를 높입니다. */
+function prefetchAdjacentDates(date, targetStoreId) {
+  for (const offset of [-1, 1]) {
+    const adjacentDate = addLocalDays(date, offset);
+    const key = cacheKey(adjacentDate, targetStoreId);
+
+    if (!dailyCache.has(key)) {
+      window.axios.get('/tillwhite/api/production-management/daily', {
+        params: { date: adjacentDate, store_id: targetStoreId },
+        timeout: 20000,
+      }).then(({ data }) => {
+        dailyCache.set(key, data);
+      }).catch(() => {});
+    }
+
+    if (!optionsCache.has(key)) {
+      window.axios.get('/tillwhite/api/production-management/options', {
+        params: { date: adjacentDate, store_id: targetStoreId },
+        timeout: 20000,
+      }).then(({ data }) => {
+        optionsCache.set(key, data);
+      }).catch(() => {});
+    }
+  }
+}
+
+/** 점포를 변경하면 다른 점포의 동일 날짜 데이터를 새로 조회합니다. */
 async function changeStore(value) {
   if (!value || value === storeId.value) return;
 
   storeId.value = value;
-  await loadPage();
+  await loadPage({ force: true });
 }
 
-/** 날짜를 변경하면 해당 날짜의 근무자와 일일 데이터를 함께 갱신합니다. */
+/** 날짜 표시는 즉시 바꾸고, 캐시 또는 최신 서버 데이터로 내용을 갱신합니다. */
 async function changeDate(value) {
+  if (!value || value === workDate.value) return true;
+
   workDate.value = value;
-  await loadPage();
+  return loadPage({ date: value });
 }
 
-/** 캘린더에서 선택한 날짜를 유지한 채 목록 탭으로 이동합니다. */
-async function jumpToDate(value) {
-  tab.value = 'list';
-  await changeDate(value);
+/** 저장 후 현재 날짜 캐시만 무효화하여 변경된 값을 서버에서 다시 확인합니다. */
+async function reloadCurrentDate() {
+  const key = cacheKey(workDate.value, storeId.value);
+  dailyCache.delete(key);
+  optionsCache.delete(key);
+  await loadPage({ force: true });
 }
 
-/** 서버 저장 성공 후 전달받은 메시지를 공통 알림으로 표시합니다. */
+/** 캘린더 날짜 이동이 성공한 뒤에만 목록 탭 전환을 완료하도록 콜백으로 결과를 알립니다. */
+async function jumpToDate(value, done) {
+  const success = await changeDate(value);
+
+  if (success) {
+    tab.value = 'list';
+  }
+
+  done?.(success);
+}
+
+/** 서버 저장 성공 메시지는 프로젝트 공통 알림으로 표시합니다. */
 function showSuccess(message) {
   successMessage.value = message;
 }
 
-/** 최초 조회의 성공·실패와 관계없이 메뉴 이동 시 시작한 공통 로딩을 종료합니다. */
+/** 최초 데이터 준비가 끝난 뒤 메뉴 이동에서 시작된 공통 로딩 오버레이를 종료합니다. */
 async function initializePage() {
   try {
     await loadPage();
@@ -222,7 +302,7 @@ async function initializePage() {
   }
 }
 
-/** 화면을 떠난 뒤에는 진행 중인 응답이 데이터나 다른 화면의 로딩을 변경하지 않게 합니다. */
+/** 화면을 떠날 때 진행 중 요청이 이후 화면 상태를 변경하지 못하도록 취소합니다. */
 function disposePage() {
   disposed = true;
   activeRequest?.abort();

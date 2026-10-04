@@ -44,7 +44,15 @@
       <v-icon :icon="collapsed.has(group.name) ? 'mdi-chevron-down' : 'mdi-chevron-up'" />
     </v-card-title>
     <v-expand-transition>
-      <div v-show="!collapsed.has(group.name)" class="product-table-wrap">
+      <div
+        v-show="!collapsed.has(group.name)"
+        class="product-table-wrap"
+        @pointerdown="startTableDrag"
+        @pointermove="moveTableDrag"
+        @pointerup="endTableDrag"
+        @pointercancel="endTableDrag"
+        @pointerleave="endTableDrag"
+      >
         <table class="product-table">
           <thead>
             <tr>
@@ -67,16 +75,16 @@
                 <v-chip size="small" :variant="row.production_confirmed ? 'tonal' : 'outlined'" :class="{ 'unconfirmed-chip': !row.production_confirmed }" @click="openProduction(row)">{{ row.production }}</v-chip>
               </td>
               <td>
-                <v-chip size="small" variant="tonal" @click="openFlow(row)">{{ row.carryover_in }}</v-chip>
+                <v-chip size="small" variant="tonal" @click="openFlow(row, 'carryover')">{{ row.carryover_in }}</v-chip>
               </td>
               <td>
                 <v-chip size="small" variant="tonal" @click="openSale(row)">{{ row.sale }}</v-chip>
               </td>
               <td>
-                <v-chip size="small" :variant="row.loss > 0 ? 'flat' : 'tonal'" @click="openFlow(row)">{{ row.loss }}</v-chip>
+                <v-chip size="small" :variant="row.loss > 0 ? 'flat' : 'tonal'" @click="openFlow(row, 'loss')">{{ row.loss }}</v-chip>
               </td>
               <td>
-                <v-chip size="small" :variant="row.waste > 0 ? 'flat' : 'tonal'" @click="openFlow(row)">{{ row.waste }}</v-chip>
+                <v-chip size="small" :variant="row.waste > 0 ? 'flat' : 'tonal'" @click="openFlow(row, 'waste')">{{ row.waste }}</v-chip>
               </td>
               <td>{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</td>
             </tr>
@@ -93,42 +101,52 @@
     <v-btn v-else variant="flat" :disabled="daily.closure_status === 'store_closed'" @click="previewClose">마감</v-btn>
   </div>
   <ProductionBatchDialog v-model="batchOpen" :product="selectedProduct" :store-id="storeId" :work-date="workDate" :workers="options.workers || []" :zero-reasons="options.zero_reasons || []" @saved="handleSaved" @error="emit('error', $event)" />
-  <ProductionFlowDialog v-model="flowOpen" :product="selectedProduct" :store-id="storeId" :work-date="workDate" :loss-reasons="options.loss_reasons || []" :waste-reasons="options.waste_reasons || []" @saved="handleSaved" @error="emit('error', $event)" />
+  <ProductionFlowDialog
+    v-model="flowOpen"
+    :product="selectedProduct"
+    :store-id="storeId"
+    :work-date="workDate"
+    :type="flowType"
+    :loss-reasons="options.loss_reasons || []"
+    :waste-reasons="options.waste_reasons || []"
+    @saved="handleSaved"
+    @error="emit('error', $event)"
+  />
   <v-dialog v-model="detailOpen" max-width="680">
-    <v-card rounded="lg">
-      <v-card-title class="d-flex justify-space-between">
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header d-flex justify-space-between">
         <span>{{ detailTitle }}</span>
         <v-btn icon="mdi-close" size="small" variant="text" @click="detailOpen=false" />
       </v-card-title>
-      <v-card-text>
+      <v-card-text class="app-dialog-body">
         <pre class="detail-text">{{ detailText }}</pre>
       </v-card-text>
-      <v-card-actions>
+      <v-card-actions class="app-dialog-footer">
         <v-btn variant="text" @click="detailOpen=false">닫기</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
   <v-dialog v-model="historyOpen" max-width="720">
-    <v-card rounded="lg">
-      <v-card-title class="d-flex justify-space-between">
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header d-flex justify-space-between">
         <span>변경 이력</span>
         <v-btn icon="mdi-close" size="small" variant="text" @click="historyOpen=false"/>
       </v-card-title>
-      <v-card-text>
+      <v-card-text class="app-dialog-body">
         <v-list v-if="historyLogs.length" lines="two">
           <v-list-item v-for="log in historyLogs" :key="log.id" :title="log.description" :subtitle="`${log.user?.name || '-'} · ${new Date(log.created_at).toLocaleString('ko-KR')}`"/>
         </v-list>
         <v-empty-state v-else title="변경 이력이 없습니다." icon="mdi-history"/>
       </v-card-text>
-      <v-card-actions>
+      <v-card-actions class="app-dialog-footer">
         <v-btn variant="text" @click="historyOpen=false">닫기</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
   <v-dialog v-model="closeOpen" max-width="720" persistent>
-    <v-card rounded="lg">
-      <v-card-title>하루 마감 최종 확인</v-card-title>
-      <v-card-text>
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header">하루 마감 최종 확인</v-card-title>
+      <v-card-text class="app-dialog-body">
         <div class="app-supporting-text text-medium-emphasis mb-3">저장 전에 생산·이월·판매·로스·폐기와 미처리 항목을 다시 확인합니다.</div>
         <div class="daily-metrics mb-4">
           <div v-for="metric in metrics" :key="metric.key" class="metric-item static">
@@ -142,7 +160,7 @@
         </div>
         <div class="app-supporting-text mt-3">날씨: {{ closePreview?.weather_status === 'complete' ? '수집 완료' : '수집 대기 · 날씨 수집 실패는 마감을 막지 않습니다.' }}</div>
       </v-card-text>
-      <v-card-actions class="px-4 pb-4">
+      <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn variant="text" @click="closeOpen=false">취소</v-btn>
         <v-spacer />
         <v-btn variant="flat" :disabled="!closePreview?.can_close" @click="confirmCloseOpen=true">저장</v-btn>
@@ -150,13 +168,13 @@
     </v-card>
   </v-dialog>
   <v-dialog v-model="correctionOpen" max-width="560">
-    <v-card rounded="lg">
-      <v-card-title>마감 후 수정</v-card-title>
-      <v-card-text>
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header">마감 후 수정</v-card-title>
+      <v-card-text class="app-dialog-body">
         <div class="app-supporting-text text-medium-emphasis mb-3">과거 기록을 수정하면 통계와 현재 분석이 다시 계산됩니다. 당시 추천 스냅샷은 변경하지 않습니다.</div>
         <v-textarea v-model="correctionReason" label="수정 사유" variant="outlined" rows="3"/>
       </v-card-text>
-      <v-card-actions class="px-4 pb-4">
+      <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn variant="text" @click="correctionOpen=false">취소</v-btn>
         <v-spacer/>
         <v-btn variant="flat" :disabled="correctionReason.trim().length < 2" @click="correctionConfirmOpen=true">수정 시작</v-btn>
@@ -172,13 +190,13 @@
 <script setup>
 import {
   computed, ref
-}  from 'vue';
+} from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 import ProductionBatchDialog from './ProductionBatchDialog.vue';
 import ProductionFlowDialog from './ProductionFlowDialog.vue';
 import {
   addLocalDays, formatKoreanDate, toLocalDateString
-}  from '../../utils/localDate';
+} from '../../utils/localDate';
 const props = defineProps({
   daily: {
     type: Object, default: () => ({
@@ -199,6 +217,8 @@ const collapsed = ref(new Set());
 const selectedProduct = ref(null);
 const batchOpen = ref(false);
 const flowOpen = ref(false);
+const flowType = ref('carryover');
+const tableDrag = { active: false, startX: 0, startScrollLeft: 0, element: null };
 const detailOpen = ref(false);
 const detailTitle = ref('');
 const detailText = ref('');
@@ -227,14 +247,36 @@ const metrics = computed(() => [ {
   key:'waste_rate', title:'폐기율', value: props.daily.totals?.waste_rate == null ? '-' : `${props.daily.totals.waste_rate}%`
 }, ]);
 const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
-  const q = search.value?.trim().toLocaleLowerCase('ko-KR'); if (q && !row.name.toLocaleLowerCase('ko-KR').includes(q)) return false;
-  if (filter.value === 'missing') return !row.complete; if (filter.value === 'occurred') return row.loss > 0 || row.waste > 0; return true;
+  const q = search.value?.trim().toLocaleLowerCase('ko-KR');
+
+  if (q && !row.name.toLocaleLowerCase('ko-KR').includes(q)) {
+    return false;
+  }
+
+  if (filter.value === 'missing') {
+    return !row.complete;
+  }
+
+  if (filter.value === 'occurred') {
+    return row.loss > 0 || row.waste > 0;
+  }
+
+  return true;
 }));
 const groupedRows = computed(() => {
-  const map = new Map(); for (const row of filteredRows.value) {
-    if (!map.has(row.category_name)) map.set(row.category_name, []); map.get(row.category_name).push(row);
-  }  return [...map.entries()].map(([name,rows])=>({
-    name,rows
+  const map = new Map();
+
+  for (const row of filteredRows.value) {
+    if (!map.has(row.category_name)) {
+      map.set(row.category_name, []);
+    }
+
+    map.get(row.category_name).push(row);
+  }
+
+  return [...map.entries()].map(([name, rows]) => ({
+    name,
+    rows,
   }));
 });
 /** 날짜 화살표로 하루씩 이동합니다. */
@@ -262,14 +304,44 @@ function ensureMutable() {
   if (!props.canMutate) {
     emit('error','해당 기능을 사용할 권한이 없습니다.');
     return false;
-  }  if (props.daily.blocking_previous_date) {
+  }
+
+  if (props.daily.blocking_previous_date) {
     emit('error','이전 날짜 마감 확인을 먼저 완료해주세요.');
     return false;
-  }  if (['closed','store_closed'].includes(props.daily.closure_status)) {
+  }
+
+  if (['closed', 'store_closed'].includes(props.daily.closure_status)) {
     emit('error','현재 날짜는 일반 수정이 제한되어 있습니다.');
     return false;
-  }  return true;
+  }
+
+  return true;
 }
+/** 데스크톱에서 표의 빈 영역을 잡아 좌우로 빠르게 이동할 수 있게 합니다. */
+function startTableDrag(event) {
+  if (event.pointerType === 'touch' || event.target.closest('button, .v-chip, a, input')) return;
+
+  tableDrag.active = true;
+  tableDrag.startX = event.clientX;
+  tableDrag.startScrollLeft = event.currentTarget.scrollLeft;
+  tableDrag.element = event.currentTarget;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+}
+
+/** 드래그한 거리만큼 제품 표의 가로 스크롤 위치를 갱신합니다. */
+function moveTableDrag(event) {
+  if (!tableDrag.active || !tableDrag.element) return;
+
+  tableDrag.element.scrollLeft = tableDrag.startScrollLeft - (event.clientX - tableDrag.startX);
+}
+
+/** 포인터가 끝나면 표 드래그 상태를 정리합니다. */
+function endTableDrag() {
+  tableDrag.active = false;
+  tableDrag.element = null;
+}
+
 /** 생산 칩에서 생산 배치 입력을 엽니다. */
 function openProduction(row) {
   if (!ensureMutable()) return;
@@ -277,10 +349,12 @@ function openProduction(row) {
   batchOpen.value=true;
 }
 /** 이월·로스·폐기 칩에서 수량 처리 다이얼로그를 엽니다. */
-function openFlow(row) {
+function openFlow(row, type) {
   if (!ensureMutable()) return;
-  selectedProduct.value=row;
-  flowOpen.value=true;
+
+  selectedProduct.value = row;
+  flowType.value = type;
+  flowOpen.value = true;
 }
 /** 계산 판매량의 근거를 읽기 전용으로 보여줍니다. */
 function openSale(row) {
@@ -326,7 +400,7 @@ async function bulkZero() {
     bulkZeroConfirmOpen.value = false;
     emit('success', data.message);
     emit('reload');
-  }  catch (error) {
+  } catch (error) {
     emit('error', error.response?.data?.message || '일괄 확인하지 못했습니다.');
   }
 }
@@ -347,7 +421,7 @@ async function openHistory() {
     });
     historyLogs.value = data.logs || [];
     historyOpen.value = true;
-  }  catch (error) {
+  } catch (error) {
     emit('error', error.response?.data?.message || '변경 이력을 불러오지 못했습니다.');
   }
 }
@@ -369,7 +443,7 @@ async function openCorrection() {
     const affected = data.affected_dates?.length ? ` 영향 날짜: ${data.affected_dates.join(', ')}` : '';
     emit('success', `${data.message}${affected}`);
     emit('reload');
-  }  catch (error) {
+  } catch (error) {
     emit('error', error.response?.data?.message || '마감 후 수정을 시작하지 못했습니다.');
   }
 }
@@ -379,14 +453,14 @@ async function previewClose() {
   try {
     const {
       data
-    }=await window.axios.get('/tillwhite/api/production-management/close-preview',{
+    } = await window.axios.get('/tillwhite/api/production-management/close-preview',{
       params:{
-        store_id:props.storeId,work_date:props.workDate
+        store_id: props.storeId, work_date: props.workDate
       }
     });
     closePreview.value=data;
     closeOpen.value=true;
-  }  catch(error){
+  } catch (error) {
     emit('error',error.response?.data?.message||'마감 내용을 확인하지 못했습니다.');
   }
 }
@@ -395,15 +469,15 @@ async function closeDay() {
   closing.value=true;
   try {
     await window.axios.post('/tillwhite/api/production-management/close',{
-      store_id:props.storeId,work_date:props.workDate
+      store_id: props.storeId, work_date: props.workDate
     });
     confirmCloseOpen.value=false;
     closeOpen.value=false;
     emit('success','하루 업무를 마감했습니다.');
     emit('reload');
-  }  catch(error){
+  } catch (error) {
     emit('error',error.response?.data?.message||'마감하지 못했습니다.');
-  }  finally {
+  } finally {
     closing.value=false;
   }
 }
@@ -463,7 +537,13 @@ async function closeDay() {
   cursor:pointer
 }
 .product-table-wrap {
-  overflow-x:auto
+  overflow-x: auto;
+  cursor: grab;
+  overscroll-behavior-x: contain;
+}
+
+.product-table-wrap:active {
+  cursor: grabbing;
 }
 .product-table {
   width:100%;
@@ -476,8 +556,25 @@ async function closeDay() {
   text-align:center;
   white-space:nowrap
 }
-.product-table th:first-child,.product-table td:first-child {
-  text-align:left
+.product-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: rgb(var(--v-theme-surface));
+}
+
+.product-table th:first-child,
+.product-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 140px;
+  text-align: left;
+  background: rgb(var(--v-theme-surface));
+}
+
+.product-table thead th:first-child {
+  z-index: 4;
 }
 .product-name {
   appearance:none;

@@ -5,12 +5,12 @@
     persistent
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-card rounded="lg">
-      <v-card-title class="pa-5 pb-2">
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header pa-5 pb-2">
         비밀번호 초기화
       </v-card-title>
 
-      <v-card-text class="px-5 pb-5">
+      <v-card-text class="app-dialog-body px-5 pb-5">
         <div class="app-supporting-text text-medium-emphasis mb-5">
           {{ employee?.name }}님의 새로운 비밀번호를 입력해주세요.
         </div>
@@ -48,7 +48,7 @@
 
       <v-divider />
 
-      <v-card-actions class="pa-4 px-5">
+      <v-card-actions class="app-dialog-footer pa-4 px-5">
         <v-btn
           variant="text"
           :disabled="loading"

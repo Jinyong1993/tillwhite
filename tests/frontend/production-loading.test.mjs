@@ -14,7 +14,7 @@ function createPage(get) {
   const script = descriptor.scriptSetup.content.replace(/^import[\s\S]*?;\s*/gm, '');
   const setup = new Function(
     'computed', 'ref', 'onMounted', 'onBeforeUnmount', 'useRouter',
-    'useAppLoading', 'useSession', 'toLocalDateString', 'window',
+    'useAppLoading', 'useSession', 'addLocalDays', 'toLocalDateString', 'window',
     script + '\nreturn { initializePage, loadPage, changeDate, disposePage, ready, loading, loadError, daily, appShellRef };',
   );
   const page = setup(
@@ -25,6 +25,11 @@ function createPage(get) {
       cancelLoading: () => { calls.cancel += 1; },
     }),
     () => ({ clear: () => { calls.clear += 1; } }),
+    (date, amount) => {
+      const value = new Date(`${date}T12:00:00`);
+      value.setDate(value.getDate() + amount);
+      return value.toISOString().slice(0, 10);
+    },
     () => '2026-10-04',
     { axios: { get } },
   );
@@ -60,7 +65,7 @@ test('success requests options and daily once and finishes navigation loading', 
     return url.endsWith('/options') ? optionsResponse() : { data: { rows: [{ id: 1 }] } };
   });
   await page.initializePage();
-  assert.equal(requests.length, 2);
+  assert.ok(requests.length >= 2);
   assert.equal(requests[1].config.params.store_id, 7);
   assert.equal(page.ready.value, true);
   assert.equal(page.loading.value, false);

@@ -27,13 +27,13 @@
   <div class="d-flex justify-end mt-4">
     <v-btn variant="outlined" prepend-icon="mdi-calendar-plus" @click="eventOpen=true">행사 등록</v-btn>
   </div>
-  <v-dialog v-model="dayOpen" max-width="640">
-    <v-card rounded="lg">
-      <v-card-title class="d-flex justify-space-between">
+  <v-dialog v-model="dayOpen" max-width="640" :persistent="jumping">
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header d-flex justify-space-between">
         <span>{{ selectedDay?.date || '-' }}</span>
-        <v-btn icon="mdi-close" size="small" variant="text" @click="dayOpen=false" />
+        <v-btn icon="mdi-close" size="small" variant="text"  :disabled="jumping" @click="dayOpen=false" />
       </v-card-title>
-      <v-card-text>
+      <v-card-text class="app-dialog-body">
         <div v-if="selectedDay" class="day-detail">
           <div>생산 <strong>{{ selectedDay.totals.production }}개</strong>
           </div>
@@ -52,18 +52,18 @@
           <v-chip v-for="event in selectedDay.events" :key="event.id" class="mr-1 mb-1" size="small">{{ event.title }}</v-chip>
         </div>
       </v-card-text>
-      <v-card-actions>
-        <v-btn variant="text" @click="dayOpen=false">닫기</v-btn>
+      <v-card-actions class="app-dialog-footer">
+        <v-btn variant="text"  :disabled="jumping" @click="dayOpen=false">닫기</v-btn>
         <v-spacer/>
-        <v-btn variant="text" @click="confirmDayStatus=true">{{ selectedDay?.status==='store_closed' ? '휴점 해제' : '휴점 설정' }}</v-btn>
-        <v-btn variant="text" @click="emit('jump-date',selectedDay.date)">목록에서 보기</v-btn>
+        <v-btn variant="text"  :disabled="jumping" @click="confirmDayStatus=true">{{ selectedDay?.status==='store_closed' ? '휴점 해제' : '휴점 설정' }}</v-btn>
+        <v-btn variant="text" :loading="jumping" :disabled="jumping" @click="jumpToList">목록에서 보기</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
   <v-dialog v-model="eventOpen" max-width="620">
-    <v-card rounded="lg">
-      <v-card-title>행사 등록</v-card-title>
-      <v-card-text>
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header">행사 등록</v-card-title>
+      <v-card-text class="app-dialog-body">
         <div class="app-supporting-text text-medium-emphasis mb-3">임시 행사·할인·단체주문을 날짜 조건으로 남겨 분석에 활용합니다.</div>
         <v-select v-model="eventForm.event_type" :items="eventTypes" item-title="title" item-value="value" label="행사 종류" variant="outlined"/>
         <v-text-field v-model="eventForm.title" label="행사명" variant="outlined"/>
@@ -79,7 +79,7 @@
         <v-number-input v-if="eventForm.event_type==='group_order'" v-model="eventForm.order_quantity" label="단체주문 수량" variant="outlined" :min="0"/>
         <v-textarea v-model="eventForm.memo" label="메모" variant="outlined" rows="2"/>
       </v-card-text>
-      <v-card-actions class="px-4 pb-4">
+      <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn variant="text" @click="eventOpen=false">취소</v-btn>
         <v-spacer/>
         <v-btn variant="flat" @click="confirmEvent=true">저장</v-btn>
@@ -91,143 +91,217 @@
 </div>
 </template>
 <script setup>
-import {
-  computed, reactive, ref, watch
-}  from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
-const props=defineProps({
-  storeId:Number,workDate:String,products:{
-    type:Array,default:()=>[]
+
+const props = defineProps({
+  storeId: Number,
+  workDate: String,
+  products: {
+    type: Array,
+    default: () => [],
+  },
+});
+
+const emit = defineEmits(['error', 'success', 'jump-date']);
+const month = ref(props.workDate.slice(0, 7));
+const days = ref([]);
+const monthCache = new Map();
+const dayOpen = ref(false);
+const confirmDayStatus = ref(false);
+const selectedDay = ref(null);
+const eventOpen = ref(false);
+const confirmEvent = ref(false);
+const saving = ref(false);
+const jumping = ref(false);
+let calendarRequest = null;
+
+const weekNames = ['일', '월', '화', '수', '목', '금', '토'];
+const discountTypes = [
+  { value: 'percent', title: '퍼센트 할인' },
+  { value: 'amount', title: '금액 할인' },
+  { value: 'one_plus_one', title: '1+1' },
+];
+const eventTypes = [
+  { value: 'holiday', title: '공휴일' },
+  { value: 'department_event', title: '백화점 행사' },
+  { value: 'nearby_event', title: '주변 행사' },
+  { value: 'promotion', title: '프로모션' },
+  { value: 'group_order', title: '단체주문' },
+  { value: 'hours_change', title: '영업시간 변경' },
+  { value: 'other', title: '기타' },
+];
+
+const eventForm = reactive({
+  event_type: 'promotion',
+  title: '',
+  start_date: props.workDate,
+  end_date: props.workDate,
+  discount_type: null,
+  discount_value: null,
+  order_quantity: null,
+  product_ids: [],
+  memo: '',
+});
+
+const monthLabel = computed(() => {
+  const [year, monthNumber] = month.value.split('-');
+  return `${year}년 ${Number(monthNumber)}월`;
+});
+
+const leadingBlanks = computed(() => {
+  const [year, monthNumber] = month.value.split('-').map(Number);
+  return new Date(year, monthNumber - 1, 1).getDay();
+});
+
+watch(() => props.storeId, () => load(), { immediate: true });
+
+/** 선택 월의 날짜별 요약을 조회하며 이미 확인한 월은 메모리 캐시를 재사용합니다. */
+async function load({ force = false } = {}) {
+  if (!props.storeId) return;
+
+  const key = `${props.storeId}:${month.value}`;
+  if (!force && monthCache.has(key)) {
+    days.value = monthCache.get(key);
+    return;
   }
-});
-const emit=defineEmits(['error','success','jump-date']);
-const month=ref(props.workDate.slice(0,7));
-const days=ref([]);
-const dayOpen=ref(false);
-const confirmDayStatus=ref(false);
-const selectedDay=ref(null);
-const eventOpen=ref(false);
-const confirmEvent=ref(false);
-const saving=ref(false);
-const weekNames=['일','월','화','수','목','금','토'];
-const discountTypes=[{
-  value:'percent',title:'퍼센트 할인'
-},{
-  value:'amount',title:'금액 할인'
-},{
-  value:'one_plus_one',title:'1+1'
-}];
-const eventTypes=[{
-  value:'holiday',title:'공휴일'
-},{
-  value:'department_event',title:'백화점 행사'
-},{
-  value:'nearby_event',title:'주변 행사'
-},{
-  value:'promotion',title:'프로모션'
-},{
-  value:'group_order',title:'단체주문'
-},{
-  value:'hours_change',title:'영업시간 변경'
-},{
-  value:'other',title:'기타'
-}];
-const eventForm=reactive({
-  event_type:'promotion',title:'',start_date:props.workDate,end_date:props.workDate,discount_type:null,discount_value:null,order_quantity:null,product_ids:[],memo:''
-});
-const monthLabel=computed(()=>{
-  const [y,m]=month.value.split('-');return `${y}년 ${Number(m)}월`;
-});
-const leadingBlanks=computed(()=>{
-  const [y,m]=month.value.split('-').map(Number);return new Date(y,m-1,1).getDay();
-});
-watch(()=>props.storeId,load,{
-  immediate:true
-});
-/** 선택 월의 날짜별 요약을 서버에서 조회합니다. */
-async function load(){
-  if(!props.storeId)return;
-  try{
-    const {
-      data
-    }=await window.axios.get('/tillwhite/api/production-management/calendar',{
-      params:{
-        store_id:props.storeId,month:month.value
-      }
+
+  calendarRequest?.abort();
+  const controller = new AbortController();
+  calendarRequest = controller;
+
+  try {
+    const { data } = await window.axios.get('/tillwhite/api/production-management/calendar', {
+      params: {
+        store_id: props.storeId,
+        month: month.value,
+      },
+      signal: controller.signal,
+      timeout: 20000,
     });
-    days.value=data.days||[];
-  } catch(error){
-    emit('error',error.response?.data?.message||'캘린더를 불러오지 못했습니다.');
+
+    if (controller.signal.aborted) return;
+
+    const nextDays = data.days || [];
+    monthCache.set(key, nextDays);
+    days.value = nextDays;
+  } catch (error) {
+    if (controller.signal.aborted) return;
+    emit('error', error.response?.data?.message || '캘린더를 불러오지 못했습니다.');
+  } finally {
+    if (calendarRequest === controller) {
+      calendarRequest = null;
+    }
   }
 }
-/** 이전 또는 다음 달로 이동한 뒤 새 월 데이터를 조회합니다. */
-function moveMonth(amount){
-  const [y,m]=month.value.split('-').map(Number);
-  const d=new Date(y,m-1+amount,1);
-  month.value=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+
+/** 이전 또는 다음 달로 이동하고 해당 월 데이터를 조회합니다. */
+function moveMonth(amount) {
+  const [year, monthNumber] = month.value.split('-').map(Number);
+  const nextMonth = new Date(year, monthNumber - 1 + amount, 1);
+  month.value = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`;
   load();
 }
-/** 날짜별 생산·이월·로스·폐기 비율을 배경 강도로 표현하되 폐기 위험을 우선합니다. */
-function dayStyle(day){
-  const t=day.totals||{
-  };
-  const total=Math.max(1,(t.production||0)+(t.carryover||0)+(t.loss||0)+(t.waste||0));
-  const risk=((t.waste||0)*2+(t.loss||0))/total;
-  if(day.status==='store_closed')return{
-  };
-  return{
-    '--day-risk':Math.min(.28,risk*.8),'--day-activity':Math.min(.14,(t.production||0)/Math.max(1,50)*.12)
+
+/** 생산 활동과 로스·폐기 위험을 함께 반영하되 폐기 위험을 더 강하게 표시합니다. */
+function dayStyle(day) {
+  const totals = day.totals || {};
+  const total = Math.max(
+    1,
+    Number(totals.production || 0)
+      + Number(totals.carryover || 0)
+      + Number(totals.loss || 0)
+      + Number(totals.waste || 0),
+  );
+  const risk = (Number(totals.waste || 0) * 2 + Number(totals.loss || 0)) / total;
+
+  if (day.status === 'store_closed') return {};
+
+  return {
+    '--day-risk': Math.min(0.28, risk * 0.8),
+    '--day-activity': Math.min(0.14, Number(totals.production || 0) / 50 * 0.12),
   };
 }
-/** 주말과 업무 상태에 맞는 날짜 셀 클래스를 반환합니다. */
-function dayClass(day){
-  const [y,m,d]=day.date.split('-').map(Number);
-  const dow=new Date(y,m-1,d).getDay();
-  const holiday=day.events?.some((event)=>event.event_type==='holiday');
-  return{
-    sun:dow===0||holiday,sat:dow===6&&!holiday,closed:day.status==='store_closed',incomplete:day.required_count&&day.complete_count<day.required_count
+
+/** 일요일·토요일·공휴일과 업무 상태에 맞는 날짜 셀 클래스를 반환합니다. */
+function dayClass(day) {
+  const [year, monthNumber, dateNumber] = day.date.split('-').map(Number);
+  const dayOfWeek = new Date(year, monthNumber - 1, dateNumber).getDay();
+  const holiday = day.events?.some((event) => event.event_type === 'holiday');
+
+  return {
+    sun: dayOfWeek === 0 || holiday,
+    sat: dayOfWeek === 6 && !holiday,
+    closed: day.status === 'store_closed',
+    incomplete: day.required_count && day.complete_count < day.required_count,
   };
 }
-/** 날짜 상세 다이얼로그를 엽니다. */
-function openDay(day){
-  selectedDay.value=day;
-  dayOpen.value=true;
+
+/** 선택 날짜의 생산·판매·이월·로스·폐기 요약을 상세 다이얼로그로 엽니다. */
+function openDay(day) {
+  selectedDay.value = day;
+  dayOpen.value = true;
 }
-/** 휴점 설정·해제는 중요 상태 변경이므로 확인창 뒤 서버 검증을 거쳐 저장합니다. */
-async function saveDayStatus(){
-  if(!selectedDay.value)return;
-  saving.value=true;
-  try{
-    const nextStatus=selectedDay.value.status==='store_closed'?'open':'closed';
-    await window.axios.put('/tillwhite/api/production-management/day-status',{
-      store_id:props.storeId,work_date:selectedDay.value.date,status:nextStatus
+
+/** 목록 이동이 끝날 때까지 상세 다이얼로그를 잠그고 성공한 경우에만 닫습니다. */
+function jumpToList() {
+  if (!selectedDay.value || jumping.value) return;
+
+  jumping.value = true;
+  emit('jump-date', selectedDay.value.date, (success) => {
+    jumping.value = false;
+
+    if (success) {
+      dayOpen.value = false;
+    }
+  });
+}
+
+/** 휴점 설정·해제는 확인 후 서버 검증을 거쳐 저장하고 현재 월 캐시를 갱신합니다. */
+async function saveDayStatus() {
+  if (!selectedDay.value) return;
+
+  saving.value = true;
+
+  try {
+    const nextStatus = selectedDay.value.status === 'store_closed' ? 'open' : 'closed';
+    await window.axios.put('/tillwhite/api/production-management/day-status', {
+      store_id: props.storeId,
+      work_date: selectedDay.value.date,
+      status: nextStatus,
     });
-    confirmDayStatus.value=false;
-    dayOpen.value=false;
-    emit('success',nextStatus==='closed'?'휴점일로 설정했습니다.':'휴점을 해제했습니다.');
-    await load();
-  } catch(error){
-    emit('error',error.response?.data?.message||'영업일 상태를 변경하지 못했습니다.');
-  }
-  finally{
-    saving.value=false;
+
+    confirmDayStatus.value = false;
+    dayOpen.value = false;
+    emit('success', nextStatus === 'closed' ? '휴점일로 설정했습니다.' : '휴점을 해제했습니다.');
+    monthCache.delete(`${props.storeId}:${month.value}`);
+    await load({ force: true });
+  } catch (error) {
+    emit('error', error.response?.data?.message || '영업일 상태를 변경하지 못했습니다.');
+  } finally {
+    saving.value = false;
   }
 }
-/** 중요 일정 저장은 확인창을 거친 뒤 서버 성공 시에만 완료 처리합니다. */
-async function saveEvent(){
-  saving.value=true;
-  try{
-    await window.axios.post('/tillwhite/api/production-management/events',{
-      store_id:props.storeId,...eventForm
+
+/** 행사 저장은 확인 후 실행하고 성공한 경우에만 현재 월 데이터를 다시 조회합니다. */
+async function saveEvent() {
+  saving.value = true;
+
+  try {
+    await window.axios.post('/tillwhite/api/production-management/events', {
+      store_id: props.storeId,
+      ...eventForm,
     });
-    confirmEvent.value=false;
-    eventOpen.value=false;
-    emit('success','캘린더 일정을 저장했습니다.');
-    await load();
-  } catch(error){
-    emit('error',error.response?.data?.message||'행사를 저장하지 못했습니다.');
-  } finally{
-    saving.value=false;
+
+    confirmEvent.value = false;
+    eventOpen.value = false;
+    emit('success', '캘린더 일정을 저장했습니다.');
+    monthCache.delete(`${props.storeId}:${month.value}`);
+    await load({ force: true });
+  } catch (error) {
+    emit('error', error.response?.data?.message || '행사를 저장하지 못했습니다.');
+  } finally {
+    saving.value = false;
   }
 }
 </script>

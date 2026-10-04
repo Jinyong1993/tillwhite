@@ -35,8 +35,8 @@
         v-model="dialog"
         max-width="400"
       >
-        <v-card title="점포 등록">
-          <v-card-text>
+        <v-card title="점포 등록" class="app-dialog-card">
+          <v-card-text class="app-dialog-body">
             <!--
               점포를 구분하기 위한 고유 코드입니다.
               DB의 store_code 값으로 저장됩니다.
@@ -93,7 +93,7 @@
             />
           </v-card-text>
 
-          <v-card-actions>
+          <v-card-actions class="app-dialog-footer">
             <v-spacer />
 
             <!-- 점포 등록 취소 -->

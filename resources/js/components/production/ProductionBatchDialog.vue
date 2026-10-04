@@ -1,14 +1,14 @@
 <template>
 <v-dialog v-model="open" max-width="620" :persistent="saving">
-  <v-card rounded="lg">
-    <v-card-title class="d-flex align-center justify-space-between">
+  <v-card rounded="lg" class="app-dialog-card">
+    <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
         <div>생산 추가</div>
         <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}의 실제 생산 배치를 기록합니다.</div>
       </div>
       <v-btn icon="mdi-close" size="small" variant="text" :disabled="saving" @click="requestClose" />
     </v-card-title>
-    <v-card-text>
+    <v-card-text class="app-dialog-body">
       <div v-if="product?.batches?.length" class="mb-4">
         <div class="text-subtitle-2 mb-2">등록된 생산</div>
         <v-list density="compact" border rounded>
@@ -33,7 +33,7 @@
       <v-select v-model="zeroReason" :items="zeroReasons" item-title="title" item-value="value" label="생산 0개 사유" variant="outlined" clearable />
       <v-btn variant="outlined" block :disabled="!zeroReason || saving" @click="confirmZeroOpen = true">생산 0개 확인</v-btn>
     </v-card-text>
-    <v-card-actions class="px-4 pb-4">
+    <v-card-actions class="app-dialog-footer px-4 pb-4">
       <v-btn variant="text" :disabled="saving" @click="requestClose">취소</v-btn>
       <v-spacer />
       <v-btn v-if="editingBatch" variant="text" :disabled="saving" @click="cancelEdit">수정 취소</v-btn>
@@ -49,7 +49,7 @@
 <script setup>
 import {
   computed, reactive, ref, watch
-}  from 'vue';
+} from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 const props = defineProps({
   modelValue: Boolean, product: Object, storeId: Number, workDate: String, workers: {
@@ -99,7 +99,9 @@ function requestClose() {
   if (isDirty()) {
     confirmClose.value = true;
     return;
-  }  forceClose();
+  }
+
+  forceClose();
 }
 /** 확인을 마친 뒤 생산 입력 다이얼로그를 닫습니다. */
 function forceClose() {
@@ -136,9 +138,9 @@ async function deleteBatch() {
     deleteConfirmOpen.value = false;
     open.value = false;
     emit('saved', '생산 기록을 삭제했습니다.');
-  }  catch (error) {
+  } catch (error) {
     emit('error', error.response?.data?.message || '생산 기록을 삭제하지 못했습니다.');
-  }  finally {
+  } finally {
     saving.value = false;
   }
 }
@@ -152,9 +154,9 @@ async function saveZero() {
     confirmZeroOpen.value = false;
     open.value = false;
     emit('saved', '생산 0개를 확인했습니다.');
-  }  catch (error) {
+  } catch (error) {
     emit('error', error.response?.data?.message || '생산 0개를 확인하지 못했습니다.');
-  }  finally {
+  } finally {
     saving.value = false;
   }
 }
@@ -173,16 +175,26 @@ async function save() {
       });
       open.value = false;
       emit('saved', '생산 기록을 수정했습니다.');
-    }  else {
+    } else {
       await window.axios.post('/tillwhite/api/production-management/batches', {
-        store_id: props.storeId, product_id: props.product.id, work_date: props.workDate, quantity: form.quantity, recipe_deviated: form.recipeDeviated, recipe_deviation_note: form.recipeDeviationNote || null, note: form.note || null, recommendation_referenced: form.recommendationReferenced, recommendation_deviation_reason: form.recommendationDeviationReason || null, workers: form.workerIds.map((userId) => ({
-          user_id: userId, process_type: 'all'
+        store_id: props.storeId,
+        product_id: props.product.id,
+        work_date: props.workDate,
+        quantity: form.quantity,
+        recipe_deviated: form.recipeDeviated,
+        recipe_deviation_note: form.recipeDeviationNote || null,
+        note: form.note || null,
+        recommendation_referenced: form.recommendationReferenced,
+        recommendation_deviation_reason: form.recommendationDeviationReason || null,
+        workers: form.workerIds.map((userId) => ({
+          user_id: userId,
+          process_type: 'all',
         })),
       });
       open.value = false;
       emit('saved', '생산 기록을 저장했습니다.');
     }
-  }  catch (error) {
+  } catch (error) {
     emit('error', error.response?.data?.message || '생산 기록을 저장하지 못했습니다.');
   }
   finally {
