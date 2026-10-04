@@ -38,10 +38,10 @@
         v-if="recentViewed.length"
         class="recent-viewed mb-5"
       >
-        <span class="recent-viewed-label">최근 본 항목</span>
+        <span class="recent-viewed-label">최근 본 제품</span>
         <v-chip
           v-for="item in recentViewed"
-          :key="`${item.type}-${item.id}`"
+          :key="item.id"
           class="recent-viewed-chip"
           size="small"
           variant="tonal"
@@ -835,12 +835,18 @@ async function load() {
   visibleStores.value = response.data.stores ?? [];
 }
 
-/** 최초 조회 오류는 AppShell 공통 알림으로 표시하고 페이지 로딩은 반드시 종료합니다. */
+/** 최초 제품 조회를 완료한 뒤 보조 기능인 최근 본 제품을 별도로 불러옵니다. */
 async function initialLoad() {
   try {
     await load();
-    const recentResponse = await window.axios.get('/tillwhite/api/products/recent-viewed');
-    recentViewed.value = recentResponse.data.items ?? [];
+
+    try {
+      const recentResponse = await window.axios.get('/tillwhite/api/products/recent-viewed');
+      recentViewed.value = recentResponse.data.items ?? [];
+    } catch (_) {
+      // 최근 본 제품 조회 실패는 제품 관리의 핵심 목록 사용을 막지 않습니다.
+      recentViewed.value = [];
+    }
   } catch (error) {
     appShellRef.value?.setError?.(
       errorMessage(error, '제품 정보를 불러오지 못했습니다.'),
@@ -1169,7 +1175,7 @@ async function openDetailDialog(product, user, setError) {
 
     selectedProduct.value = response.data.product;
     detailDialog.value = true;
-    await rememberRecentViewed({ type: 'product', id: product.id, title: response.data.product?.name ?? product.name });
+    await rememberRecentViewed(product.id);
   } catch (error) {
     setError(errorMessage(error, '제품 정보를 열람할 수 없습니다.'));
   }
@@ -1640,27 +1646,26 @@ function requestRecipeRestore(setError, setSuccess, requestedRecipe = null) {
   );
 }
 
-/** 최근 본 항목은 Laravel Session에 저장하여 화면을 다시 열어도 이어서 제공합니다. */
-async function rememberRecentViewed(item) {
+/** 최근 본 제품은 Laravel Session에 저장하여 화면을 다시 열어도 이어서 제공합니다. */
+async function rememberRecentViewed(productId) {
   try {
     const response = await window.axios.post(
       '/tillwhite/api/products/recent-viewed',
-      item,
+      { id: productId },
     );
     recentViewed.value = response.data.items ?? recentViewed.value;
   } catch (_) {
-    // 최근 본 항목 기록 실패는 핵심 업무를 막지 않습니다.
+    // 최근 본 제품 기록 실패는 상세 조회 자체를 막지 않습니다.
   }
 }
 
-/** 최근 본 제품/레시피를 선택하면 연결된 제품 상세를 다시 엽니다. */
+/** 최근 본 제품 칩을 선택하면 해당 제품의 최신 상세정보를 다시 조회합니다. */
 async function openRecentItem(item, user, setError) {
-  const productId = item.product_id ?? item.id;
   const product = products.value.find(
-    (candidate) => Number(candidate.id) === Number(productId),
+    (candidate) => Number(candidate.id) === Number(item.id),
   );
   if (!product) {
-    setError('최근 본 항목을 더 이상 열람할 수 없습니다.');
+    setError('최근 본 제품을 더 이상 열람할 수 없습니다.');
     return;
   }
   await openDetailDialog(product, user, setError);
@@ -1684,13 +1689,6 @@ function openRecipeCopyDialog() {
   }
 
   if (!activeSelectedRecipe.value) return;
-
-  rememberRecentViewed({
-    type: 'recipe',
-    id: activeSelectedRecipe.value.id,
-    product_id: selectedProduct.value.id,
-    title: activeSelectedRecipe.value.name ?? '레시피',
-  });
 
   recipeCopyTargetId.value = null;
   recipeCopyDialog.value = true;
@@ -1766,14 +1764,6 @@ function openRecipeDialog() {
   }
 
   const existingRecipe = activeSelectedRecipe.value;
-  if (existingRecipe) {
-    rememberRecentViewed({
-      type: 'recipe',
-      id: existingRecipe.id,
-      product_id: selectedProduct.value.id,
-      title: existingRecipe.name ?? '레시피',
-    });
-  }
   editingRecipeId.value = existingRecipe?.id ?? null;
   recipeEditMode.value = 'full';
   recipeEditIndex.value = null;
@@ -2262,7 +2252,7 @@ onMounted(() => {
   gap: 6px;
 }
 
-/* 최근 본 항목은 실행 버튼과 구분되는 탐색용 칩으로 표시합니다. */
+/* 최근 본 제품은 실행 버튼과 구분되는 탐색용 칩으로 표시합니다. */
 .recent-viewed-chip {
   max-width: min(240px, 100%);
 }

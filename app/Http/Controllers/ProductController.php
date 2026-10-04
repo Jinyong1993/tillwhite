@@ -130,31 +130,46 @@ class ProductController extends Controller
         ]);
     }
 
-    /** 최근 본 제품/레시피를 Laravel Session에서 조회합니다. */
+    /**
+     * 현재 세션의 최근 본 제품을 조회합니다.
+     *
+     * 이전 버전의 레시피 기록이나 현재 사용자가 볼 수 없는 제품은 정리하고,
+     * 제품명은 현재 DB 값을 사용해 오래된 표시명이 남지 않게 합니다.
+     */
     public function recentViewed(Request $request)
     {
-        $this->access->requirePermission($request->user(), 'product.view');
+        $user = $request->user();
 
-        return response()->json([
-            'items' => array_values($request->session()->get('product_recent_viewed', [])),
-        ]);
+        $this->access->requirePermission($user, 'product.view');
+
+        $items = $this->normalizedRecentViewedItems($request, $user);
+        $request->session()->put('product_recent_viewed', $items);
+
+        return response()->json(['items' => $items]);
     }
 
-    /** 최근 본 항목을 최대 5개까지 중복 없이 Laravel Session에 저장합니다. */
+    /** 최근 본 제품을 최대 5개까지 중복 없이 Laravel Session에 저장합니다. */
     public function rememberRecentViewed(Request $request)
     {
-        $this->access->requirePermission($request->user(), 'product.view');
+        $user = $request->user();
+
+        $this->access->requirePermission($user, 'product.view');
 
         $validated = $request->validate([
-            'type' => ['required', Rule::in(['product', 'recipe'])],
             'id' => ['required', 'integer'],
-            'product_id' => ['nullable', 'integer'],
-            'title' => ['required', 'string', 'max:255'],
         ]);
 
-        $items = collect($request->session()->get('product_recent_viewed', []))
-            ->reject(fn ($item) => $item['type'] === $validated['type'] && (int) $item['id'] === (int) $validated['id'])
-            ->prepend($validated)
+        $product = Product::withTrashed()->findOrFail($validated['id']);
+        $this->assertProductVisibleToUser($user, $product);
+
+        $item = [
+            'id' => $product->id,
+            'title' => $product->name,
+        ];
+
+        $items = collect($this->normalizedRecentViewedItems($request, $user))
+            ->reject(fn ($recentItem) => (int) $recentItem['id'] === $product->id)
+            ->prepend($item)
             ->take(5)
             ->values()
             ->all();
@@ -162,6 +177,43 @@ class ProductController extends Controller
         $request->session()->put('product_recent_viewed', $items);
 
         return response()->json(['items' => $items]);
+    }
+
+    /**
+     * Session의 최근 제품 ID를 현재 접근 범위와 DB 정보에 맞춰 정규화합니다.
+     *
+     * 구버전 레시피 기록, 중복 ID, 삭제되어 접근할 수 없게 된 점포의 제품을 제거해
+     * 조회와 저장 API가 동일한 최근 제품 목록 규칙을 사용하도록 합니다.
+     */
+    private function normalizedRecentViewedItems(Request $request, $user): array
+    {
+        $recentIds = collect($request->session()->get('product_recent_viewed', []))
+            ->filter(fn ($item) => ($item['type'] ?? 'product') === 'product')
+            ->pluck('id')
+            ->filter(fn ($id) => is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->take(5)
+            ->values();
+
+        $products = $this->access
+            ->scopeStore(Product::withTrashed(), $user)
+            ->whereIn('id', $recentIds)
+            ->get(['id', 'name'])
+            ->keyBy('id');
+
+        return $recentIds
+            ->map(function (int $id) use ($products) {
+                $product = $products->get($id);
+
+                return $product ? [
+                    'id' => $product->id,
+                    'title' => $product->name,
+                ] : null;
+            })
+            ->filter()
+            ->values()
+            ->all();
     }
 
     /**

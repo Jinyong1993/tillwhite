@@ -579,10 +579,7 @@ const deletedRecipes = computed(() => {
     .sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
 });
 
-
-/*
- * 제품 상태 표시 문구
- */
+/* 제품 상태에 따라 상세 화면에 표시할 문구를 계산합니다. */
 const statusText = computed(() => {
   if (props.product?.deleted_at) {
     return '삭제됨';
