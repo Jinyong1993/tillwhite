@@ -4,10 +4,10 @@ use App\Http\Controllers\AdminController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProductionRecordController;
+use App\Http\Controllers\ProductionManagementController;
 use App\Http\Controllers\SalesController;
 use App\Http\Controllers\WorkController;
 use Illuminate\Support\Facades\Route;
-
 /**
  * Till White 인증 API
  *
@@ -16,16 +16,12 @@ use Illuminate\Support\Facades\Route;
  * 인증 관련 기능은 현재 실제 사용하는 기능이므로
  * 모든 Route를 정상적으로 등록합니다.
  */
-
 // 로그인
 Route::post('/tillwhite/login', [AuthController::class, 'login']);
-
 // 현재 로그인 사용자 및 권한 정보 조회
 Route::get('/tillwhite/auth/me', [AuthController::class, 'me']);
-
 // 로그아웃
 Route::post('/tillwhite/logout', [AuthController::class, 'logout']);
-
 /**
  * Till White 업무 API
  *
@@ -59,40 +55,30 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      *
      * 현재 사용 중인 기능입니다.
      */
-
     // 제품 및 관련 정보 조회
     Route::get('/products', [ProductController::class, 'index']);
-
     // 제품 등록 임시저장 조회 / 저장 / 전체삭제 (Laravel Session)
     Route::get('/products/draft', [ProductController::class, 'draft']);
     Route::put('/products/draft', [ProductController::class, 'saveDraft']);
     Route::delete('/products/draft', [ProductController::class, 'deleteDraft']);
-
     // 신규 제품 등록
     Route::post('/products', [ProductController::class, 'store']);
-
     // 제품 상세정보 조회 (삭제 제품도 상세/복구를 위해 조회 가능)
     Route::get('/products/recent-viewed', [ProductController::class, 'recentViewed']);
     Route::post('/products/recent-viewed', [ProductController::class, 'rememberRecentViewed']);
-
     Route::get('/products/{product}', [ProductController::class, 'show'])->withTrashed();
-
     // 제품 기본정보 및 판매정보 수정
     Route::put('/products/{product}', [ProductController::class, 'update']);
-
     // 제품 사용/중지 상태 변경
     Route::put('/products/{product}/toggle', [ProductController::class, 'toggle']);
-
     // 제품 Soft Delete 및 복구
     Route::delete('/products/{product}', [ProductController::class, 'destroy'])->withTrashed();
     Route::put('/products/{product}/restore', [ProductController::class, 'restore'])->withTrashed();
-
     // 제품 카테고리 등록 / 수정 / 사용상태 변경
     Route::post('/product-categories', [ProductController::class, 'categoryStore']);
     Route::put('/product-categories/{category}', [ProductController::class, 'categoryUpdate']);
     Route::put('/product-categories/{category}/toggle', [ProductController::class, 'categoryToggle']);
     Route::put('/product-categories/{category}/reorder', [ProductController::class, 'categoryReorder']);
-
     // 제품 레시피 등록 / 수정
     Route::post('/products/{product}/recipes', [ProductController::class, 'recipe'])->withTrashed();
     Route::put('/products/{product}/recipes/{recipe}', [ProductController::class, 'updateRecipe'])->withTrashed();
@@ -100,52 +86,62 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     Route::delete('/products/{product}/recipes/{recipe}', [ProductController::class, 'destroyRecipe'])->withTrashed();
     Route::put('/products/{product}/recipes/{recipe}/restore', [ProductController::class, 'restoreRecipe'])->withTrashed();
     Route::post('/products/{product}/clone', [ProductController::class, 'cloneProduct'])->withTrashed();
-
     /**
      * 생산·폐기 관리
      *
      * 현재 사용 중인 기능입니다.
      */
-
+    // 개편 생산·폐기 관리: 일일 목록 / 캘린더 / 분석 / 통계
+    Route::get('/production-management/daily', [ProductionManagementController::class, 'daily']);
+    Route::get('/production-management/options', [ProductionManagementController::class, 'options']);
+    Route::get('/production-management/calendar', [ProductionManagementController::class, 'calendar']);
+    Route::get('/production-management/analysis', [ProductionManagementController::class, 'analysis']);
+    Route::get('/production-management/statistics', [ProductionManagementController::class, 'statistics']);
+    Route::get('/production-management/history', [ProductionManagementController::class, 'history']);
+    Route::get('/production-management/draft', [ProductionManagementController::class, 'draft']);
+    Route::put('/production-management/draft', [ProductionManagementController::class, 'saveDraft']);
+    Route::delete('/production-management/draft', [ProductionManagementController::class, 'deleteDraft']);
+    Route::post('/production-management/batches', [ProductionManagementController::class, 'storeBatch']);
+    Route::put('/production-management/batches/{batch}', [ProductionManagementController::class, 'updateBatch']);
+    Route::delete('/production-management/batches/{batch}', [ProductionManagementController::class, 'deleteBatch']);
+    Route::post('/production-management/zero-production', [ProductionManagementController::class, 'confirmZeroProduction']);
+    Route::put('/production-management/flow', [ProductionManagementController::class, 'saveFlow']);
+    Route::post('/production-management/bulk-zero', [ProductionManagementController::class, 'bulkConfirmZero']);
+    Route::post('/production-management/correction/open', [ProductionManagementController::class, 'openCorrection']);
+    Route::get('/production-management/close-preview', [ProductionManagementController::class, 'closePreview']);
+    Route::post('/production-management/close', [ProductionManagementController::class, 'closeDay']);
+    Route::post('/production-management/events', [ProductionManagementController::class, 'storeEvent']);
+    Route::put('/production-management/day-status', [ProductionManagementController::class, 'setStoreDayStatus']);
+    // 이전 생산·폐기 API는 기존 화면/데이터 호환을 위해 유지합니다.
     // 생산·폐기·로스 기록 조회
     Route::get('/production', [ProductionRecordController::class, 'index']);
-
     // 오늘 생산·폐기·로스 현황 조회
     Route::get('/production/summary', [ProductionRecordController::class, 'summary']);
-
     // 생산 입력에 필요한 제품 및 작업자 목록 조회
     Route::get('/production/options', [ProductionRecordController::class, 'options']);
-
     // 생산·폐기·로스 기록 등록
     Route::post('/production', [ProductionRecordController::class, 'store']);
-
     // 생산·폐기·로스 기록 수정
     Route::put('/production/{productionRecord}', [ProductionRecordController::class, 'update']);
-
     // 생산·폐기·로스 기록 삭제
     Route::delete('/production/{productionRecord}', [ProductionRecordController::class, 'destroy']);
-
     /**
      * 근무 관리
      *
      * 현재 개발 중인 기능입니다.
      */
-
     // Route::get('/work', [WorkController::class, 'index']);
     // Route::post('/work/schedules', [WorkController::class, 'schedule']);
     // Route::post('/work/leave', [WorkController::class, 'leave']);
     // Route::post('/work/day-off', [WorkController::class, 'dayOff']);
     // Route::put('/work/requests/{type}/{id}', [WorkController::class, 'review']);
-
     /**
      * 매출 관리
      *
      * 현재 개발 중인 기능입니다.
      */
-
     // Route::get('/sales', [SalesController::class, 'index']);
     // Route::post('/sales', [SalesController::class, 'store']);
-
     /**
      * 직원 관리
      *
@@ -154,10 +150,8 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 화면에서 버튼의 활성/비활성 상태만 신뢰하지 않고
      * 실제 동작 직전에 Laravel 서버에서 권한을 다시 확인합니다.
      */
-
     // 직원 목록 조회
     Route::get('/employees', [AdminController::class, 'employees']);
-
     /**
      * 직원 등록 화면 접근 확인
      *
@@ -168,7 +162,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 현재 로그인 세션의 임시저장 내용(draft)을 반환합니다.
      */
     Route::get('/employees/create', [AdminController::class, 'employeeCreate']);
-
     /**
      * 직원 등록 내용 임시저장
      *
@@ -182,7 +175,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * "draft"가 직원 번호(user)로 해석되지 않도록 합니다.
      */
     Route::put('/employees/draft', [AdminController::class, 'employeeDraft']);
-
     /**
      * 직원 등록 임시저장 내용 전체 삭제
      *
@@ -203,7 +195,6 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * "draft"가 직원 번호(user)로 해석되지 않도록 합니다.
      */
     Route::delete('/employees/draft', [AdminController::class, 'employeeDraftDelete']);
-
     /**
      * 직원 상세정보 조회
      *
@@ -214,56 +205,44 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
      * 검사가 통과하면 해당 직원의 최신 정보를 반환합니다.
      */
     Route::get('/employees/{user}', [AdminController::class, 'employeeShow'])->withTrashed();
-
     // 신규 직원 등록
     Route::post('/employees', [AdminController::class, 'employeeStore']);
-
     /**
      * 직원 재직 상태 변경
      *
      * 실제 저장 시 직원 관리 권한(employee.manage)을
      * Laravel 서버에서 다시 확인합니다.
      */
-
     // 직원 기본정보 및 소속정보 수정
     Route::put('/employees/{user}', [AdminController::class, 'employeeUpdate']);
-
     // 직원 비밀번호 초기화
     Route::put('/employees/{user}/status', [AdminController::class, 'employeeStatus']);
     Route::put('/employees/{user}/password', [AdminController::class, 'employeePasswordReset']);
-
     // 직원 Soft Delete 및 복구
     Route::delete('/employees/{user}', [AdminController::class, 'employeeDelete'])->withTrashed();
     Route::put('/employees/{user}/restore', [AdminController::class, 'employeeRestore'])->withTrashed();
-
     /**
      * 점포 관리
      *
      * 현재 개발 중인 기능입니다.
      */
-
     // Route::get('/stores', [AdminController::class, 'stores']);
     // Route::post('/stores', [AdminController::class, 'storeStore']);
-
     /**
      * 시스템 관리
      *
      * 현재 개발 중인 기능입니다.
      */
-
     // Route::get('/system', [AdminController::class, 'system']);
     // Route::post('/system/settings', [AdminController::class, 'setting']);
     // Route::put('/system/roles/{role}/permissions', [AdminController::class, 'rolePermissions']);
-
     /**
      * 감사 로그
      *
      * 현재 개발 중인 기능입니다.
      */
-
     // Route::get('/audits', [AdminController::class, 'audits']);
 });
-
 /**
  * 존재하지 않는 Till White API 차단
  *
@@ -276,8 +255,7 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
  * 이 Route는 반드시
  * 정상 업무 API보다 아래에 위치해야 합니다.
  */
-Route::any('/tillwhite/api/{path?}', fn () => abort(404))->where('path', '.*');
-
+Route::any('/tillwhite/api/{path?}', fn() => abort(404))->where('path', '.*');
 /**
  * Vue Router용 SPA Catch-all Route
  *
@@ -292,4 +270,4 @@ Route::any('/tillwhite/api/{path?}', fn () => abort(404))->where('path', '.*');
  * 반드시 모든 Till White API Route보다
  * 가장 아래에 위치해야 합니다.
  */
-Route::get('/tillwhite/{path?}', fn () => view('tillwhite'))->where('path', '.*');
+Route::get('/tillwhite/{path?}', fn() => view('tillwhite'))->where('path', '.*');

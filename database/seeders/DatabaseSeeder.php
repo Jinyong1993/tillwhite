@@ -4,11 +4,9 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
-
 class DatabaseSeeder extends Seeder
 {
     use WithoutModelEvents;
-
     /**
      * 애플리케이션 기본 데이터 생성
      *
@@ -18,7 +16,6 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
-
             /**
              * 점포 기본 데이터
              *
@@ -26,21 +23,18 @@ class DatabaseSeeder extends Seeder
              * 가장 먼저 생성한다.
              */
             StoreSeeder::class,
-
             /**
              * 역할 기본 데이터
              *
              * 사용자 생성 및 역할-권한 연결에 필요하다.
              */
             RoleSeeder::class,
-
             /**
              * 권한 기본 데이터
              *
              * 역할과 권한을 연결하기 전에 생성한다.
              */
             PermissionSeeder::class,
-
             /**
              * 직급 기본 데이터
              *
@@ -48,7 +42,6 @@ class DatabaseSeeder extends Seeder
              * 반드시 사용자 생성보다 먼저 실행한다.
              */
             PositionSeeder::class,
-
             /**
              * 역할과 권한 연결
              *
@@ -56,7 +49,6 @@ class DatabaseSeeder extends Seeder
              * 관계 데이터를 연결한다.
              */
             RolePermissionSeeder::class,
-
             /**
              * 기본 사용자 생성
              *
@@ -64,7 +56,6 @@ class DatabaseSeeder extends Seeder
              * 참조하므로 관련 기본 데이터가 모두 생성된 후 실행한다.
              */
             UserSeeder::class,
-
             /**
              * 직원 관리 화면 검증용 테스트 직원 100명
              *
@@ -72,14 +63,12 @@ class DatabaseSeeder extends Seeder
              * 테스트 계정 비밀번호는 모두 test1234입니다.
              */
             EmployeeTestSeeder::class,
-
             /**
              * 데모 업무 데이터
              *
              * 제품, 생산 기록, 근무 코드 등 화면 확인용 데이터를 생성한다.
              */
             DemoDataSeeder::class,
-
             /**
              * 제품 관리 화면 검증용 제품 30종
              *
@@ -87,6 +76,8 @@ class DatabaseSeeder extends Seeder
              * 상시/기간한정/취급중단/삭제 상태를 함께 검증합니다.
              */
             ProductSeeder::class,
+            /** 생산·폐기 관리 최근 10일 통합 검증 데이터 */
+            ProductionManagementSeeder::class,
         ]);
     }
 }

@@ -110,6 +110,7 @@ import {
 import axios from 'axios';
 
 import SectionTitle from '../common/SectionTitle.vue';
+import { toLocalDateString } from '../../utils/localDate';
 
 /**
  * 생산 현황 요약 컴포넌트 속성
@@ -176,18 +177,19 @@ async function loadSummary() {
 
   try {
     const response = await axios.get(
-      '/tillwhite/api/production/summary',
+      '/tillwhite/api/production-management/daily',
+      { params: { date: toLocalDateString() } },
     );
 
     summary.value = {
       production_quantity:
-        response.data.summary?.production_quantity ?? 0,
+        response.data.totals?.production ?? 0,
 
       waste_quantity:
-        response.data.summary?.waste_quantity ?? 0,
+        response.data.totals?.waste ?? 0,
 
       loss_quantity:
-        response.data.summary?.loss_quantity ?? 0,
+        response.data.totals?.loss ?? 0,
     };
   } catch (error) {
     errorMessage.value =

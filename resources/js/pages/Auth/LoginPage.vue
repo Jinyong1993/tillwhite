@@ -87,7 +87,7 @@
 
 <script setup>
 import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import AppAlert from '../../components/common/AppAlert.vue';
 import AppPageCard from '../../components/layout/AppPageCard.vue';
@@ -101,7 +101,13 @@ import AppPageContainer from '../../components/layout/AppPageContainer.vue';
  *
  * 빈 문자열이면 AppAlert가 표시되지 않는다.
  */
-const loginError = ref('');
+// 인증이 만료되어 돌아온 경우 공통 알림에서 재로그인 사유를 표시합니다.
+const route = useRoute();
+const loginError = ref(
+  route.query.sessionExpired === '1'
+    ? '로그인 상태를 확인할 수 없습니다. 다시 로그인해주세요.'
+    : '',
+);
 
 /**
  * 로그인 요청 진행 상태

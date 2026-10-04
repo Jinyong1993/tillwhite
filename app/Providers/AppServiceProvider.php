@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\Product;
+use App\Models\ProductCategory;
+use App\Observers\ProductCategoryHistoryObserver;
+use App\Observers\ProductHistoryObserver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
-
 class AppServiceProvider extends ServiceProvider
 {
     /**
@@ -17,7 +20,6 @@ class AppServiceProvider extends ServiceProvider
     {
         //
     }
-
     /**
      * 애플리케이션 공통 초기 설정
      *
@@ -34,5 +36,8 @@ class AppServiceProvider extends ServiceProvider
          * 운영 데이터가 실수로 삭제되는 것을 방지합니다.
          */
         DB::prohibitDestructiveCommands(app()->isProduction());
+        // 제품과 카테고리의 현재값 변경이 과거 분석을 덮어쓰지 않도록 유효기간 이력을 자동 기록합니다.
+        Product::observe(ProductHistoryObserver::class);
+        ProductCategory::observe(ProductCategoryHistoryObserver::class);
     }
 }
