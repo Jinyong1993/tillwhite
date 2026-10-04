@@ -49,7 +49,7 @@
   </div>
 
   <div class="calendar-actions">
-    <v-btn v-if="canMutate" variant="outlined" prepend-icon="mdi-calendar-plus" @click="eventOpen=true">행사 등록</v-btn>
+    <v-btn v-if="canMutate" variant="flat" prepend-icon="mdi-calendar-plus" @click="openEventDialog">행사</v-btn>
   </div>
   <v-dialog v-model="dayOpen" max-width="640" :persistent="jumping">
     <v-card rounded="lg" class="app-dialog-card">
@@ -86,22 +86,53 @@
   </v-dialog>
   <v-dialog v-model="eventOpen" max-width="620">
     <v-card rounded="lg" class="app-dialog-card">
-      <v-card-title class="app-dialog-header">행사 등록</v-card-title>
-      <v-card-text class="app-dialog-body">
-        <div class="app-supporting-text text-medium-emphasis mb-3">임시 행사·할인·단체주문을 날짜 조건으로 남겨 분석에 활용합니다.</div>
-        <v-select v-model="eventForm.event_type" :items="eventTypes" item-title="title" item-value="value" label="행사 종류" variant="outlined"/>
-        <v-text-field v-model="eventForm.title" label="행사명" variant="outlined"/>
-        <div class="d-flex ga-2">
-          <v-text-field v-model="eventForm.start_date" type="date" label="시작일" variant="outlined"/>
-          <v-text-field v-model="eventForm.end_date" type="date" label="종료일" variant="outlined"/>
+      <v-card-title class="app-dialog-header">행사</v-card-title>
+      <v-card-text class="app-dialog-body event-form">
+        <div class="dialog-intro">행사 내용을 입력하면 해당 날짜의 분석에 함께 반영됩니다.</div>
+        <v-select v-model="eventForm.event_type" :items="eventTypes" item-title="title" item-value="value" label="행사 종류" variant="outlined" />
+        <v-text-field v-model="eventForm.title" label="행사명" variant="outlined" />
+        <div class="event-date-fields">
+          <v-text-field v-model="eventForm.start_date" type="date" label="시작일" variant="outlined" />
+          <v-text-field v-model="eventForm.end_date" type="date" label="종료일" variant="outlined" />
         </div>
-        <v-select v-model="eventForm.product_ids" :items="products" item-title="name" item-value="id" label="대상 제품 · 비우면 전체 제품" variant="outlined" multiple chips clearable/>
-        <div class="d-flex ga-2">
-          <v-select v-model="eventForm.discount_type" :items="discountTypes" item-title="title" item-value="value" label="할인 방식" variant="outlined" clearable/>
-          <v-number-input v-model="eventForm.discount_value" label="할인 값" variant="outlined" :min="0"/>
-        </div>
-        <v-number-input v-if="eventForm.event_type==='group_order'" v-model="eventForm.order_quantity" label="단체주문 수량" variant="outlined" :min="0"/>
-        <v-textarea v-model="eventForm.memo" label="메모" variant="outlined" rows="2"/>
+
+        <div class="field-label">대상 제품</div>
+        <v-btn-toggle v-model="eventTarget" mandatory density="compact" class="event-target-toggle">
+          <v-btn value="all">전체 제품</v-btn>
+          <v-btn value="selected">특정 제품</v-btn>
+        </v-btn-toggle>
+        <v-select
+          v-if="eventTarget === 'selected'"
+          v-model="eventForm.product_ids"
+          :items="products"
+          item-title="name"
+          item-value="id"
+          label="제품 선택"
+          variant="outlined"
+          multiple
+          chips
+          clearable
+        />
+
+        <v-select v-model="eventForm.discount_type" :items="discountTypes" item-title="title" item-value="value" label="할인 방식" variant="outlined" clearable />
+        <v-number-input
+          v-if="eventForm.discount_type === 'percent'"
+          v-model="eventForm.discount_value"
+          label="할인율 (%)"
+          variant="outlined"
+          :min="0"
+          :max="100"
+        />
+        <v-number-input
+          v-else-if="eventForm.discount_type === 'amount'"
+          v-model="eventForm.discount_value"
+          label="할인 금액"
+          variant="outlined"
+          :min="0"
+        />
+        <div v-else-if="eventForm.discount_type === 'one_plus_one'" class="event-note">1+1 행사로 저장됩니다. 별도의 할인 값은 입력하지 않습니다.</div>
+        <v-number-input v-if="eventForm.event_type === 'group_order'" v-model="eventForm.order_quantity" label="단체주문 수량" variant="outlined" :min="0" />
+        <v-textarea v-model="eventForm.memo" label="메모" variant="outlined" rows="2" />
       </v-card-text>
       <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn variant="text" @click="eventOpen=false">취소</v-btn>
@@ -137,6 +168,7 @@ const dayOpen = ref(false);
 const confirmDayStatus = ref(false);
 const selectedDay = ref(null);
 const eventOpen = ref(false);
+const eventTarget = ref('all');
 const confirmEvent = ref(false);
 const saving = ref(false);
 const jumping = ref(false);
@@ -169,6 +201,26 @@ const eventForm = reactive({
   product_ids: [],
   memo: '',
 });
+
+/** 할인 방식에 필요하지 않은 값이 이전 선택에서 남지 않도록 즉시 정리합니다. */
+watch(() => eventForm.discount_type, (type) => {
+  if (!['percent', 'amount'].includes(type)) {
+    eventForm.discount_value = null;
+  }
+});
+
+/** 전체 제품을 선택하면 서버에는 빈 제품 목록을 보내 기존 전체 적용 규칙을 유지합니다. */
+watch(eventTarget, (target) => {
+  if (target === 'all') {
+    eventForm.product_ids = [];
+  }
+});
+
+/** 행사 입력창을 열 때 대상 선택 상태를 현재 값과 맞춥니다. */
+function openEventDialog() {
+  eventTarget.value = eventForm.product_ids.length ? 'selected' : 'all';
+  eventOpen.value = true;
+}
 
 const monthLabel = computed(() => {
   const [year, monthNumber] = month.value.split('-');
@@ -365,7 +417,13 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
 .day-summary b { color:rgba(var(--v-theme-on-surface),.82); font-weight:550; font-variant-numeric:tabular-nums; }
 .day-state { display:block; margin-top:7px; font-size:.62rem; color:rgba(var(--v-theme-on-surface),.5); }
 .calendar-cell.closed .day-state { margin-top:28px; text-align:center; }
-.calendar-actions { display:flex; justify-content:flex-end; margin-top:16px; }
+.calendar-actions { display:flex; justify-content:flex-end; margin-top:14px; }
+.dialog-intro { margin-bottom:14px; font-size:.72rem; line-height:1.5; color:rgba(var(--v-theme-on-surface),.58); }
+.event-date-fields { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.field-label { margin-bottom:7px; font-size:.72rem; font-weight:600; }
+.event-target-toggle { width:100%; margin-bottom:16px; }
+.event-target-toggle :deep(.v-btn) { flex:1; }
+.event-note { margin:-4px 0 16px; padding:9px 10px; border-radius:8px; background:rgba(var(--v-theme-on-surface),.045); font-size:.7rem; color:rgba(var(--v-theme-on-surface),.62); }
 .skeleton-cell { pointer-events:none; opacity:.55; overflow:hidden; }
 .skeleton-cell::after { content:''; display:block; width:75%; height:7px; margin-top:16px; border-radius:8px; background:rgba(var(--v-theme-on-surface),.08); box-shadow:0 13px 0 rgba(var(--v-theme-on-surface),.06),0 26px 0 rgba(var(--v-theme-on-surface),.05); }
 .day-dialog-status { display:flex; flex-direction:column; gap:2px; }
@@ -384,6 +442,8 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
   .day-summary span:nth-child(2) { display:none; }
   .day-state { margin-top:4px; font-size:.56rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .calendar-cell.closed .day-state { margin-top:18px; }
-  .day-detail { grid-template-columns:repeat(2,1fr); }
+  .day-detail { grid-template-columns:repeat(3,1fr); gap:5px; }
+  .day-detail>div { padding:8px 4px; }
+  .event-date-fields { grid-template-columns:1fr; gap:0; }
 }
 </style>

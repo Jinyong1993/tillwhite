@@ -131,7 +131,7 @@ class ProductionManagementController extends Controller
             }
             return $batch;
         });
-        $this->auditService->log($user, 'production', 'create', ProductionBatch::class, $batch->id, null, $batch->toArray(), '생산 배치 등록');
+        $this->auditService->log($user, 'production', 'create', ProductionBatch::class, $batch->id, null, $batch->toArray(), '생산 기록 등록');
         return response()->json(['message' => '생산 기록을 저장했습니다.', 'batch' => $batch], 201);
     }
 
@@ -152,7 +152,7 @@ class ProductionManagementController extends Controller
             $batch->update(['quantity' => $data['quantity'], 'note' => $data['note'] ?? null, 'updated_by' => $user->id, 'lock_version' => $batch->lock_version + 1]);
             ProductStockLot::query()->where('production_batch_id', $batch->id)->update(['initial_quantity' => $data['quantity']]);
         });
-        $this->auditService->log($user, 'production', 'update', ProductionBatch::class, $batch->id, $before, $batch->fresh()->toArray(), '생산 배치 수정');
+        $this->auditService->log($user, 'production', 'update', ProductionBatch::class, $batch->id, $before, $batch->fresh()->toArray(), '생산 기록 수정');
         return response()->json(['message' => '생산 기록을 수정했습니다.']);
     }
 
@@ -172,7 +172,7 @@ class ProductionManagementController extends Controller
             ProductStockLot::query()->whereIn('id', $lotIds)->update(['remaining_quantity' => 0, 'status' => 'deleted']);
             $batch->delete();
         });
-        $this->auditService->log($user, 'production', 'delete', ProductionBatch::class, $batch->id, $before, ['memo' => $data['memo'] ?? null], '생산 배치 삭제');
+        $this->auditService->log($user, 'production', 'delete', ProductionBatch::class, $batch->id, $before, ['memo' => $data['memo'] ?? null], '생산 기록 삭제');
         return response()->json(['message' => '생산 기록을 삭제했습니다.']);
     }
 
@@ -533,7 +533,22 @@ class ProductionManagementController extends Controller
             $daily = $this->dailyService->build((int) $data['store_id'], $date->toDateString());
             $series->push(['date' => $date->toDateString(), ...$daily['totals']]);
         }
-        return response()->json(['series' => $series, 'totals' => ['production' => $series->sum('production'), 'sale' => $series->sum('sale'), 'carryover' => $series->sum('carryover'), 'loss' => $series->sum('loss'), 'waste' => $series->sum('waste')]]);
+        $productionTotal = (int) $series->sum('production');
+        $wasteTotal = (int) $series->sum('waste');
+
+        return response()->json([
+            'series' => $series,
+            'totals' => [
+                'production' => $productionTotal,
+                'sale' => (int) $series->sum('sale'),
+                'carryover' => (int) $series->sum('carryover'),
+                'loss' => (int) $series->sum('loss'),
+                'waste' => $wasteTotal,
+                'waste_rate' => $productionTotal > 0
+                    ? round(($wasteTotal / $productionTotal) * 100, 1)
+                    : null,
+            ],
+        ]);
     }
 
     /** 제품별 최근 흐름을 검사해 확인이 필요한 항목과 설명 가능한 추천을 반환합니다. */

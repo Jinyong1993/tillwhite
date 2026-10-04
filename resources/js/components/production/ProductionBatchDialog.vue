@@ -3,14 +3,14 @@
   <v-card rounded="lg" class="app-dialog-card">
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
-        <div>생산 추가</div>
+        <div>생산</div>
         <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}의 생산 수량과 작업 내용을 기록합니다.</div>
       </div>
       <v-btn icon="mdi-close" size="small" variant="text" :disabled="saving" @click="requestClose" />
     </v-card-title>
     <v-card-text class="app-dialog-body">
       <div v-if="product?.batches?.length" class="mb-4">
-        <div class="text-subtitle-2 mb-2">등록된 생산</div>
+        <div class="text-subtitle-2 mb-2">오늘 생산 기록</div>
         <v-list density="compact" border rounded>
           <v-list-item v-for="batch in product.batches" :key="batch.id" :title="`${batch.quantity}개`" :subtitle="new Date(batch.created_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})">
             <template #append>
@@ -20,7 +20,7 @@
           </v-list-item>
         </v-list>
       </div>
-      <div class="text-subtitle-2 mb-2">{{ editingBatch ? '생산 수정' : '생산 추가' }}</div>
+      <div class="text-subtitle-2 mb-2">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
       <v-number-input v-model="form.quantity" label="생산 수량" variant="outlined" :min="1" />
       <v-select v-model="form.workerIds" :items="workers" item-title="name" item-value="id" label="작업자" variant="outlined" multiple chips clearable />
       <v-checkbox v-model="form.recipeDeviated" label="레시피와 다르게 작업함" density="compact" />
@@ -76,7 +76,7 @@ const open = computed({
 watch(() => props.modelValue, (value) => {
   if (value) reset();
 });
-/** 현재 입력값을 신규 생산 배치 기본값으로 되돌립니다. */
+/** 현재 입력값을 새 생산 기록의 기본값으로 되돌립니다. */
 function reset() {
   editingBatch.value = null;
   deletingBatch.value = null;
@@ -108,7 +108,7 @@ function forceClose() {
   confirmClose.value = false;
   open.value = false;
 }
-/** 기존 생산 배치를 수정할 수 있도록 해당 값을 입력 폼에 불러옵니다. */
+/** 기존 생산 기록을 수정할 수 있도록 해당 값을 입력 폼에 불러옵니다. */
 function editBatch(batch) {
   editingBatch.value = batch;
   form.quantity = batch.quantity;
@@ -120,12 +120,12 @@ function cancelEdit() {
   form.quantity = 1;
   form.note = '';
 }
-/** 삭제할 생산 배치를 기억하고 중요 작업 확인창을 엽니다. */
+/** 삭제할 생산 기록을 기억하고 중요 작업 확인창을 엽니다. */
 function askDelete(batch) {
   deletingBatch.value = batch;
   deleteConfirmOpen.value = true;
 }
-/** 서버 검증 뒤 생산 배치를 Soft Delete하고 성공 시 목록을 다시 조회합니다. */
+/** 서버 검증 뒤 생산 기록을 Soft Delete하고 성공 시 목록을 다시 조회합니다. */
 async function deleteBatch() {
   if (!deletingBatch.value) return;
   saving.value = true;
@@ -160,7 +160,7 @@ async function saveZero() {
     saving.value = false;
   }
 }
-/** 서버 확인이 끝난 생산 배치만 성공 처리하고 실패 시 입력값을 유지합니다. */
+/** 서버 확인이 끝난 생산 기록만 성공 처리하고 실패 시 입력값을 유지합니다. */
 async function save() {
   if (!props.product?.id || !form.quantity) return;
   if (form.recipeDeviated && !form.recipeDeviationNote.trim()) {

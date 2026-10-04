@@ -26,8 +26,7 @@
   <section class="daily-section summary-section">
     <div class="section-heading">
       <div>
-        <h3>오늘 요약</h3>
-        <p>선택한 날짜의 생산 흐름을 한눈에 확인합니다.</p>
+        <h3>요약</h3>
       </div>
     </div>
     <div class="daily-metrics">
@@ -45,14 +44,28 @@
       <div>
         <h3>제품별 현황</h3>
         <p>{{ progressText }}</p>
+        <div class="work-progress" aria-label="제품 기록 진행률"><span :style="{ width: `${progressPercent}%` }" /></div>
+        <div v-if="missingSummaryText" class="missing-summary">{{ missingSummaryText }}</div>
       </div>
       <v-menu v-if="canMutate" location="bottom end">
         <template #activator="{ props: menuProps }">
-          <v-btn v-bind="menuProps" size="small" variant="outlined" prepend-icon="mdi-check-all">미확인 항목 일괄 확인</v-btn>
+          <v-btn v-bind="menuProps" size="small" variant="outlined" prepend-icon="mdi-check-all">미확인 일괄 확인</v-btn>
         </template>
-        <v-list density="compact" min-width="230">
-          <v-list-item title="로스 없음(0)으로 확인" subtitle="아직 확인하지 않은 제품만 적용" @click="askBulkZero('loss')" />
-          <v-list-item title="폐기 없음(0)으로 확인" subtitle="아직 확인하지 않은 제품만 적용" @click="askBulkZero('waste')" />
+        <v-list class="bulk-menu" min-width="280">
+          <v-list-item
+            :disabled="missingLossCount === 0"
+            @click="askBulkZero('loss')"
+          >
+            <v-list-item-title>로스 없음(0)으로 확인 <span>{{ missingLossCount ? `${missingLossCount}개` : '완료' }}</span></v-list-item-title>
+            <v-list-item-subtitle>미확인 제품만 0으로 확인하며 기존 기록은 유지합니다.</v-list-item-subtitle>
+          </v-list-item>
+          <v-list-item
+            :disabled="missingWasteCount === 0"
+            @click="askBulkZero('waste')"
+          >
+            <v-list-item-title>폐기 없음(0)으로 확인 <span>{{ missingWasteCount ? `${missingWasteCount}개` : '완료' }}</span></v-list-item-title>
+            <v-list-item-subtitle>미확인 제품만 0으로 확인하며 기존 기록은 유지합니다.</v-list-item-subtitle>
+          </v-list-item>
         </v-list>
       </v-menu>
     </div>
@@ -75,7 +88,7 @@
           <span>{{ categoryProgressText(group.allRows) }}</span>
         </div>
         <div class="category-heading-side">
-          <span>{{ categoryCompleteCount(group.allRows) }} / {{ group.allRows.filter((row) => row.is_active).length }}</span>
+          <span>기록 완료 {{ categoryCompleteCount(group.allRows) }} / {{ group.allRows.filter((row) => row.is_active).length }}</span>
           <v-icon :icon="collapsed.has(group.name) ? 'mdi-chevron-down' : 'mdi-chevron-up'" size="small" />
         </div>
       </button>
@@ -179,7 +192,34 @@
         <v-btn icon="mdi-close" size="small" variant="text" @click="detailOpen=false" />
       </v-card-title>
       <v-card-text class="app-dialog-body">
-        <pre class="detail-text">{{ detailText }}</pre>
+        <div class="summary-detail-hero">
+          <span>총 {{ detailMetricTitle }}</span>
+          <strong>{{ detailMetricValue }}</strong>
+        </div>
+        <div class="summary-detail-meta">{{ formatKoreanDate(workDate) }} · {{ detailSelectedRow?.name || `${activeRows.length}개 제품` }}</div>
+        <v-divider class="dialog-full-divider" />
+        <template v-if="detailSelectedRow && detailMetricKey === 'sale'">
+          <div class="summary-detail-heading">판매 계산 기준</div>
+          <div class="sale-calculation">
+            <div><span>생산</span><strong>{{ detailSelectedRow.production }}</strong></div>
+            <div><span>전일 이월</span><strong>+ {{ detailSelectedRow.carryover_in }}</strong></div>
+            <div><span>로스</span><strong>- {{ detailSelectedRow.loss }}</strong></div>
+            <div><span>폐기</span><strong>- {{ detailSelectedRow.waste }}</strong></div>
+            <div><span>기타 출고</span><strong>- {{ detailSelectedRow.other_outflow }}</strong></div>
+            <div><span>다음날 이월</span><strong>- {{ detailSelectedRow.carryover_out }}</strong></div>
+          </div>
+          <p class="calculation-note">판매는 생산과 이월에서 로스·폐기·기타 출고·다음날 이월을 제외해 계산합니다.</p>
+        </template>
+        <template v-else>
+        <div class="summary-detail-heading">제품별 {{ detailMetricTitle }}</div>
+        <div v-if="detailRows.length" class="summary-detail-list">
+          <div v-for="row in detailRows" :key="row.id" class="summary-detail-row">
+            <span>{{ row.name }}</span>
+            <strong>{{ row.value }}</strong>
+          </div>
+        </div>
+        <div v-else class="summary-detail-empty">표시할 기록이 없습니다.</div>
+        </template>
       </v-card-text>
       <v-card-actions class="app-dialog-footer">
         <v-btn variant="text" @click="detailOpen=false">닫기</v-btn>
@@ -257,7 +297,7 @@
     </v-card>
   </v-dialog>
   <ConfirmDialog v-model="correctionConfirmOpen" title="마감 후 수정" message="마감된 기록의 수정을 시작하시겠습니까? 연결된 이월 기록이 있으면 영향 날짜도 함께 확인해야 합니다." @confirm="openCorrection"/>
-  <ConfirmDialog v-model="bulkZeroConfirmOpen" title="일괄 0개 확인" :message="`아직 입력하지 않은 ${bulkZeroType === 'loss' ? '로스' : '폐기'}만 0개로 확인하시겠습니까? 이미 입력한 제품은 변경하지 않습니다.`" @confirm="bulkZero" />
+  <ConfirmDialog v-model="bulkZeroConfirmOpen" :title="`${bulkZeroType === 'loss' ? '로스' : '폐기'} 일괄 확인`" :message="`미확인 제품 ${bulkZeroType === 'loss' ? missingLossCount : missingWasteCount}개를 없음(0)으로 확인합니다. 기존에 입력된 기록은 변경하지 않습니다.`" @confirm="bulkZero" />
   <ConfirmDialog v-model="confirmCloseOpen" title="하루 마감" message="현재 확인한 내용으로 하루 업무를 마감하시겠습니까? 마감 후 일반 수정은 제한됩니다." :loading="closing" @confirm="closeDay" />
 </div>
 </template>
@@ -300,7 +340,8 @@ const flowType = ref('carryover');
 const tableDrag = { active: false, startX: 0, startScrollLeft: 0, element: null };
 const detailOpen = ref(false);
 const detailTitle = ref('');
-const detailText = ref('');
+const detailMetricKey = ref('production');
+const detailSelectedRow = ref(null);
 const historyOpen = ref(false);
 const historyLogs = ref([]);
 const correctionOpen = ref(false);
@@ -312,6 +353,35 @@ const bulkZeroConfirmOpen = ref(false);
 const bulkZeroType = ref('loss');
 const closePreview = ref(null);
 const closing = ref(false);
+
+const activeRows = computed(() => (props.daily.rows || []).filter((row) => row.is_active));
+const missingLossCount = computed(() => activeRows.value.filter((row) => !row.loss_confirmed).length);
+const missingWasteCount = computed(() => activeRows.value.filter((row) => !row.waste_confirmed).length);
+const missingProductionCount = computed(() => activeRows.value.filter((row) => !row.production_confirmed).length);
+const missingDispositionCount = computed(() => activeRows.value.filter((row) => !row.disposition_confirmed).length);
+const progressPercent = computed(() => {
+  const required = Number(props.daily.required_count || 0);
+  return required ? Math.round((Number(props.daily.complete_count || 0) / required) * 100) : 100;
+});
+const missingSummaryText = computed(() => {
+  const parts = [
+    ['생산', missingProductionCount.value],
+    ['로스', missingLossCount.value],
+    ['폐기', missingWasteCount.value],
+    ['이월', missingDispositionCount.value],
+  ].filter(([, count]) => count > 0).map(([label, count]) => `${label} ${count}`);
+  return parts.length ? `확인할 기록 · ${parts.join(' · ')}` : '모든 필수 기록이 확인되었습니다.';
+});
+const detailMetricTitle = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.title || '상세');
+const detailMetricValue = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.value ?? '-');
+const detailRows = computed(() => activeRows.value.map((row) => {
+  const key = detailMetricKey.value === 'carryover' ? 'carryover_in' : detailMetricKey.value;
+  const value = detailMetricKey.value === 'waste_rate'
+    ? (row.waste_rate == null ? '-' : `${row.waste_rate}%`)
+    : Number(row[key] || 0);
+  return { id: row.id, name: row.name, value };
+}).filter((row) => row.value !== 0 && row.value !== '-'));
+
 const metrics = computed(() => [ {
   key:'production', title:'생산', value: props.daily.totals?.production || 0
 }, {
@@ -482,13 +552,13 @@ function endTableDrag() {
   tableDrag.element = null;
 }
 
-/** 생산 칩에서 생산 배치 입력을 엽니다. */
+/** 생산 수량을 확인하거나 기록할 수 있는 생산 다이얼로그를 엽니다. */
 function openProduction(row) {
   if (!ensureMutable()) return;
   selectedProduct.value=row;
   batchOpen.value=true;
 }
-/** 이월·로스·폐기 칩에서 수량 처리 다이얼로그를 엽니다. */
+/** 선택한 이월·로스·폐기 업무 다이얼로그를 엽니다. */
 function openFlow(row, type) {
   if (!ensureMutable()) return;
 
@@ -498,9 +568,10 @@ function openFlow(row, type) {
 }
 /** 계산 판매량의 근거를 읽기 전용으로 보여줍니다. */
 function openSale(row) {
-  detailTitle.value=`${row.name} 판매 계산`;
-  detailText.value=`사용 가능 ${row.production + row.carryover_in}개\n로스 -${row.loss}개\n폐기 -${row.waste}개\n기타 출고 -${row.other_outflow}개\n다음날 이월 -${row.carryover_out}개\n\n계산 판매 ${row.sale}개`;
-  detailOpen.value=true;
+  detailMetricKey.value = 'sale';
+  detailSelectedRow.value = row;
+  detailTitle.value = '판매';
+  detailOpen.value = true;
 }
 /** 제품 관리의 상세 데이터를 재사용해 레시피와 선택 날짜 생산 현황을 함께 보여줍니다. */
 async function openProduct(row) {
@@ -517,16 +588,12 @@ async function openProduct(row) {
     productDetailLoading.value = false;
   }
 }
-/** 상단 전체 지표를 누르면 해당 지표의 제품별 값을 읽기 전용으로 보여줍니다. */
+/** 요약 지표를 누르면 같은 디자인의 제품별 상세 내역을 보여줍니다. */
 function openMetric(key) {
-  const title=metrics.value.find((m)=>m.key===key)?.title || '상세';
-  detailTitle.value=`${title} 상세`;
-  detailText.value=(props.daily.rows||[]).filter((r)=>r.is_active).map((r)=>`${r.name} · ${key==='waste_rate' ? (r.waste_rate==null?'-':`${
-    r.waste_rate
-  }%`) : `${
-    r[key==='carryover'?'carryover_in':key] || 0
-  } 개`}`).join('\n') || '표시할 데이터가 없습니다.';
-  detailOpen.value=true;
+  detailSelectedRow.value = null;
+  detailMetricKey.value = key;
+  detailTitle.value = `${metrics.value.find((metric) => metric.key === key)?.title || '상세'} 상세`;
+  detailOpen.value = true;
 }
 /** 아직 확인하지 않은 로스 또는 폐기만 0개로 일괄 확인합니다. */
 function askBulkZero(type) {
@@ -656,6 +723,11 @@ async function closeDay() {
 .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
 .section-heading h3 { margin:0; font-size:.98rem; font-weight:650; letter-spacing:-.02em; }
 .section-heading p { margin:4px 0 0; font-size:.76rem; color:rgba(var(--v-theme-on-surface),.58); }
+.work-progress { width:min(260px,100%); height:4px; margin-top:8px; overflow:hidden; border-radius:999px; background:rgba(var(--v-theme-on-surface),.07); }
+.work-progress span { display:block; height:100%; border-radius:inherit; background:rgb(var(--v-theme-primary)); }
+.missing-summary { margin-top:6px; font-size:.7rem; color:rgba(var(--v-theme-on-surface),.62); }
+.bulk-menu :deep(.v-list-item-title) { display:flex; justify-content:space-between; gap:16px; font-size:.8rem; font-weight:650; }
+.bulk-menu :deep(.v-list-item-subtitle) { margin-top:3px; font-size:.67rem; line-height:1.4; white-space:normal; }
 .daily-metrics { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:9px; }
 .metric-item { appearance:none; text-align:center; padding:12px 8px; border:1px solid rgba(var(--v-border-color),.7); border-radius:12px; background:rgb(var(--v-theme-surface)); color:inherit; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.055); transition:transform .15s ease,box-shadow .15s ease; }
 .metric-item:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,.08); }
@@ -677,12 +749,12 @@ async function closeDay() {
 .category-progress span { display:block; height:100%; background:rgba(var(--v-theme-primary),.72); transition:width .2s ease; }
 .product-table-wrap { overflow-x:auto; cursor:grab; overscroll-behavior-x:contain; }
 .product-table-wrap:active { cursor:grabbing; }
-.product-table { width:100%; min-width:610px; border-collapse:collapse; table-layout:fixed; font-size:.75rem; }
-.product-column { width:180px; }
-.number-column { width:68px; }
-.product-table th,.product-table td { height:38px; padding:7px 6px; border-top:1px solid rgba(var(--v-border-color),.58); text-align:center; white-space:nowrap; font-weight:400; font-variant-numeric:tabular-nums; }
+.product-table { width:100%; min-width:540px; border-collapse:collapse; table-layout:fixed; font-size:.75rem; }
+.product-column { width:150px; }
+.number-column { width:58px; }
+.product-table th,.product-table td { height:34px; padding:5px 4px; border-top:1px solid rgba(var(--v-border-color),.58); text-align:center; white-space:nowrap; font-weight:400; font-variant-numeric:tabular-nums; }
 .product-table thead th { position:sticky; top:0; z-index:2; height:34px; background:rgb(var(--v-theme-surface)); color:rgba(var(--v-theme-on-surface),.58); font-size:.69rem; font-weight:550; }
-.product-table th:first-child,.product-table td:first-child { position:sticky; left:0; z-index:3; width:180px; max-width:180px; text-align:left; background:rgb(var(--v-theme-surface)); }
+.product-table th:first-child,.product-table td:first-child { position:sticky; left:0; z-index:3; width:150px; max-width:150px; text-align:left; background:rgb(var(--v-theme-surface)); }
 .product-table thead th:first-child { z-index:4; }
 .product-table tbody tr:hover td { background:rgb(var(--v-theme-surface-variant)); }
 .product-table tbody tr:hover td:first-child { background:rgb(var(--v-theme-surface-variant)); }
@@ -695,10 +767,25 @@ async function closeDay() {
 .rate-value { color:rgba(var(--v-theme-on-surface),.66); }
 .row-warning { display:block; margin-top:1px; color:rgb(var(--v-theme-error)); font-size:.62rem; font-weight:600; }
 .row-inactive { opacity:.5; }
-.subtotal-row td { background:rgba(var(--v-theme-on-surface),.035); font-weight:600; }
-.subtotal-row td:first-child { background:rgb(var(--v-theme-surface-variant)); }
+.subtotal-row td { background:rgba(var(--v-theme-on-surface),.055) !important; color:rgb(var(--v-theme-on-surface)) !important; font-weight:650; }
+.subtotal-row:hover td { background:rgba(var(--v-theme-on-surface),.055) !important; }
+.subtotal-row td:first-child { background:rgba(var(--v-theme-on-surface),.075) !important; }
 .daily-actions { display:flex; align-items:center; padding-top:6px; }
-.detail-text { font-family:inherit; white-space:pre-wrap; line-height:1.65; margin:0; }
+.summary-detail-hero { padding:4px 0 16px; }
+.summary-detail-hero span,.summary-detail-hero strong { display:block; }
+.summary-detail-hero span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
+.summary-detail-hero strong { margin-top:3px; font-size:1.7rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.summary-detail-meta { margin-bottom:16px; font-size:.7rem; color:rgba(var(--v-theme-on-surface),.55); }
+.dialog-full-divider { margin-inline:-24px; }
+.summary-detail-heading { padding:16px 0 8px; font-size:.8rem; font-weight:650; }
+.summary-detail-list { display:flex; flex-direction:column; }
+.summary-detail-row { display:flex; justify-content:space-between; gap:16px; padding:9px 0; border-bottom:1px solid rgba(var(--v-border-color),.55); font-size:.76rem; }
+.summary-detail-row strong { font-variant-numeric:tabular-nums; }
+.summary-detail-empty { padding:18px 0; font-size:.75rem; color:rgba(var(--v-theme-on-surface),.55); }
+.sale-calculation { display:flex; flex-direction:column; }
+.sale-calculation>div { display:flex; justify-content:space-between; gap:16px; padding:8px 0; border-bottom:1px solid rgba(var(--v-border-color),.5); font-size:.76rem; }
+.sale-calculation strong { font-variant-numeric:tabular-nums; }
+.calculation-note { margin:12px 0 0; font-size:.69rem; line-height:1.5; color:rgba(var(--v-theme-on-surface),.58); }
 .production-product-section { padding:20px 24px; }
 .production-product-title { margin-bottom:12px; font-size:.88rem; font-weight:650; }
 .product-detail-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
@@ -719,9 +806,10 @@ async function closeDay() {
   .daily-metrics { grid-template-columns:repeat(3,1fr); }
   .product-heading { align-items:stretch; flex-direction:column; }
   .product-search { max-width:none; }
-  .product-column,.product-table th:first-child,.product-table td:first-child { width:132px; max-width:132px; }
-  .number-column { width:60px; }
-  .product-table { min-width:500px; font-size:.71rem; }
+  .product-column,.product-table th:first-child,.product-table td:first-child { width:112px; max-width:112px; }
+  .number-column { width:52px; }
+  .product-table { min-width:424px; font-size:.68rem; }
+  .product-table th,.product-table td { height:32px; padding:4px 3px; }
   .product-name { font-size:.72rem; }
   .product-detail-metrics { grid-template-columns:repeat(2,1fr); }
 }

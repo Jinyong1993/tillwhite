@@ -25,7 +25,7 @@
           density="compact"
           class="mb-4 app-supporting-alert"
         >
-          현재 처리 수량이 사용 가능한 수량보다 많습니다.
+          입력한 수량이 남은 수량보다 많습니다.
         </v-alert>
 
         <div class="flow-summary mb-4">
@@ -34,11 +34,11 @@
             <strong>{{ available }}개</strong>
           </div>
           <div>
-            <span>다른 처리</span>
+            <span>이미 기록됨</span>
             <strong>{{ otherAllocated }}개</strong>
           </div>
           <div>
-            <span>입력 가능</span>
+            <span>남은 수량</span>
             <strong>{{ remainingAvailable }}개</strong>
           </div>
         </div>
@@ -177,10 +177,10 @@ const isReasonMode = computed(() => props.type !== 'carryover');
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
 
 const dialogTitle = computed(() => ({
-  carryover: '이월 처리',
-  loss: '로스 처리',
-  waste: '폐기 처리',
-  other_outflow: '기타 출고 처리',
+  carryover: '이월',
+  loss: '로스',
+  waste: '폐기',
+  other_outflow: '기타 출고',
 }[props.type]));
 
 const dialogDescription = computed(() => ({
@@ -330,7 +330,7 @@ function requestClose() {
   forceClose();
 }
 
-/** 작성 취소를 확인한 뒤 현재 기능 다이얼로그를 닫습니다. */
+/** 작성 취소를 확인한 뒤 현재 업무 다이얼로그를 닫습니다. */
 function forceClose() {
   confirmClose.value = false;
   open.value = false;
@@ -344,7 +344,7 @@ function askSave() {
   }
 
   if (currentQuantity.value > remainingAvailable.value) {
-    emit('error', '처리 수량이 사용 가능한 수량보다 많습니다.');
+    emit('error', '입력한 수량이 남은 수량보다 많습니다.');
     return;
   }
 

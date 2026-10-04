@@ -2,25 +2,22 @@
   <AppShell ref="appShellRef" :title="pageTitle">
     <template #default="{ can, setError }">
       <section class="store-context mb-3">
-        <div class="store-context-copy">
-          <span class="store-context-label">조회 점포</span>
-          <strong>{{ currentStoreName }}</strong>
-          <span v-if="options.store_read_only" class="store-read-only">다른 점포의 생산·폐기 기록은 조회만 가능합니다.</span>
-        </div>
+        <span class="store-context-label">조회 중인 점포</span>
         <v-select
           v-if="options.stores?.length > 1"
           :model-value="storeId"
           :items="options.stores"
           item-title="name"
           item-value="id"
-          label="점포 선택"
-          variant="outlined"
+          variant="plain"
           density="compact"
           hide-details
           class="store-select"
           @update:model-value="changeStore"
         />
+        <strong v-else class="store-name">{{ currentStoreName }}</strong>
       </section>
+      <div v-if="options.store_read_only" class="store-read-only mb-3">다른 점포의 생산·폐기 기록은 조회만 가능합니다.</div>
 
       <AppErrorState
         v-if="loadError && !ready"
@@ -30,12 +27,14 @@
       />
 
       <div v-if="ready">
+        <v-divider class="production-divider" />
         <v-tabs v-model="tab" grow density="compact" class="production-tabs">
           <v-tab value="list">목록</v-tab>
           <v-tab value="calendar">캘린더</v-tab>
           <v-tab value="analysis">분석</v-tab>
           <v-tab value="statistics">통계</v-tab>
         </v-tabs>
+        <v-divider class="production-divider" />
 
         <v-window v-model="tab" class="mt-4">
           <v-window-item value="list">
@@ -320,23 +319,22 @@ onBeforeUnmount(disposePage);
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:16px;
-  padding:12px 14px;
-  border:1px solid rgba(var(--v-border-color),.7);
-  border-radius:12px;
-  background:rgb(var(--v-theme-surface));
-  box-shadow:0 2px 8px rgba(0,0,0,.045);
+  gap:14px;
+  min-height:44px;
+  padding:6px 2px;
 }
-.store-context-copy { display:flex; flex-direction:column; min-width:0; }
-.store-context-label,.store-read-only { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); }
-.store-context-copy strong { font-size:.9rem; font-weight:650; }
-.store-read-only { margin-top:2px; }
-.store-select { max-width:240px; }
-.production-tabs { border-bottom:1px solid rgba(var(--v-border-color),.7); }
-.production-tabs :deep(.v-tab) { font-size:.78rem; font-weight:500; text-transform:none; }
-.production-tabs :deep(.v-tab--selected) { font-weight:650; }
+.store-context-label { flex:none; font-size:.72rem; color:rgba(var(--v-theme-on-surface),.56); }
+.store-name { margin-left:auto; font-size:.86rem; font-weight:650; }
+.store-select { flex:0 1 190px; max-width:190px; }
+.store-select :deep(.v-field__input) { justify-content:flex-end; min-height:34px; padding-inline:4px; font-size:.86rem; font-weight:650; text-align:right; }
+.store-read-only { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); text-align:right; }
+.production-divider { width:100%; }
+.production-tabs { min-height:42px; }
+.production-tabs :deep(.v-tab) { min-width:0; padding-inline:4px; font-size:.78rem; font-weight:500; letter-spacing:-.01em; text-transform:none; }
+.production-tabs :deep(.v-tab--selected) { font-weight:700; }
+.production-tabs :deep(.v-tab__slider) { height:2px; }
 @media(max-width:600px) {
-  .store-context { align-items:stretch; flex-direction:column; }
-  .store-select { max-width:none; }
+  .store-context { min-height:40px; }
+  .store-select { flex-basis:150px; max-width:150px; }
 }
 </style>
