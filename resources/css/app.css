@@ -13,6 +13,7 @@
 |
 */
 @import 'tailwindcss';
+@import './common-ui.css';
 
 /*
 |--------------------------------------------------------------------------
@@ -81,17 +82,4 @@
         line-height: 1.25;
         text-align: center;
     }
-}
-
-
-/* 설명·안내·도움말은 주요 정보보다 한 단계 낮은 공통 텍스트 계층을 사용합니다. */
-.app-supporting-text {
-    font-size: 0.76rem;
-    line-height: 1.45;
-}
-
-/* 안내 Alert의 본문도 일반 설명문과 같은 작은 보조 텍스트 계층을 사용합니다. */
-.app-supporting-alert .v-alert__content {
-    font-size: 0.76rem;
-    line-height: 1.45;
 }

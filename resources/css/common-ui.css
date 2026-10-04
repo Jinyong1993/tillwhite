@@ -1,0 +1,20 @@
+/*
+ * 여러 관리 화면에서 반복되는 보조 텍스트 계층을 한곳에서 관리합니다.
+ * 기능별 고유 레이아웃은 각 컴포넌트의 scoped 스타일에 그대로 둡니다.
+ */
+.app-supporting-text {
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+/* 안내 Alert도 일반 설명문과 같은 크기를 사용해 정보 계층을 통일합니다. */
+.app-supporting-alert .v-alert__content {
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+/* 검색 건수처럼 짧은 결과 요약은 설명문보다 한 단계 더 작게 표시합니다. */
+.app-result-count {
+    font-size: 0.72rem;
+    line-height: 1.4;
+}

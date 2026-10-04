@@ -172,8 +172,8 @@
         @recipe="openRecipeDialog"
         @recipe-part="openRecipePartDialog"
         @recipe-copy="openRecipeCopyDialog"
-        @recipe-delete="requestRecipeDelete(setError, setSuccess)"
-        @recipe-restore="requestRecipeRestore(setError, setSuccess)"
+        @recipe-delete="requestRecipeDelete(setError, setSuccess, $event)"
+        @recipe-restore="requestRecipeRestore(setError, setSuccess, $event)"
         @recipe-create-product="openCloneProductDialog(true)"
         @recipe-view-product="focusProductInfo"
         @permission-denied="setError($event)"
@@ -1609,8 +1609,8 @@ async function createClonedProduct(setError, setSuccess) {
 }
 
 /** 레시피 삭제는 실제 행을 제거하지 않고 Soft Delete 확인창을 거칩니다. */
-function requestRecipeDelete(setError, setSuccess) {
-  const target = displayedSelectedRecipe.value;
+function requestRecipeDelete(setError, setSuccess, requestedRecipe = null) {
+  const target = requestedRecipe ?? displayedSelectedRecipe.value;
   if (!target || target.deleted_at) {
     return;
   }
@@ -1625,8 +1625,8 @@ function requestRecipeDelete(setError, setSuccess) {
 }
 
 /** 삭제된 레시피 복구도 동일한 확인 규칙을 사용합니다. */
-function requestRecipeRestore(setError, setSuccess) {
-  const target = displayedSelectedRecipe.value;
+function requestRecipeRestore(setError, setSuccess, requestedRecipe = null) {
+  const target = requestedRecipe ?? displayedSelectedRecipe.value;
   if (!target?.deleted_at) {
     return;
   }

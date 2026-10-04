@@ -668,6 +668,15 @@ class ProductController extends Controller
         ]);
 
         $recipe = DB::transaction(function () use ($validated, $product, $user) {
+            // 같은 제품에 대한 동시 등록 요청도 하나의 활성 레시피만 만들도록 제품 행을 잠급니다.
+            Product::query()->whereKey($product->id)->lockForUpdate()->firstOrFail();
+
+            if (Recipe::query()->where('product_id', $product->id)->whereNull('deleted_at')->exists()) {
+                throw ValidationException::withMessages([
+                    'recipe' => '이미 등록된 레시피가 있습니다. 기존 레시피를 확인해주세요.',
+                ]);
+            }
+
             $recipe = Recipe::create([
                 'store_id' => $product->store_id,
                 'product_id' => $product->id,

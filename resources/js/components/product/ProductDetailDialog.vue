@@ -47,14 +47,11 @@
               {{ statusText }}
             </v-chip>
 
-            <!--
-              기존 관리 메뉴는 유지합니다.
-              상태 칩이나 레시피 영역에서도 같은 기능에 접근할 수 있습니다.
-            -->
+            <!-- 제품 헤더의 더보기는 제품 상태 관리만 제공합니다. 레시피 관리는 레시피 영역에서 처리합니다. -->
             <v-menu
               v-if="
                 !product.deleted_at
-                && (canManage || canManageRecipe)
+                && canManage
               "
               location="bottom end"
             >
@@ -72,22 +69,6 @@
                 density="compact"
                 min-width="190"
               >
-                <!-- 레시피 등록 / 수정 -->
-                <v-list-item
-                  v-if="canManageRecipe"
-                  :prepend-icon="
-                    hasRecipe
-                      ? 'mdi-notebook-edit-outline'
-                      : 'mdi-notebook-plus-outline'
-                  "
-                  :title="
-                    hasRecipe
-                      ? '레시피 수정'
-                      : '레시피 등록'
-                  "
-                  @click="$emit('recipe')"
-                />
-
                 <!-- 취급 상태 변경 -->
                 <v-list-item
                   v-if="canManage"
@@ -244,7 +225,7 @@
               삭제·제품 보기·수정/복구는 공정 아래의 카드 액션 영역에서 제공합니다.
             -->
             <v-menu
-              v-if="hasRecipe && !product.deleted_at && !displayedRecipe?.deleted_at"
+              v-if="activeRecipe && !product.deleted_at"
               location="bottom end"
             >
               <template #activator="{ props: menuProps }">
@@ -273,18 +254,40 @@
           </div>
 
           <ProductRecipeCard
-            :recipe="displayedRecipe"
+            v-if="activeRecipe"
+            :recipe="activeRecipe"
             :can-manage="canManageRecipe"
             :parent-deleted="Boolean(product.deleted_at)"
             @edit="requestRecipeEdit"
             @edit-part="$emit('recipe-part', $event)"
             @copy="requestRecipeCopy"
-            @delete="$emit('recipe-delete')"
-            @restore="$emit('recipe-restore')"
+            @delete="$emit('recipe-delete', activeRecipe)"
+            @restore="$emit('recipe-restore', activeRecipe)"
             @create-product="$emit('recipe-create-product')"
             @view-product="$emit('recipe-view-product')"
             @permission-denied="$emit('permission-denied', $event)"
           />
+
+          <!-- 삭제된 과거 레시피도 숨기지 않아 변경 이력과 복구 대상을 보존합니다. -->
+          <div
+            v-if="deletedRecipes.length"
+            class="deleted-recipe-list"
+          >
+            <div class="app-supporting-text text-medium-emphasis">
+              삭제된 레시피
+            </div>
+
+            <ProductRecipeCard
+              v-for="recipe in deletedRecipes"
+              :key="recipe.id"
+              :recipe="recipe"
+              :can-manage="canManageRecipe"
+              :parent-deleted="Boolean(product.deleted_at)"
+              @restore="$emit('recipe-restore', recipe)"
+              @view-product="$emit('recipe-view-product')"
+              @permission-denied="$emit('permission-denied', $event)"
+            />
+          </div>
         </section>
 
         <v-divider />
@@ -564,15 +567,18 @@ const currentPrice = computed(() => {
   return props.product?.prices?.[0]?.price ?? null;
 });
 
-/*
- * 레시피 등록 여부
- */
-const displayedRecipe = computed(() => {
-  const recipes = props.product?.recipes ?? [];
-  return recipes.find((recipe) => !recipe.deleted_at) ?? recipes[0] ?? null;
+/** 현재 제품에서 실제로 사용 중인 활성 레시피 한 건을 반환합니다. */
+const activeRecipe = computed(() => {
+  return (props.product?.recipes ?? []).find((recipe) => !recipe.deleted_at) ?? null;
 });
 
-const hasRecipe = computed(() => Boolean(displayedRecipe.value));
+/** 삭제된 레시피는 최신 삭제 건부터 보여 과거 기록을 찾기 쉽게 합니다. */
+const deletedRecipes = computed(() => {
+  return (props.product?.recipes ?? [])
+    .filter((recipe) => Boolean(recipe.deleted_at))
+    .sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
+});
+
 
 /*
  * 제품 상태 표시 문구
@@ -684,17 +690,14 @@ function requestManageAction(action) {
   emit(action);
 }
 
-/** 레시피 수정/복구 진입 전에 권한을 확인합니다. */
+/** 활성 레시피 수정 진입 전에 관리 권한을 확인합니다. */
 function requestRecipeEdit() {
   if (!props.canManageRecipe) {
     emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
     return;
   }
 
-  if (displayedRecipe.value?.deleted_at) {
-    emit('recipe-restore');
-    return;
-  }
+  if (!activeRecipe.value) return;
 
   emit('recipe');
 }
@@ -1036,5 +1039,11 @@ function departmentName(value) {
     width: 100%;
     margin-left: 0;
   }
+}
+
+.deleted-recipe-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
 }
 </style>

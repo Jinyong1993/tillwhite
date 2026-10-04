@@ -116,7 +116,7 @@
           />
         </div>
 
-        <div class="category-result-count text-caption text-medium-emphasis">
+        <div class="category-result-count app-result-count text-medium-emphasis">
           검색 결과 {{ filteredCategories.length }}개
         </div>
       </div>
