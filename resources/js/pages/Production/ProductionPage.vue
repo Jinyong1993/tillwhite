@@ -1,23 +1,26 @@
 <template>
   <AppShell ref="appShellRef" :title="pageTitle">
     <template #default="{ can, setError }">
-      <div class="d-flex flex-wrap align-center ga-2 mb-3">
+      <section class="store-context mb-3">
+        <div class="store-context-copy">
+          <span class="store-context-label">조회 점포</span>
+          <strong>{{ currentStoreName }}</strong>
+          <span v-if="options.store_read_only" class="store-read-only">다른 점포의 생산·폐기 기록은 조회만 가능합니다.</span>
+        </div>
         <v-select
           v-if="options.stores?.length > 1"
           :model-value="storeId"
           :items="options.stores"
           item-title="name"
           item-value="id"
-          label="점포"
+          label="점포 선택"
           variant="outlined"
           density="compact"
           hide-details
           class="store-select"
           @update:model-value="changeStore"
         />
-        <v-spacer />
-        <span class="app-supporting-text text-medium-emphasis">{{ currentStoreName }}</span>
-      </div>
+      </section>
 
       <AppErrorState
         v-if="loadError && !ready"
@@ -27,7 +30,7 @@
       />
 
       <div v-if="ready">
-        <v-tabs v-model="tab" grow density="compact">
+        <v-tabs v-model="tab" grow density="compact" class="production-tabs">
           <v-tab value="list">목록</v-tab>
           <v-tab value="calendar">캘린더</v-tab>
           <v-tab value="analysis">분석</v-tab>
@@ -42,7 +45,7 @@
               :store-id="storeId"
               :work-date="workDate"
               :refreshing="loading"
-              :can-mutate="can('production.create') || can('production.update')"
+              :can-mutate="!options.store_read_only && (can('production.create') || can('production.update'))"
               :can-correct="can('production.correct')"
               @update:work-date="changeDate"
               @reload="reloadCurrentDate"
@@ -54,10 +57,10 @@
           <v-window-item value="calendar">
             <!-- 캘린더는 실제 탭에 진입할 때만 마운트하여 최초 페이지 로딩을 가볍게 유지합니다. -->
             <ProductionCalendarTab
-              v-if="tab === 'calendar'"
               :store-id="storeId"
               :work-date="workDate"
               :products="options.products || []"
+              :can-mutate="!options.store_read_only && can('production.update')"
               @jump-date="jumpToDate"
               @error="setError"
               @success="showSuccess"
@@ -313,7 +316,27 @@ onBeforeUnmount(disposePage);
 </script>
 
 <style scoped>
-.store-select {
-  max-width: 240px;
+.store-context {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:12px 14px;
+  border:1px solid rgba(var(--v-border-color),.7);
+  border-radius:12px;
+  background:rgb(var(--v-theme-surface));
+  box-shadow:0 2px 8px rgba(0,0,0,.045);
+}
+.store-context-copy { display:flex; flex-direction:column; min-width:0; }
+.store-context-label,.store-read-only { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); }
+.store-context-copy strong { font-size:.9rem; font-weight:650; }
+.store-read-only { margin-top:2px; }
+.store-select { max-width:240px; }
+.production-tabs { border-bottom:1px solid rgba(var(--v-border-color),.7); }
+.production-tabs :deep(.v-tab) { font-size:.78rem; font-weight:500; text-transform:none; }
+.production-tabs :deep(.v-tab--selected) { font-weight:650; }
+@media(max-width:600px) {
+  .store-context { align-items:stretch; flex-direction:column; }
+  .store-select { max-width:none; }
 }
 </style>

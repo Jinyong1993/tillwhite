@@ -4,7 +4,7 @@
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
         <div>생산 추가</div>
-        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}의 실제 생산 배치를 기록합니다.</div>
+        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}의 생산 수량과 작업 내용을 기록합니다.</div>
       </div>
       <v-btn icon="mdi-close" size="small" variant="text" :disabled="saving" @click="requestClose" />
     </v-card-title>

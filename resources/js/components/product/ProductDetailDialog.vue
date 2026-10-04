@@ -290,6 +290,12 @@
           </div>
         </section>
 
+        <!-- 호출 화면에서 제품 고유 정보 아래에 업무별 상세 정보를 자연스럽게 확장할 수 있습니다. -->
+        <template v-if="$slots['extra-detail']">
+          <v-divider />
+          <slot name="extra-detail" />
+        </template>
+
         <v-divider />
 
         <!-- 시스템 정보 -->
@@ -348,7 +354,7 @@
 
         <!-- 삭제된 제품 -->
         <v-btn
-          v-if="product.deleted_at"
+          v-if="product.deleted_at && canManage"
           variant="flat"
           prepend-icon="mdi-restore"
           :disabled="loading"
@@ -359,7 +365,7 @@
         </v-btn>
 
         <!-- 정상 제품 -->
-        <template v-else>
+        <template v-else-if="canManage">
           <v-btn
             color="error"
             variant="text"

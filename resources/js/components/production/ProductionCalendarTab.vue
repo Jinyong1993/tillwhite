@@ -1,31 +1,55 @@
 <template>
-<div>
-  <div class="d-flex align-center justify-center ga-2 mb-4">
-    <v-btn icon="mdi-chevron-left" variant="text" @click="moveMonth(-1)" />
-    <strong>{{ monthLabel }}</strong>
-    <v-btn icon="mdi-chevron-right" variant="text" @click="moveMonth(1)" />
+<div class="calendar-page">
+  <section class="calendar-toolbar">
+    <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 달" @click="moveMonth(-1)" />
+    <div class="calendar-month-copy">
+      <strong>{{ monthLabel }}</strong>
+      <span>날짜별 생산·판매·폐기와 마감 상태를 확인합니다.</span>
+    </div>
+    <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 달" @click="moveMonth(1)" />
+  </section>
+
+  <v-divider class="mb-3" />
+
+  <div class="calendar-status-guide app-supporting-text mb-3">
+    <span><i class="status-dot today-dot" />오늘</span>
+    <span><i class="status-dot open-dot" />마감 전</span>
+    <span><i class="status-dot closed-dot" />마감 완료</span>
+    <span><i class="status-dot off-dot" />휴점</span>
   </div>
-  <div class="calendar-legend app-supporting-text mb-2">
-    <span>생산</span>
-    <span>이월</span>
-    <span>로스</span>
-    <span>폐기</span>
-    <span>휴점/미입력은 별도 상태</span>
-  </div>
+
   <div class="calendar-grid calendar-week">
     <div v-for="name in weekNames" :key="name">{{ name }}</div>
   </div>
-  <div class="calendar-grid">
+
+  <div v-if="loading && !days.length" class="calendar-grid calendar-loading" aria-label="캘린더 불러오는 중">
+    <div v-for="blank in leadingBlanks" :key="`loading-blank-${blank}`" class="calendar-cell blank" />
+    <div v-for="day in daysInMonth" :key="`loading-${day}`" class="calendar-cell skeleton-cell"><span>{{ day }}</span></div>
+  </div>
+
+  <div v-else class="calendar-grid">
     <div v-for="blank in leadingBlanks" :key="`blank-${blank}`" class="calendar-cell blank" />
-    <button v-for="day in days" :key="day.date" type="button" class="calendar-cell" :class="dayClass(day)" :style="dayStyle(day)" @click="openDay(day)">
-      <span class="day-number">{{ Number(day.date.slice(-2)) }}</span>
-      <span v-if="day.events?.length" class="event-dot" />
-      <span v-if="day.status==='store_closed'" class="state-label">휴점</span>
-      <span v-else-if="day.required_count && day.complete_count < day.required_count" class="state-label">확인 필요</span>
+    <button v-for="day in days" :key="day.date" type="button" class="calendar-cell" :class="dayClass(day)" @click="openDay(day)">
+      <div class="calendar-cell-head">
+        <span class="day-number">{{ Number(day.date.slice(-2)) }}</span>
+        <span v-if="day.events?.length" class="event-dot" title="등록된 일정 있음" />
+      </div>
+      <template v-if="day.status === 'store_closed'">
+        <span class="day-state">휴점</span>
+      </template>
+      <template v-else>
+        <div class="day-summary">
+          <span>생산 <b>{{ day.totals?.production || 0 }}</b></span>
+          <span>판매 <b>{{ day.totals?.sale || 0 }}</b></span>
+          <span>폐기 <b>{{ day.totals?.waste || 0 }}</b></span>
+        </div>
+        <span class="day-state">{{ calendarStatusText(day) }}</span>
+      </template>
     </button>
   </div>
-  <div class="d-flex justify-end mt-4">
-    <v-btn variant="outlined" prepend-icon="mdi-calendar-plus" @click="eventOpen=true">행사 등록</v-btn>
+
+  <div class="calendar-actions">
+    <v-btn v-if="canMutate" variant="outlined" prepend-icon="mdi-calendar-plus" @click="eventOpen=true">행사 등록</v-btn>
   </div>
   <v-dialog v-model="dayOpen" max-width="640" :persistent="jumping">
     <v-card rounded="lg" class="app-dialog-card">
@@ -34,18 +58,18 @@
         <v-btn icon="mdi-close" size="small" variant="text"  :disabled="jumping" @click="dayOpen=false" />
       </v-card-title>
       <v-card-text class="app-dialog-body">
-        <div v-if="selectedDay" class="day-detail">
-          <div>생산 <strong>{{ selectedDay.totals.production }}개</strong>
+        <div v-if="selectedDay">
+          <div class="day-dialog-status mb-3">
+            <strong>{{ calendarStatusText(selectedDay) }}</strong>
+            <span v-if="selectedDay.status !== 'store_closed'">{{ dayCheckText(selectedDay) }}</span>
           </div>
-          <div>판매 <strong>{{ selectedDay.totals.sale }}개</strong>
-          </div>
-          <div>이월 <strong>{{ selectedDay.totals.carryover }}개</strong>
-          </div>
-          <div>로스 <strong>{{ selectedDay.totals.loss }}개</strong>
-          </div>
-          <div>폐기 <strong>{{ selectedDay.totals.waste }}개</strong>
-          </div>
-          <div>폐기율 <strong>{{ selectedDay.totals.waste_rate == null ? '-' : `${selectedDay.totals.waste_rate}%` }}</strong>
+          <div class="day-detail">
+            <div><span>생산</span><strong>{{ selectedDay.totals.production }}</strong></div>
+            <div><span>판매</span><strong>{{ selectedDay.totals.sale }}</strong></div>
+            <div><span>이월</span><strong>{{ selectedDay.totals.carryover }}</strong></div>
+            <div><span>로스</span><strong>{{ selectedDay.totals.loss }}</strong></div>
+            <div><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
+            <div><span>폐기율</span><strong>{{ selectedDay.totals.waste_rate == null ? '-' : `${selectedDay.totals.waste_rate}%` }}</strong></div>
           </div>
         </div>
         <div v-if="selectedDay?.events?.length" class="mt-4">
@@ -55,7 +79,7 @@
       <v-card-actions class="app-dialog-footer">
         <v-btn variant="text"  :disabled="jumping" @click="dayOpen=false">닫기</v-btn>
         <v-spacer/>
-        <v-btn variant="text"  :disabled="jumping" @click="confirmDayStatus=true">{{ selectedDay?.status==='store_closed' ? '휴점 해제' : '휴점 설정' }}</v-btn>
+        <v-btn v-if="canMutate" variant="text" :disabled="jumping" @click="confirmDayStatus=true">{{ selectedDay?.status==='store_closed' ? '휴점 해제' : '휴점 설정' }}</v-btn>
         <v-btn variant="text" :loading="jumping" :disabled="jumping" @click="jumpToList">목록에서 보기</v-btn>
       </v-card-actions>
     </v-card>
@@ -101,11 +125,13 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  canMutate: Boolean,
 });
 
 const emit = defineEmits(['error', 'success', 'jump-date']);
 const month = ref(props.workDate.slice(0, 7));
 const days = ref([]);
+const loading = ref(false);
 const monthCache = new Map();
 const dayOpen = ref(false);
 const confirmDayStatus = ref(false);
@@ -149,6 +175,11 @@ const monthLabel = computed(() => {
   return `${year}년 ${Number(monthNumber)}월`;
 });
 
+const daysInMonth = computed(() => {
+  const [year, monthNumber] = month.value.split('-').map(Number);
+  return new Date(year, monthNumber, 0).getDate();
+});
+
 const leadingBlanks = computed(() => {
   const [year, monthNumber] = month.value.split('-').map(Number);
   return new Date(year, monthNumber - 1, 1).getDay();
@@ -167,6 +198,7 @@ async function load({ force = false } = {}) {
   }
 
   calendarRequest?.abort();
+  loading.value = true;
   const controller = new AbortController();
   calendarRequest = controller;
 
@@ -191,6 +223,7 @@ async function load({ force = false } = {}) {
   } finally {
     if (calendarRequest === controller) {
       calendarRequest = null;
+      loading.value = false;
     }
   }
 }
@@ -203,26 +236,6 @@ function moveMonth(amount) {
   load();
 }
 
-/** 생산 활동과 로스·폐기 위험을 함께 반영하되 폐기 위험을 더 강하게 표시합니다. */
-function dayStyle(day) {
-  const totals = day.totals || {};
-  const total = Math.max(
-    1,
-    Number(totals.production || 0)
-      + Number(totals.carryover || 0)
-      + Number(totals.loss || 0)
-      + Number(totals.waste || 0),
-  );
-  const risk = (Number(totals.waste || 0) * 2 + Number(totals.loss || 0)) / total;
-
-  if (day.status === 'store_closed') return {};
-
-  return {
-    '--day-risk': Math.min(0.28, risk * 0.8),
-    '--day-activity': Math.min(0.14, Number(totals.production || 0) / 50 * 0.12),
-  };
-}
-
 /** 일요일·토요일·공휴일과 업무 상태에 맞는 날짜 셀 클래스를 반환합니다. */
 function dayClass(day) {
   const [year, monthNumber, dateNumber] = day.date.split('-').map(Number);
@@ -233,8 +246,22 @@ function dayClass(day) {
     sun: dayOfWeek === 0 || holiday,
     sat: dayOfWeek === 6 && !holiday,
     closed: day.status === 'store_closed',
-    incomplete: day.required_count && day.complete_count < day.required_count,
+    today: day.date === props.workDate,
+    incomplete: day.status !== 'closed' && day.status !== 'store_closed',
   };
+}
+
+/** 내부 상태 코드를 직원이 바로 이해할 수 있는 업무 상태로 바꿉니다. */
+function calendarStatusText(day) {
+  if (day.status === 'store_closed') return '휴점';
+  if (day.status === 'closed') return '마감 완료';
+  return '마감 전';
+}
+
+/** 애매한 '확인 필요' 대신 남은 제품 수를 구체적으로 설명합니다. */
+function dayCheckText(day) {
+  if (day.status === 'closed') return '이 날짜의 업무가 마감되었습니다.';
+  return '세부 확인이나 입력이 필요하면 목록에서 확인해 주세요.';
 }
 
 /** 선택 날짜의 생산·판매·이월·로스·폐기 요약을 상세 다이얼로그로 엽니다. */
@@ -306,86 +333,57 @@ async function saveEvent() {
 }
 </script>
 <style scoped>
-.calendar-legend {
-  display:flex;
-  flex-wrap:wrap;
-  gap:12px
-}
-.calendar-grid {
-  display:grid;
-  grid-template-columns:repeat(7,minmax(0,1fr));
-  gap:6px
-}
-.calendar-week {
-  text-align:center;
-  font-size:.76rem;
-  margin-bottom:6px
-}
-.calendar-cell {
-  position:relative;
-  min-height:78px;
-  padding:8px;
-  border:1px solid rgba(var(--v-border-color),var(--v-border-opacity));
-  border-radius:10px;
-  background:linear-gradient(rgba(244,67,54,var(--day-risk,0)),rgba(76,175,80,var(--day-activity,0))),rgb(var(--v-theme-surface));
-  color:inherit;
-  text-align:left
-}
-.calendar-cell.blank {
-  border:0;
-  background:none
-}
-.calendar-cell.sun .day-number {
-  color:#d32f2f
-}
-.calendar-cell.sat .day-number {
-  color:#1976d2
-}
-.calendar-cell.closed {
-  opacity:.5;
-  background:rgba(var(--v-theme-on-surface),.06)
-}
-.calendar-cell.incomplete {
-  border-style:dashed
-}
-.event-dot {
-  position:absolute;
-  top:8px;
-  right:8px;
-  width:7px;
-  height:7px;
-  border-radius:50%;
-  background:currentColor
-}
-.state-label {
-  display:block;
-  margin-top:22px;
-  font-size:.68rem
-}
-.day-detail {
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  gap:10px
-}
-.day-detail>div {
-  padding:12px;
-  border:1px solid rgba(var(--v-border-color),var(--v-border-opacity));
-  border-radius:10px
-}
-.day-detail strong {
-  display:block;
-  margin-top:3px
-}
-@media(max-width:600px) {
-  .calendar-cell {
-    min-height:62px;
-    padding:6px
-  }
-  .state-label {
-    margin-top:14px
-  }
-  .day-detail {
-    grid-template-columns:repeat(2,1fr)
-  }
+.calendar-page { min-height:420px; }
+.calendar-toolbar { display:flex; align-items:center; justify-content:center; gap:10px; padding:2px 0 14px; }
+.calendar-month-copy { min-width:180px; text-align:center; }
+.calendar-month-copy strong,.calendar-month-copy span { display:block; }
+.calendar-month-copy strong { font-size:1rem; font-weight:650; }
+.calendar-month-copy span { margin-top:2px; font-size:.68rem; color:rgba(var(--v-theme-on-surface),.54); }
+.calendar-status-guide { display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:.68rem; }
+.calendar-status-guide span { display:flex; align-items:center; gap:5px; }
+.status-dot { width:7px; height:7px; border-radius:50%; background:rgba(var(--v-theme-on-surface),.3); }
+.today-dot { background:rgb(var(--v-theme-primary)); }
+.open-dot { border:1px solid rgba(var(--v-theme-on-surface),.45); background:transparent; }
+.closed-dot { background:rgba(var(--v-theme-success),.7); }
+.off-dot { background:rgba(var(--v-theme-on-surface),.18); }
+.calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:6px; }
+.calendar-week { margin-bottom:6px; text-align:center; color:rgba(var(--v-theme-on-surface),.5); font-size:.68rem; font-weight:550; }
+.calendar-cell { position:relative; min-height:112px; padding:8px; border:1px solid rgba(var(--v-border-color),.65); border-radius:10px; background:rgb(var(--v-theme-surface)); color:inherit; text-align:left; transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease; }
+button.calendar-cell { cursor:pointer; }
+button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(--v-theme-primary),.38); box-shadow:0 3px 10px rgba(0,0,0,.06); }
+.calendar-cell.blank { border:0; background:none; }
+.calendar-cell.today { border-color:rgba(var(--v-theme-primary),.65); box-shadow:inset 0 0 0 1px rgba(var(--v-theme-primary),.16); }
+.calendar-cell.sun .day-number { color:rgb(var(--v-theme-error)); }
+.calendar-cell.sat .day-number { color:rgb(var(--v-theme-primary)); }
+.calendar-cell.closed { background:rgba(var(--v-theme-on-surface),.025); }
+.calendar-cell.incomplete .day-state { font-weight:600; }
+.calendar-cell-head { display:flex; align-items:center; justify-content:space-between; }
+.day-number { font-size:.75rem; font-weight:600; }
+.event-dot { width:6px; height:6px; border-radius:50%; background:rgba(var(--v-theme-primary),.72); }
+.day-summary { display:flex; flex-direction:column; gap:1px; margin-top:9px; font-size:.64rem; color:rgba(var(--v-theme-on-surface),.58); }
+.day-summary span { display:flex; justify-content:space-between; gap:6px; }
+.day-summary b { color:rgba(var(--v-theme-on-surface),.82); font-weight:550; font-variant-numeric:tabular-nums; }
+.day-state { display:block; margin-top:7px; font-size:.62rem; color:rgba(var(--v-theme-on-surface),.5); }
+.calendar-cell.closed .day-state { margin-top:28px; text-align:center; }
+.calendar-actions { display:flex; justify-content:flex-end; margin-top:16px; }
+.skeleton-cell { pointer-events:none; opacity:.55; overflow:hidden; }
+.skeleton-cell::after { content:''; display:block; width:75%; height:7px; margin-top:16px; border-radius:8px; background:rgba(var(--v-theme-on-surface),.08); box-shadow:0 13px 0 rgba(var(--v-theme-on-surface),.06),0 26px 0 rgba(var(--v-theme-on-surface),.05); }
+.day-dialog-status { display:flex; flex-direction:column; gap:2px; }
+.day-dialog-status strong { font-size:.86rem; font-weight:650; }
+.day-dialog-status span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
+.day-detail { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.day-detail>div { padding:10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.035); text-align:center; }
+.day-detail span,.day-detail strong { display:block; }
+.day-detail span { font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
+.day-detail strong { margin-top:2px; font-size:.9rem; font-weight:600; font-variant-numeric:tabular-nums; }
+@media(max-width:760px) {
+  .calendar-grid { gap:3px; }
+  .calendar-cell { min-height:72px; padding:5px; border-radius:7px; }
+  .calendar-month-copy span,.calendar-status-guide { display:none; }
+  .day-summary { margin-top:6px; font-size:.58rem; }
+  .day-summary span:nth-child(2) { display:none; }
+  .day-state { margin-top:4px; font-size:.56rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .calendar-cell.closed .day-state { margin-top:18px; }
+  .day-detail { grid-template-columns:repeat(2,1fr); }
 }
 </style>

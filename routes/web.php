@@ -94,6 +94,7 @@ Route::middleware('auth')->prefix('tillwhite/api')->group(function () {
     // 개편 생산·폐기 관리: 일일 목록 / 캘린더 / 분석 / 통계
     Route::get('/production-management/daily', [ProductionManagementController::class, 'daily']);
     Route::get('/production-management/options', [ProductionManagementController::class, 'options']);
+    Route::get('/production-management/products/{productId}', [ProductionManagementController::class, 'productDetail']);
     Route::get('/production-management/calendar', [ProductionManagementController::class, 'calendar']);
     Route::get('/production-management/analysis', [ProductionManagementController::class, 'analysis']);
     Route::get('/production-management/statistics', [ProductionManagementController::class, 'statistics']);

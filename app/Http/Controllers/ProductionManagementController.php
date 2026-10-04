@@ -68,7 +68,31 @@ class ProductionManagementController extends Controller
         $products = Product::query()->with('category:id,name')->where('store_id', $storeId)->where('is_active', true)->orderBy('product_category_id')->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'product_category_id', 'production_department']);
         $workerIds = WorkSchedule::query()->where('store_id', $storeId)->whereDate('work_date', $validated['date'])->pluck('user_id');
         $workers = User::query()->whereIn('id', $workerIds)->where('employment_status', 'active')->where('is_active', true)->orderBy('name')->get(['id', 'name', 'department']);
-        return response()->json(['stores' => $stores, 'products' => $products, 'workers' => $workers, 'loss_reasons' => [['value' => 'production_error', 'title' => '생산 실수'], ['value' => 'shape_failure', 'title' => '모양 불량'], ['value' => 'baking_failure', 'title' => '굽기 불량'], ['value' => 'dough_issue', 'title' => '재료·반죽 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'other', 'title' => '기타']], 'waste_reasons' => [['value' => 'unsold', 'title' => '판매 후 잔여'], ['value' => 'quality', 'title' => '품질 저하'], ['value' => 'storage', 'title' => '보관 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'carryover_waste', 'title' => '이월 후 폐기'], ['value' => 'other', 'title' => '기타']], 'zero_reasons' => [['value' => 'no_plan', 'title' => '생산계획 없음'], ['value' => 'material_shortage', 'title' => '재료 부족'], ['value' => 'equipment_issue', 'title' => '설비 문제'], ['value' => 'staffing_issue', 'title' => '인력 문제'], ['value' => 'no_demand', 'title' => '주문·수요 없음'], ['value' => 'other', 'title' => '기타']]]);
+        return response()->json(['stores' => $stores, 'products' => $products, 'workers' => $workers, 'store_read_only' => $user->isHeadOffice() && $user->role?->code !== 'super_admin', 'loss_reasons' => [['value' => 'production_error', 'title' => '생산 실수'], ['value' => 'shape_failure', 'title' => '모양 불량'], ['value' => 'baking_failure', 'title' => '굽기 불량'], ['value' => 'dough_issue', 'title' => '재료·반죽 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'other', 'title' => '기타']], 'waste_reasons' => [['value' => 'unsold', 'title' => '판매 후 잔여'], ['value' => 'quality', 'title' => '품질 저하'], ['value' => 'storage', 'title' => '보관 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'carryover_waste', 'title' => '이월 후 폐기'], ['value' => 'other', 'title' => '기타']], 'zero_reasons' => [['value' => 'no_plan', 'title' => '생산계획 없음'], ['value' => 'material_shortage', 'title' => '재료 부족'], ['value' => 'equipment_issue', 'title' => '설비 문제'], ['value' => 'staffing_issue', 'title' => '인력 문제'], ['value' => 'no_demand', 'title' => '주문·수요 없음'], ['value' => 'other', 'title' => '기타']]]);
+    }
+
+    /**
+     * 생산 화면에서 제품 관리의 기본 정보와 레시피를 읽기 전용으로 반환합니다.
+     * 제품 관리 권한과 별개로 생산 조회 권한 범위 안에서만 조회할 수 있습니다.
+     */
+    public function productDetail(Request $request, int $productId): JsonResponse
+    {
+        $user = $this->user($request);
+        $this->accessService->requirePermission($user, 'production.view');
+        $product = Product::withTrashed()->findOrFail($productId);
+        $this->assertStoreReadable($user, (int) $product->store_id);
+
+        $product->load([
+            'store:id,name',
+            'category:id,store_id,name',
+            'prices' => fn ($query) => $query
+                ->orderByDesc('effective_from')
+                ->orderByDesc('id'),
+            'recipes.ingredients',
+            'recipes.steps',
+        ]);
+
+        return response()->json(['product' => $product]);
     }
 
     /** 한 번의 생산 배치를 저장하고 생산 당시 레시피와 작업자를 함께 고정합니다. */
@@ -347,21 +371,119 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '하루 업무를 마감했습니다.']);
     }
 
-    /** 월간 달력에 필요한 날짜별 요약과 행사·휴점 상태를 반환합니다. */
+    /**
+     * 월간 달력에 필요한 최소 데이터만 범위 조회로 조립합니다.
+     *
+     * 일일 상세 계산을 날짜 수만큼 반복하면 월 이동 때 수백 개 쿼리가 발생하므로,
+     * 캘린더에서는 월간 합계와 마감·휴점·행사 상태만 한 번씩 모아 사용합니다.
+     */
     public function calendar(Request $request): JsonResponse
     {
         $user = $this->user($request);
         $this->accessService->requirePermission($user, 'production.view');
-        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'month' => ['required', 'date_format:Y-m']]);
-        $this->assertStoreReadable($user, (int) $data['store_id']);
+        $data = $request->validate([
+            'store_id' => ['required', 'integer', 'exists:stores,id'],
+            'month' => ['required', 'date_format:Y-m'],
+        ]);
+        $storeId = (int) $data['store_id'];
+        $this->assertStoreReadable($user, $storeId);
+
         $start = Carbon::createFromFormat('Y-m', $data['month'])->startOfMonth();
         $end = $start->copy()->endOfMonth();
+        $startDate = $start->toDateString();
+        $endDate = $end->toDateString();
+
+        $production = $this->monthlyQuantities(ProductionBatch::query(), $storeId, 'work_date', $startDate, $endDate);
+        $losses = $this->monthlyQuantities(ProductionLoss::query(), $storeId, 'work_date', $startDate, $endDate);
+        $wastes = $this->monthlyQuantities(ProductionWaste::query(), $storeId, 'attribution_date', $startDate, $endDate);
+        $operationalWastes = $this->monthlyQuantities(ProductionWaste::query(), $storeId, 'work_date', $startDate, $endDate);
+        $outflows = $this->monthlyQuantities(ProductionOtherOutflow::query(), $storeId, 'work_date', $startDate, $endDate);
+        $carryIn = $this->monthlyMovementQuantities($storeId, $startDate, $endDate, 'carryover_in');
+        $carryOut = $this->monthlyMovementQuantities($storeId, $startDate, $endDate, 'carryover_out');
+
+        $closures = ProductionDailyClosure::query()
+            ->where('store_id', $storeId)
+            ->whereBetween('work_date', [$startDate, $endDate])
+            ->get(['work_date', 'status'])
+            ->keyBy(fn ($row) => Carbon::parse($row->work_date)->toDateString());
+        $dayStatuses = StoreDailyStatus::query()
+            ->where('store_id', $storeId)
+            ->whereBetween('work_date', [$startDate, $endDate])
+            ->get(['work_date', 'status'])
+            ->keyBy(fn ($row) => Carbon::parse($row->work_date)->toDateString());
+        $events = StoreCalendarEvent::query()
+            ->with('products:id,name')
+            ->where('store_id', $storeId)
+            ->whereDate('start_date', '<=', $endDate)
+            ->whereDate('end_date', '>=', $startDate)
+            ->orderBy('start_date')
+            ->get();
+
         $days = collect();
         for ($date = $start->copy(); $date->lte($end); $date->addDay()) {
-            $summary = $this->dailyService->build((int) $data['store_id'], $date->toDateString());
-            $days->push(['date' => $date->toDateString(), 'totals' => $summary['totals'], 'status' => $summary['closure_status'], 'complete_count' => $summary['complete_count'], 'required_count' => $summary['required_count'], 'events' => $this->eventsForDate((int) $data['store_id'], $date->toDateString())]);
+            $dateKey = $date->toDateString();
+            $produced = (int) ($production[$dateKey] ?? 0);
+            $carriedIn = (int) ($carryIn[$dateKey] ?? 0);
+            $loss = (int) ($losses[$dateKey] ?? 0);
+            $waste = (int) ($wastes[$dateKey] ?? 0);
+            $operationalWaste = (int) ($operationalWastes[$dateKey] ?? 0);
+            $otherOutflow = (int) ($outflows[$dateKey] ?? 0);
+            $carriedOut = (int) ($carryOut[$dateKey] ?? 0);
+            $sale = max(0, $produced + $carriedIn - $loss - $operationalWaste - $otherOutflow - $carriedOut);
+            $status = $dayStatuses->get($dateKey)?->status === 'closed'
+                ? 'store_closed'
+                : ($closures->get($dateKey)?->status ?? 'in_progress');
+            $dayEvents = $events->filter(fn (StoreCalendarEvent $event) =>
+                $event->start_date->toDateString() <= $dateKey
+                && $event->end_date->toDateString() >= $dateKey
+            )->map(fn (StoreCalendarEvent $event) => [
+                'id' => $event->id,
+                'event_type' => $event->event_type,
+                'title' => $event->title,
+                'products' => $event->products->map->only(['id', 'name'])->values(),
+            ])->values();
+
+            $days->push([
+                'date' => $dateKey,
+                'totals' => [
+                    'production' => $produced,
+                    'carryover' => $carriedIn,
+                    'sale' => $sale,
+                    'loss' => $loss,
+                    'waste' => $waste,
+                    'waste_rate' => $produced > 0 ? round($waste / $produced * 100, 1) : null,
+                ],
+                'status' => $status,
+                'events' => $dayEvents,
+            ]);
         }
+
         return response()->json(['days' => $days]);
+    }
+
+    /** 월간 수량 모델을 한 번 조회해 날짜별 합계로 묶습니다. */
+    private function monthlyQuantities($query, int $storeId, string $dateColumn, string $startDate, string $endDate): array
+    {
+        return $query
+            ->where('store_id', $storeId)
+            ->whereBetween($dateColumn, [$startDate, $endDate])
+            ->get([$dateColumn, 'quantity'])
+            ->groupBy(fn ($row) => Carbon::parse($row->{$dateColumn})->toDateString())
+            ->map(fn ($rows) => (int) $rows->sum('quantity'))
+            ->all();
+    }
+
+    /** 이월 이동 기록을 월 단위로 조회해 날짜별 합계로 묶습니다. */
+    private function monthlyMovementQuantities(int $storeId, string $startDate, string $endDate, string $type): array
+    {
+        return ProductStockMovement::query()
+            ->where('store_id', $storeId)
+            ->whereBetween('work_date', [$startDate, $endDate])
+            ->where('movement_type', $type)
+            ->get(['work_date', 'quantity'])
+            ->groupBy(fn ($row) => Carbon::parse($row->work_date)->toDateString())
+            ->map(fn ($rows) => (int) $rows->sum('quantity'))
+            ->all();
     }
 
     /** 점포 행사·할인·단체주문 같은 분석 조건을 저장합니다. */
