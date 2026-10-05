@@ -4,7 +4,7 @@
       Till White 애플리케이션 공통 알림
 
       성공, 오류, 경고, 안내 메시지를 하나의 공통 컴포넌트에서 표시합니다.
-      메시지가 있을 때만 렌더링하며 모든 알림은 사용자가 직접 닫을 수 있습니다.
+      메시지가 있을 때만 렌더링하며 성공·안내는 자동 종료되고 오류·경고는 사용자가 직접 확인합니다.
     -->
     <Transition name="app-alert">
       <v-alert
@@ -22,11 +22,13 @@
 </template>
 
 <script setup>
+import { onBeforeUnmount, watch } from 'vue';
+
 /**
  * 공통 알림의 메시지와 Vuetify 표시 방식을 전달받습니다.
  * 닫기 기능은 모든 화면에서 동일하게 제공하므로 별도 속성으로 노출하지 않습니다.
  */
-defineProps({
+const props = defineProps({
   modelValue: {
     type: String,
     default: '',
@@ -47,6 +49,23 @@ defineProps({
 const emit = defineEmits([
   'update:modelValue',
 ]);
+
+
+let autoCloseTimer = null;
+
+/** 성공·일반 안내는 업무를 가리지 않도록 5초 뒤 자동으로 닫고 오류·경고는 직접 확인하게 둡니다. */
+watch(() => props.modelValue, (message) => {
+  if (autoCloseTimer) clearTimeout(autoCloseTimer);
+  autoCloseTimer = null;
+
+  if (message && ['success', 'info'].includes(props.type)) {
+    autoCloseTimer = setTimeout(close, 5000);
+  }
+}, { immediate: true });
+
+onBeforeUnmount(() => {
+  if (autoCloseTimer) clearTimeout(autoCloseTimer);
+});
 
 /** 사용자가 닫기 버튼을 누르면 현재 공통 알림을 종료합니다. */
 function close() {

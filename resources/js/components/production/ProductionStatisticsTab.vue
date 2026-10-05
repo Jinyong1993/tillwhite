@@ -10,7 +10,7 @@
     <div class="period-fields">
       <v-text-field v-model="from" type="date" label="시작일" variant="outlined" density="compact" hide-details />
       <v-text-field v-model="to" type="date" label="종료일" variant="outlined" density="compact" hide-details />
-      <v-btn variant="flat" @click="load">조회</v-btn>
+      <v-btn variant="flat" :loading="loading" @click="load">조회</v-btn>
     </div>
 
     <v-divider />
@@ -32,7 +32,7 @@
         <h4>일별 흐름</h4>
         <span>{{ series.length }}일</span>
       </div>
-      <div class="statistics-table-wrap">
+      <div v-if="series.length" class="statistics-table-wrap">
         <table class="statistics-table">
           <thead>
             <tr>
@@ -51,6 +51,7 @@
           </tbody>
         </table>
       </div>
+      <div v-else class="statistics-empty"><v-icon icon="mdi-chart-line-variant" size="22"/><div><strong>선택한 기간에 기록이 없습니다.</strong><span>기간을 변경하거나 생산·폐기 기록이 쌓인 뒤 다시 확인해 주세요.</span></div></div>
     </section>
   </div>
 </template>
@@ -69,6 +70,7 @@ const from = ref(addLocalDays(props.workDate, -9));
 const to = ref(props.workDate);
 const series = ref([]);
 const totals = ref({});
+const loading = ref(false);
 
 const cards = computed(() => [
   { title: '생산', value: totals.value.production || 0 },
@@ -78,11 +80,16 @@ const cards = computed(() => [
   { title: '폐기율', value: totals.value.waste_rate == null ? '-' : `${totals.value.waste_rate}%` },
 ]);
 
-watch(() => props.storeId, load, { immediate: true });
+watch([() => props.storeId, () => props.workDate], () => {
+  from.value = addLocalDays(props.workDate, -9);
+  to.value = props.workDate;
+  load();
+}, { immediate: true });
 
 /** 선택 기간의 객관적인 일별 통계를 서버에서 조회합니다. */
 async function load() {
-  if (!props.storeId) return;
+  if (!props.storeId || loading.value) return;
+  loading.value = true;
 
   try {
     const { data } = await window.axios.get('/tillwhite/api/production-management/statistics', {
@@ -96,6 +103,8 @@ async function load() {
     totals.value = data.totals || {};
   } catch (error) {
     emit('error', error.response?.data?.message || '통계를 불러오지 못했습니다.');
+  } finally {
+    loading.value = false;
   }
 }
 
@@ -115,8 +124,6 @@ function shortDate(date) {
 .statistics-section { padding:16px 0; }
 .stat-cards { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; margin-top:10px; }
 .stat-cards>div { padding:10px 6px; border:1px solid rgba(var(--v-border-color),.62); border-radius:10px; text-align:center; box-shadow:0 2px 7px rgba(0,0,0,.04); }
-.stat-cards>div:first-child { background:rgba(76,175,80,.09); border-color:rgba(76,175,80,.2); }
-.stat-cards>div:nth-child(4) { background:rgba(239,83,80,.08); border-color:rgba(239,83,80,.18); }
 .stat-cards span,.stat-cards strong { display:block; }
 .stat-cards span { font-size:.65rem; color:rgba(var(--v-theme-on-surface),.56); }
 .stat-cards strong { margin-top:3px; font-size:.98rem; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -127,6 +134,10 @@ function shortDate(date) {
 .statistics-table th,.statistics-table td { height:31px; padding:4px 3px; border-bottom:1px solid rgba(var(--v-border-color),.55); text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .statistics-table th { color:rgba(var(--v-theme-on-surface),.56); font-weight:550; }
 .statistics-table th:first-child,.statistics-table td:first-child { position:sticky; left:0; z-index:1; width:54px; text-align:left; background:rgb(var(--v-theme-surface)); }
+.statistics-empty { display:flex; gap:9px; align-items:flex-start; margin-top:10px; padding:12px; border-radius:10px; background:rgba(var(--v-theme-on-surface),.04); }
+.statistics-empty strong,.statistics-empty span { display:block; }
+.statistics-empty strong { font-size:.73rem; }
+.statistics-empty span { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.56); }
 @media (max-width: 600px) {
   .stat-cards { grid-template-columns:repeat(3,1fr); }
 }

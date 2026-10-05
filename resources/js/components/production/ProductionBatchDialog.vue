@@ -4,7 +4,7 @@
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
         <div>생산</div>
-        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }} · 생산 수량을 먼저 입력해 주세요.</div>
+        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}</div>
       </div>
       <v-btn icon="mdi-close" size="small" variant="text" :disabled="saving" @click="requestClose" />
     </v-card-title>
@@ -21,7 +21,8 @@
         </v-list>
       </div>
       <div class="text-subtitle-2 mb-2">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
-      <v-number-input v-model="form.quantity" label="생산 수량" variant="outlined" :min="1" class="primary-quantity-input" />
+      <div class="dialog-guide">오늘 생산한 수량을 입력해 주세요.</div>
+      <v-number-input v-model="form.quantity" label="생산 수량" variant="outlined" density="compact" :min="1" class="primary-quantity-input" />
       <v-select
         v-model="form.workerIds"
         :items="workers"
@@ -34,11 +35,12 @@
         clearable
         no-data-text="선택할 수 있는 작업자가 없습니다"
       />
-      <v-checkbox v-model="form.recipeDeviated" label="레시피와 다르게 작업함" density="compact" />
+      <v-checkbox v-model="form.recipeDeviated" label="레시피 변경" density="compact" />
       <v-textarea v-if="form.recipeDeviated" v-model="form.recipeDeviationNote" label="달라진 작업 내용" variant="outlined" rows="2" />
-      <v-checkbox v-model="form.recommendationReferenced" label="추천 참고" density="compact"/>
+      <v-checkbox v-model="form.recommendationReferenced" label="추천 생산량 참고" density="compact" hide-details/><div v-if="form.recommendationReferenced" class="field-help">추천 생산량을 확인하고 생산 수량을 결정한 경우입니다.</div>
       <v-text-field v-if="form.recommendationReferenced" v-model="form.recommendationDeviationReason" label="추천 범위와 다르게 생산한 이유 · 선택" variant="outlined"/>
       <v-textarea v-model="form.note" label="메모" variant="outlined" rows="2" />
+      <div v-if="!product?.recipe" class="recipe-empty"><v-icon icon="mdi-book-open-variant-outline" size="18"/><div><strong>등록된 레시피가 없습니다.</strong><span>레시피가 필요한 경우 제품 관리에서 등록해 주세요.</span></div></div>
       <v-divider class="my-3" />
       <div class="text-subtitle-2 mb-2">오늘 생산하지 않은 경우</div>
       <v-select v-model="zeroReason" :items="zeroReasons" item-title="title" item-value="value" label="생산 0개 사유" variant="outlined" clearable />
@@ -175,7 +177,7 @@ async function saveZero() {
 async function save() {
   if (!props.product?.id || !form.quantity) return;
   if (form.recipeDeviated && !form.recipeDeviationNote.trim()) {
-    emit('error', '레시피와 다르게 작업한 내용을 입력해주세요.');
+    emit('error', '변경한 작업 내용을 입력해 주세요.');
     return;
   }
   saving.value = true;
@@ -215,5 +217,12 @@ async function save() {
 </script>
 
 <style scoped>
-.primary-quantity-input :deep(input) { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dialog-guide { margin-bottom:9px; font-size:.7rem; line-height:1.45; color:rgba(var(--v-theme-on-surface),.6); }
+.primary-quantity-input :deep(input) { font-size:.9rem; font-weight:650; font-variant-numeric:tabular-nums; }
+.field-help { margin:-7px 0 9px 32px; font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
+.recipe-empty { display:flex; gap:8px; align-items:flex-start; margin:4px 0 10px; padding:9px 10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); }
+.recipe-empty strong,.recipe-empty span { display:block; }
+.recipe-empty strong { font-size:.72rem; font-weight:600; }
+.recipe-empty span { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.58); }
+:deep(.v-field) { font-size:.78rem; }
 </style>

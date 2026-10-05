@@ -7,9 +7,10 @@
       <span>날짜별 생산·폐기와 마감 상태를 확인합니다.</span>
     </div>
     <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 달" @click="moveMonth(1)" />
+    <div class="calendar-today-slot">
+      <v-btn v-show="month !== today.slice(0, 7)" size="small" variant="outlined" @click="goToday">오늘</v-btn>
+    </div>
   </section>
-
-  <v-divider class="mb-3" />
 
   <div class="calendar-status-guide app-supporting-text mb-3">
     <span><i class="status-dot today-dot" />오늘</span>
@@ -39,8 +40,8 @@
       </template>
       <template v-else>
         <div class="day-summary">
-          <span>생산 <b>{{ day.totals?.production || 0 }}</b></span>
-          <span>폐기 <b>{{ day.totals?.waste || 0 }}</b></span>
+          <span class="calendar-production">생산 <b>{{ day.totals?.production || 0 }}</b></span>
+          <span class="calendar-waste">폐기 <b>{{ day.totals?.waste || 0 }}</b></span>
         </div>
         <span class="day-state">{{ calendarStatusText(day) }}</span>
       </template>
@@ -62,11 +63,15 @@
             <strong>{{ calendarStatusText(selectedDay) }}</strong>
             <span v-if="selectedDay.status !== 'store_closed'">{{ dayCheckText(selectedDay) }}</span>
           </div>
+          <div v-if="!hasDayData(selectedDay)" class="calendar-empty-state">
+            <v-icon icon="mdi-calendar-blank-outline" size="22" />
+            <div><strong>이 날짜에는 기록이 없습니다.</strong><span>생산·이월·로스·폐기 기록이 생기면 여기에 표시됩니다.</span></div>
+          </div>
           <div class="day-detail">
-            <div><span>생산</span><strong>{{ selectedDay.totals.production }}</strong></div>
+            <div class="production-detail"><span>생산</span><strong>{{ selectedDay.totals.production }}</strong></div>
             <div><span>이월</span><strong>{{ selectedDay.totals.carryover }}</strong></div>
             <div><span>로스</span><strong>{{ selectedDay.totals.loss }}</strong></div>
-            <div><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
+            <div class="waste-detail"><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
             <div><span>폐기율</span><strong>{{ selectedDay.totals.waste_rate == null ? '-' : `${selectedDay.totals.waste_rate}%` }}</strong></div>
           </div>
         </div>
@@ -158,6 +163,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['error', 'success', 'jump-date']);
+const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
 const month = ref(props.workDate.slice(0, 7));
 const days = ref([]);
 const loading = ref(false);
@@ -314,6 +320,20 @@ function dayCheckText(day) {
   return '세부 확인이나 입력이 필요하면 목록에서 확인해 주세요.';
 }
 
+/** 현재 월로 즉시 돌아가며 날짜 위치가 흔들리지 않도록 전용 영역을 사용합니다. */
+function goToday() {
+  month.value = today.slice(0, 7);
+  load();
+}
+
+/** 기록이 전혀 없는 날짜와 실제 0개 기록을 안내 문구에서 구분하기 위한 표시 판단입니다. */
+function hasDayData(day) {
+  if (!day?.totals) return false;
+  return ['production', 'carryover', 'loss', 'waste'].some((key) => Number(day.totals[key] || 0) > 0)
+    || day.status === 'closed'
+    || Boolean(day.events?.length);
+}
+
 /** 선택 날짜의 생산·이월·로스·폐기 요약을 상세 다이얼로그로 엽니다. */
 function openDay(day) {
   selectedDay.value = day;
@@ -384,7 +404,8 @@ async function saveEvent() {
 </script>
 <style scoped>
 .calendar-page { min-height:420px; }
-.calendar-toolbar { display:flex; align-items:center; justify-content:center; gap:10px; padding:2px 0 14px; }
+.calendar-toolbar { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; padding:4px 58px 16px; }
+.calendar-today-slot { position:absolute; right:0; width:52px; display:flex; justify-content:flex-end; }
 .calendar-month-copy { min-width:180px; text-align:center; }
 .calendar-month-copy strong,.calendar-month-copy span { display:block; }
 .calendar-month-copy strong { font-size:1rem; font-weight:650; }
@@ -412,7 +433,9 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
 .event-dot { width:6px; height:6px; border-radius:50%; background:rgba(var(--v-theme-primary),.72); }
 .day-summary { display:flex; flex-direction:column; gap:1px; margin-top:9px; font-size:.64rem; color:rgba(var(--v-theme-on-surface),.58); }
 .day-summary span { display:flex; justify-content:space-between; gap:6px; }
-.day-summary b { color:rgba(var(--v-theme-on-surface),.82); font-weight:550; font-variant-numeric:tabular-nums; }
+.day-summary b { color:rgba(var(--v-theme-on-surface),.82); font-weight:600; font-variant-numeric:tabular-nums; }
+.calendar-production b { color:rgb(46,125,50); }
+.calendar-waste b { color:rgb(198,40,40); }
 .day-state { display:block; margin-top:7px; font-size:.62rem; color:rgba(var(--v-theme-on-surface),.5); }
 .calendar-cell.closed .day-state { margin-top:28px; text-align:center; }
 .calendar-actions { display:flex; justify-content:flex-end; margin-top:14px; }
@@ -429,11 +452,15 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
 .day-dialog-status span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
 .day-detail { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
 .day-detail>div { padding:10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.035); text-align:center; }
-.day-detail>div:first-child { background:rgba(76,175,80,.09); }
-.day-detail>div:nth-child(4) { background:rgba(239,83,80,.08); }
+.day-detail>div.production-detail { background:rgba(76,175,80,.13); }
+.day-detail>div.waste-detail { background:rgba(239,83,80,.12); }
 .day-detail span,.day-detail strong { display:block; }
 .day-detail span { font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
 .day-detail strong { margin-top:2px; font-size:.9rem; font-weight:600; font-variant-numeric:tabular-nums; }
+.calendar-empty-state { display:flex; align-items:flex-start; gap:9px; margin-bottom:12px; padding:11px; border-radius:10px; background:rgba(var(--v-theme-on-surface),.04); }
+.calendar-empty-state strong,.calendar-empty-state span { display:block; }
+.calendar-empty-state strong { font-size:.75rem; font-weight:600; }
+.calendar-empty-state span { margin-top:2px; font-size:.67rem; color:rgba(var(--v-theme-on-surface),.58); }
 @media(max-width:760px) {
   .calendar-grid { gap:3px; }
   .calendar-cell { min-height:72px; padding:5px; border-radius:7px; }

@@ -68,7 +68,6 @@
 
           <v-window-item value="analysis">
             <ProductionAnalysisTab
-              v-if="tab === 'analysis'"
               :store-id="storeId"
               :work-date="workDate"
               @error="setError"
@@ -77,7 +76,6 @@
 
           <v-window-item value="statistics">
             <ProductionStatisticsTab
-              v-if="tab === 'statistics'"
               :store-id="storeId"
               :work-date="workDate"
               @error="setError"

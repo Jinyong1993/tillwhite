@@ -291,16 +291,21 @@ class ProductionManagementController extends Controller
         );
     }
 
-    /** 미입력 로스 또는 폐기만 일괄 0개로 확인하며 기존 입력은 건드리지 않습니다. */
+    /** 미확인 생산·이월·로스·폐기를 0개 상태로 확인하며 기존 실제 기록은 건드리지 않습니다. */
     public function bulkConfirmZero(Request $request): JsonResponse
     {
         $user = $this->user($request);
         $this->accessService->requirePermission($user, 'production.update');
-        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'type' => ['required', Rule::in(['loss', 'waste'])]]);
+        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'type' => ['required', Rule::in(['production', 'carryover', 'loss', 'waste'])]]);
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
         $products = Product::query()->where('store_id', $data['store_id'])->where('is_active', true)->whereNull('deleted_at')->pluck('id');
-        $field = $data['type'] === 'loss' ? 'loss_confirmed' : 'waste_confirmed';
+        $field = [
+            'production' => 'production_confirmed',
+            'carryover' => 'disposition_confirmed',
+            'loss' => 'loss_confirmed',
+            'waste' => 'waste_confirmed',
+        ][$data['type']];
         $confirmedCount = 0;
 
         try {
@@ -316,20 +321,21 @@ class ProductionManagementController extends Controller
                         continue;
                     }
 
-                    // SQLite/MySQL 모두에서 동일 키 재요청을 안전하게 처리하도록 DB upsert를 사용합니다.
-                    DB::table('production_confirmations')->upsert(
-                        [[
+                    if ($existing) {
+                        $existing->update([
+                            $field => true,
+                            'confirmed_by' => $user->id,
+                        ]);
+                    } else {
+                        ProductionConfirmation::create([
                             'store_id' => $data['store_id'],
                             'product_id' => $productId,
                             'work_date' => $data['work_date'],
                             $field => true,
                             'confirmed_by' => $user->id,
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]],
-                        ['store_id', 'product_id', 'work_date'],
-                        [$field, 'confirmed_by', 'updated_at'],
-                    );
+                        ]);
+                    }
+
                     $confirmedCount++;
                 }
             });
@@ -337,7 +343,12 @@ class ProductionManagementController extends Controller
             report($error);
             abort(500, '일괄 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
         }
-        $label = $data['type'] === 'loss' ? '로스' : '폐기';
+        $label = [
+            'production' => '생산',
+            'carryover' => '이월',
+            'loss' => '로스',
+            'waste' => '폐기',
+        ][$data['type']];
         $this->auditService->log($user, 'production', 'confirm', ProductionConfirmation::class, null, null, $data, "미입력 {$label} 전체 0 확인");
         return response()->json(['message' => "미입력 {$label}를 전체 0개로 확인했습니다."]);
     }
@@ -370,7 +381,11 @@ class ProductionManagementController extends Controller
         $this->assertStoreReadable($user, (int) $data['store_id']);
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
         $incomplete = collect($daily['rows'])->where('is_active', true)->where('complete', false)->values();
-        return response()->json(['daily' => $daily, 'can_close' => $incomplete->isEmpty(), 'incomplete' => $incomplete, 'weather_status' => StoreDailyWeather::query()->where('store_id', $data['store_id'])->whereDate('work_date', $data['work_date'])->value('collection_status') ?? 'pending']);
+        return response()->json([
+            'daily' => $daily,
+            'can_close' => $incomplete->isEmpty(),
+            'incomplete' => $incomplete,
+        ]);
     }
 
     /** 사용자의 최종 확인 뒤 하루 업무를 마감합니다. 미완료나 수량 불일치가 있으면 서버에서 차단합니다. */
@@ -535,18 +550,46 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => $data['status'] === 'closed' ? '휴점일로 설정했습니다.' : '휴점을 해제했습니다.']);
     }
 
-    /** 기간별 생산·이월·로스·폐기 통계를 반환합니다. */
+    /** 기간별 생산·이월·로스·폐기 통계를 날짜별 집계 쿼리로 빠르게 반환합니다. */
     public function statistics(Request $request): JsonResponse
     {
         $user = $this->user($request);
         $this->accessService->requirePermission($user, 'production.view');
-        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'from' => ['required', 'date_format:Y-m-d'], 'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from']]);
-        $this->assertStoreReadable($user, (int) $data['store_id']);
+        $data = $request->validate([
+            'store_id' => ['required', 'integer', 'exists:stores,id'],
+            'from' => ['required', 'date_format:Y-m-d'],
+            'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+        $storeId = (int) $data['store_id'];
+        $this->assertStoreReadable($user, $storeId);
+
+        // 일별 화면 전체를 날짜마다 다시 조립하지 않고 통계에 필요한 수량만 DB에서 한 번씩 집계합니다.
+        $production = $this->sumByDate(ProductionBatch::query(), $storeId, 'work_date', $data['from'], $data['to']);
+        $carryover = $this->sumByDate(
+            ProductStockMovement::query()->where('movement_type', 'carryover_in'),
+            $storeId,
+            'work_date',
+            $data['from'],
+            $data['to'],
+        );
+        $loss = $this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $data['from'], $data['to']);
+        $waste = $this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $data['from'], $data['to']);
+
         $series = collect();
         for ($date = Carbon::parse($data['from']); $date->lte(Carbon::parse($data['to'])); $date->addDay()) {
-            $daily = $this->dailyService->build((int) $data['store_id'], $date->toDateString());
-            $series->push(['date' => $date->toDateString(), ...$daily['totals']]);
+            $key = $date->toDateString();
+            $productionValue = (int) ($production[$key] ?? 0);
+            $wasteValue = (int) ($waste[$key] ?? 0);
+            $series->push([
+                'date' => $key,
+                'production' => $productionValue,
+                'carryover' => (int) ($carryover[$key] ?? 0),
+                'loss' => (int) ($loss[$key] ?? 0),
+                'waste' => $wasteValue,
+                'waste_rate' => $productionValue > 0 ? round($wasteValue / $productionValue * 100, 1) : null,
+            ]);
         }
+
         $productionTotal = (int) $series->sum('production');
         $wasteTotal = (int) $series->sum('waste');
 
@@ -557,11 +600,23 @@ class ProductionManagementController extends Controller
                 'carryover' => (int) $series->sum('carryover'),
                 'loss' => (int) $series->sum('loss'),
                 'waste' => $wasteTotal,
-                'waste_rate' => $productionTotal > 0
-                    ? round(($wasteTotal / $productionTotal) * 100, 1)
-                    : null,
+                'waste_rate' => $productionTotal > 0 ? round($wasteTotal / $productionTotal * 100, 1) : null,
             ],
         ]);
+    }
+
+    /** 날짜 컬럼과 quantity를 기간별로 합산해 통계용 날짜=>수량 맵을 만듭니다. */
+    private function sumByDate($query, int $storeId, string $dateColumn, string $from, string $to): array
+    {
+        return $query
+            ->where('store_id', $storeId)
+            ->whereDate($dateColumn, '>=', $from)
+            ->whereDate($dateColumn, '<=', $to)
+            ->selectRaw("DATE({$dateColumn}) as aggregate_date, SUM(quantity) as aggregate_quantity")
+            ->groupByRaw("DATE({$dateColumn})")
+            ->pluck('aggregate_quantity', 'aggregate_date')
+            ->map(fn ($quantity) => (int) $quantity)
+            ->all();
     }
 
     /** 제품별 최근 흐름을 검사해 확인이 필요한 항목과 설명 가능한 추천을 반환합니다. */
@@ -585,10 +640,12 @@ class ProductionManagementController extends Controller
 
         // 같은 날짜의 일일 계산을 제품마다 반복하지 않고 28일을 한 번씩만 계산합니다.
         $historyByProduct = collect();
+        $dailyFlow = collect();
         for ($i = 28; $i >= 1; $i--) {
             $date = $target->copy()->subDays($i)->toDateString();
             $daily = $this->dailyService->build($storeId, $date);
             $specialDay = ! empty($this->eventsForDate($storeId, $date));
+            $dailyFlow->push(['date' => $date, ...$daily['totals']]);
 
             foreach ($daily['rows'] as $row) {
                 if (! $row['production_confirmed']) {
@@ -634,7 +691,24 @@ class ProductionManagementController extends Controller
             ];
         })->values();
 
-        return response()->json(['items' => $items]);
+        $productTotals = $products->map(function (Product $product) use ($historyByProduct) {
+            $history = collect($historyByProduct->get($product->id, []));
+
+            return [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'production' => (int) $history->sum('production'),
+                'carryover' => (int) $history->sum('carryover_in'),
+                'loss' => (int) $history->sum('loss'),
+                'waste' => (int) $history->sum('waste'),
+            ];
+        })->values();
+
+        return response()->json([
+            'items' => $items,
+            'daily_flow' => $dailyFlow,
+            'product_totals' => $productTotals,
+        ]);
     }
 
     /** 선택한 날짜의 생산 관련 변경 이력을 최신순으로 반환합니다. */
