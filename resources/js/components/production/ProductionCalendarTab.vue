@@ -4,7 +4,7 @@
     <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 달" @click="moveMonth(-1)" />
     <div class="calendar-month-copy">
       <strong>{{ monthLabel }}</strong>
-      <span>날짜별 생산·판매·폐기와 마감 상태를 확인합니다.</span>
+      <span>날짜별 생산·폐기와 마감 상태를 확인합니다.</span>
     </div>
     <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 달" @click="moveMonth(1)" />
   </section>
@@ -40,7 +40,6 @@
       <template v-else>
         <div class="day-summary">
           <span>생산 <b>{{ day.totals?.production || 0 }}</b></span>
-          <span>판매 <b>{{ day.totals?.sale || 0 }}</b></span>
           <span>폐기 <b>{{ day.totals?.waste || 0 }}</b></span>
         </div>
         <span class="day-state">{{ calendarStatusText(day) }}</span>
@@ -65,7 +64,6 @@
           </div>
           <div class="day-detail">
             <div><span>생산</span><strong>{{ selectedDay.totals.production }}</strong></div>
-            <div><span>판매</span><strong>{{ selectedDay.totals.sale }}</strong></div>
             <div><span>이월</span><strong>{{ selectedDay.totals.carryover }}</strong></div>
             <div><span>로스</span><strong>{{ selectedDay.totals.loss }}</strong></div>
             <div><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
@@ -316,7 +314,7 @@ function dayCheckText(day) {
   return '세부 확인이나 입력이 필요하면 목록에서 확인해 주세요.';
 }
 
-/** 선택 날짜의 생산·판매·이월·로스·폐기 요약을 상세 다이얼로그로 엽니다. */
+/** 선택 날짜의 생산·이월·로스·폐기 요약을 상세 다이얼로그로 엽니다. */
 function openDay(day) {
   selectedDay.value = day;
   dayOpen.value = true;
@@ -431,6 +429,8 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
 .day-dialog-status span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
 .day-detail { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
 .day-detail>div { padding:10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.035); text-align:center; }
+.day-detail>div:first-child { background:rgba(76,175,80,.09); }
+.day-detail>div:nth-child(4) { background:rgba(239,83,80,.08); }
 .day-detail span,.day-detail strong { display:block; }
 .day-detail span { font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
 .day-detail strong { margin-top:2px; font-size:.9rem; font-weight:600; font-variant-numeric:tabular-nums; }
@@ -439,7 +439,6 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
   .calendar-cell { min-height:72px; padding:5px; border-radius:7px; }
   .calendar-month-copy span,.calendar-status-guide { display:none; }
   .day-summary { margin-top:6px; font-size:.58rem; }
-  .day-summary span:nth-child(2) { display:none; }
   .day-state { margin-top:4px; font-size:.56rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .calendar-cell.closed .day-state { margin-top:18px; }
   .day-detail { grid-template-columns:repeat(3,1fr); gap:5px; }

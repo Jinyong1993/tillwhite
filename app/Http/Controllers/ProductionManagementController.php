@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\EmployeeAssignment;
 use App\Models\Product;
 use App\Models\ProductStockLot;
 use App\Models\ProductStockMovement;
@@ -66,9 +67,8 @@ class ProductionManagementController extends Controller
         $this->assertStoreReadable($user, $storeId);
         $stores = $this->accessibleStores($user);
         $products = Product::query()->with('category:id,name')->where('store_id', $storeId)->where('is_active', true)->orderBy('product_category_id')->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'product_category_id', 'production_department']);
-        $workerIds = WorkSchedule::query()->where('store_id', $storeId)->whereDate('work_date', $validated['date'])->pluck('user_id');
-        $workers = User::query()->whereIn('id', $workerIds)->where('employment_status', 'active')->where('is_active', true)->orderBy('name')->get(['id', 'name', 'department']);
-        return response()->json(['stores' => $stores, 'products' => $products, 'workers' => $workers, 'store_read_only' => $user->isHeadOffice() && $user->role?->code !== 'super_admin', 'loss_reasons' => [['value' => 'production_error', 'title' => '생산 실수'], ['value' => 'shape_failure', 'title' => '모양 불량'], ['value' => 'baking_failure', 'title' => '굽기 불량'], ['value' => 'dough_issue', 'title' => '재료·반죽 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'other', 'title' => '기타']], 'waste_reasons' => [['value' => 'unsold', 'title' => '판매 후 잔여'], ['value' => 'quality', 'title' => '품질 저하'], ['value' => 'storage', 'title' => '보관 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'carryover_waste', 'title' => '이월 후 폐기'], ['value' => 'other', 'title' => '기타']], 'zero_reasons' => [['value' => 'no_plan', 'title' => '생산계획 없음'], ['value' => 'material_shortage', 'title' => '재료 부족'], ['value' => 'equipment_issue', 'title' => '설비 문제'], ['value' => 'staffing_issue', 'title' => '인력 문제'], ['value' => 'no_demand', 'title' => '주문·수요 없음'], ['value' => 'other', 'title' => '기타']]]);
+        $workers = $this->availableWorkers($storeId, $validated['date']);
+        return response()->json(['stores' => $stores, 'products' => $products, 'workers' => $workers, 'store_read_only' => $user->isHeadOffice() && $user->role?->code !== 'super_admin', 'loss_reasons' => [['value' => 'production_error', 'title' => '생산 실수'], ['value' => 'shape_failure', 'title' => '모양 불량'], ['value' => 'baking_failure', 'title' => '굽기 불량'], ['value' => 'dough_issue', 'title' => '재료·반죽 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'other', 'title' => '기타']], 'waste_reasons' => [['value' => 'unsold', 'title' => '당일 잔여'], ['value' => 'quality', 'title' => '품질 저하'], ['value' => 'storage', 'title' => '보관 문제'], ['value' => 'damage', 'title' => '파손'], ['value' => 'carryover_waste', 'title' => '이월 후 폐기'], ['value' => 'other', 'title' => '기타']], 'zero_reasons' => [['value' => 'no_plan', 'title' => '생산계획 없음'], ['value' => 'material_shortage', 'title' => '재료 부족'], ['value' => 'equipment_issue', 'title' => '설비 문제'], ['value' => 'staffing_issue', 'title' => '인력 문제'], ['value' => 'no_demand', 'title' => '주문·수요 없음'], ['value' => 'other', 'title' => '기타']]]);
     }
 
     /**
@@ -246,13 +246,6 @@ class ProductionManagementController extends Controller
                 $this->confirmFlowField($storeId, $productId, $date, 'disposition_confirmed', $user->id);
             }
 
-            $daily = $this->dailyService->build($storeId, $date);
-            $row = collect($daily['rows'])->firstWhere('id', $productId);
-            abort_if(
-                ($row['mismatch'] ?? false) === true,
-                422,
-                '처리 수량이 사용 가능한 수량보다 많습니다. 입력값을 다시 확인해주세요.',
-            );
         });
 
         $labels = [
@@ -307,12 +300,42 @@ class ProductionManagementController extends Controller
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
         $products = Product::query()->where('store_id', $data['store_id'])->where('is_active', true)->whereNull('deleted_at')->pluck('id');
-        foreach ($products as $productId) {
-            $confirmation = ProductionConfirmation::firstOrCreate(['store_id' => $data['store_id'], 'product_id' => $productId, 'work_date' => $data['work_date']], ['confirmed_by' => $user->id]);
-            $field = $data['type'] === 'loss' ? 'loss_confirmed' : 'waste_confirmed';
-            if (!$confirmation->{$field}) {
-                $confirmation->forceFill([$field => true, 'confirmed_by' => $user->id])->save();
-            }
+        $field = $data['type'] === 'loss' ? 'loss_confirmed' : 'waste_confirmed';
+        $confirmedCount = 0;
+
+        try {
+            DB::transaction(function () use ($products, $data, $user, $field, &$confirmedCount) {
+                foreach ($products as $productId) {
+                    $existing = ProductionConfirmation::query()
+                        ->where('store_id', $data['store_id'])
+                        ->where('product_id', $productId)
+                        ->whereDate('work_date', $data['work_date'])
+                        ->first();
+
+                    if ($existing?->{$field}) {
+                        continue;
+                    }
+
+                    // SQLite/MySQL 모두에서 동일 키 재요청을 안전하게 처리하도록 DB upsert를 사용합니다.
+                    DB::table('production_confirmations')->upsert(
+                        [[
+                            'store_id' => $data['store_id'],
+                            'product_id' => $productId,
+                            'work_date' => $data['work_date'],
+                            $field => true,
+                            'confirmed_by' => $user->id,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]],
+                        ['store_id', 'product_id', 'work_date'],
+                        [$field, 'confirmed_by', 'updated_at'],
+                    );
+                    $confirmedCount++;
+                }
+            });
+        } catch (\Throwable $error) {
+            report($error);
+            abort(500, '일괄 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
         }
         $label = $data['type'] === 'loss' ? '로스' : '폐기';
         $this->auditService->log($user, 'production', 'confirm', ProductionConfirmation::class, null, null, $data, "미입력 {$label} 전체 0 확인");
@@ -347,7 +370,7 @@ class ProductionManagementController extends Controller
         $this->assertStoreReadable($user, (int) $data['store_id']);
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
         $incomplete = collect($daily['rows'])->where('is_active', true)->where('complete', false)->values();
-        return response()->json(['daily' => $daily, 'can_close' => !$daily['has_mismatch'] && $incomplete->isEmpty(), 'incomplete' => $incomplete, 'weather_status' => StoreDailyWeather::query()->where('store_id', $data['store_id'])->whereDate('work_date', $data['work_date'])->value('collection_status') ?? 'pending']);
+        return response()->json(['daily' => $daily, 'can_close' => $incomplete->isEmpty(), 'incomplete' => $incomplete, 'weather_status' => StoreDailyWeather::query()->where('store_id', $data['store_id'])->whereDate('work_date', $data['work_date'])->value('collection_status') ?? 'pending']);
     }
 
     /** 사용자의 최종 확인 뒤 하루 업무를 마감합니다. 미완료나 수량 불일치가 있으면 서버에서 차단합니다. */
@@ -358,7 +381,6 @@ class ProductionManagementController extends Controller
         $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'daily_memo' => ['nullable', 'string', 'max:2000']]);
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
-        abort_if($daily['has_mismatch'], 422, '수량이 일치하지 않는 제품이 있어 마감할 수 없습니다.');
         abort_if(collect($daily['rows'])->where('is_active', true)->contains('complete', false), 422, '아직 확인하지 않은 제품이 있어 마감할 수 없습니다.');
         ProductionDailyClosure::updateOrCreate(['store_id' => $data['store_id'], 'work_date' => $data['work_date']], ['status' => 'closed', 'daily_memo' => $data['daily_memo'] ?? null, 'closed_by' => $user->id, 'closed_at' => now(), 'updated_by' => $user->id]);
         StoreDailyWeather::firstOrCreate(['store_id' => $data['store_id'], 'work_date' => $data['work_date']], ['collection_status' => 'pending']);
@@ -396,10 +418,7 @@ class ProductionManagementController extends Controller
         $production = $this->monthlyQuantities(ProductionBatch::query(), $storeId, 'work_date', $startDate, $endDate);
         $losses = $this->monthlyQuantities(ProductionLoss::query(), $storeId, 'work_date', $startDate, $endDate);
         $wastes = $this->monthlyQuantities(ProductionWaste::query(), $storeId, 'attribution_date', $startDate, $endDate);
-        $operationalWastes = $this->monthlyQuantities(ProductionWaste::query(), $storeId, 'work_date', $startDate, $endDate);
-        $outflows = $this->monthlyQuantities(ProductionOtherOutflow::query(), $storeId, 'work_date', $startDate, $endDate);
         $carryIn = $this->monthlyMovementQuantities($storeId, $startDate, $endDate, 'carryover_in');
-        $carryOut = $this->monthlyMovementQuantities($storeId, $startDate, $endDate, 'carryover_out');
 
         $closures = ProductionDailyClosure::query()
             ->where('store_id', $storeId)
@@ -426,10 +445,6 @@ class ProductionManagementController extends Controller
             $carriedIn = (int) ($carryIn[$dateKey] ?? 0);
             $loss = (int) ($losses[$dateKey] ?? 0);
             $waste = (int) ($wastes[$dateKey] ?? 0);
-            $operationalWaste = (int) ($operationalWastes[$dateKey] ?? 0);
-            $otherOutflow = (int) ($outflows[$dateKey] ?? 0);
-            $carriedOut = (int) ($carryOut[$dateKey] ?? 0);
-            $sale = max(0, $produced + $carriedIn - $loss - $operationalWaste - $otherOutflow - $carriedOut);
             $status = $dayStatuses->get($dateKey)?->status === 'closed'
                 ? 'store_closed'
                 : ($closures->get($dateKey)?->status ?? 'in_progress');
@@ -448,7 +463,6 @@ class ProductionManagementController extends Controller
                 'totals' => [
                     'production' => $produced,
                     'carryover' => $carriedIn,
-                    'sale' => $sale,
                     'loss' => $loss,
                     'waste' => $waste,
                     'waste_rate' => $produced > 0 ? round($waste / $produced * 100, 1) : null,
@@ -521,7 +535,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => $data['status'] === 'closed' ? '휴점일로 설정했습니다.' : '휴점을 해제했습니다.']);
     }
 
-    /** 기간별 객관적인 생산·판매·로스·폐기 통계를 반환합니다. */
+    /** 기간별 생산·이월·로스·폐기 통계를 반환합니다. */
     public function statistics(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -540,7 +554,6 @@ class ProductionManagementController extends Controller
             'series' => $series,
             'totals' => [
                 'production' => $productionTotal,
-                'sale' => (int) $series->sum('sale'),
                 'carryover' => (int) $series->sum('carryover'),
                 'loss' => (int) $series->sum('loss'),
                 'waste' => $wasteTotal,
@@ -556,25 +569,53 @@ class ProductionManagementController extends Controller
     {
         $user = $this->user($request);
         $this->accessService->requirePermission($user, 'production.view');
-        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'date' => ['required', 'date_format:Y-m-d']]);
-        $this->assertStoreReadable($user, (int) $data['store_id']);
+        $data = $request->validate([
+            'store_id' => ['required', 'integer', 'exists:stores,id'],
+            'date' => ['required', 'date_format:Y-m-d'],
+        ]);
+        $storeId = (int) $data['store_id'];
+        $this->assertStoreReadable($user, $storeId);
+
         $target = Carbon::parse($data['date']);
-        $products = Product::query()->where('store_id', $data['store_id'])->where('is_active', true)->orderBy('name')->get(['id', 'name']);
-        $items = collect();
-        foreach ($products as $product) {
-            $history = collect();
-            for ($i = 28; $i >= 1; $i--) {
-                $date = $target->copy()->subDays($i)->toDateString();
-                $daily = $this->dailyService->build((int) $data['store_id'], $date);
-                $row = collect($daily['rows'])->firstWhere('id', $product->id);
-                if ($row && $row['production_confirmed']) {
-                    $history->push(['date' => $date, ...$row, 'special_day' => !empty($this->eventsForDate((int) $data['store_id'], $date))]);
+        $products = Product::query()
+            ->where('store_id', $storeId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        // 같은 날짜의 일일 계산을 제품마다 반복하지 않고 28일을 한 번씩만 계산합니다.
+        $historyByProduct = collect();
+        for ($i = 28; $i >= 1; $i--) {
+            $date = $target->copy()->subDays($i)->toDateString();
+            $daily = $this->dailyService->build($storeId, $date);
+            $specialDay = ! empty($this->eventsForDate($storeId, $date));
+
+            foreach ($daily['rows'] as $row) {
+                if (! $row['production_confirmed']) {
+                    continue;
                 }
+
+                $historyByProduct->push([
+                    'product_id' => $row['id'],
+                    'date' => $date,
+                    ...$row,
+                    'special_day' => $specialDay,
+                ]);
             }
-            $targetEvents = collect($this->eventsForDate((int) $data['store_id'], $data['date']))->filter(fn(array $event) => empty($event['products']) || collect($event['products'])->contains('id', $product->id))->values()->all();
-            $recommendation = $this->recommendationService->recommend($history, $target, $targetEvents);
+        }
+        $historyByProduct = $historyByProduct->groupBy('product_id');
+
+        $targetEvents = collect($this->eventsForDate($storeId, $data['date']));
+        $items = $products->map(function (Product $product) use ($historyByProduct, $targetEvents, $target) {
+            $history = collect($historyByProduct->get($product->id, []))->values();
+            $productEvents = $targetEvents
+                ->filter(fn (array $event) => empty($event['products']) || collect($event['products'])->contains('id', $product->id))
+                ->values()
+                ->all();
+            $recommendation = $this->recommendationService->recommend($history, $target, $productEvents);
             $recent = $history->take(-5);
             $flags = [];
+
             if ($recent->where('waste', '>', 0)->count() >= 3) {
                 $flags[] = '최근 폐기가 반복되고 있습니다.';
             }
@@ -584,8 +625,15 @@ class ProductionManagementController extends Controller
             if ($recommendation['warning']) {
                 $flags[] = $recommendation['warning'];
             }
-            $items->push(['product_id' => $product->id, 'product_name' => $product->name, 'recommendation' => $recommendation, 'flags' => $flags]);
-        }
+
+            return [
+                'product_id' => $product->id,
+                'product_name' => $product->name,
+                'recommendation' => $recommendation,
+                'flags' => $flags,
+            ];
+        })->values();
+
         return response()->json(['items' => $items]);
     }
 
@@ -674,6 +722,38 @@ class ProductionManagementController extends Controller
         return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['array'], 'workers.*.user_id' => ['required', 'integer', 'exists:users,id'], 'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
     }
 
+    /**
+     * 해당 날짜의 근무자를 우선 반환하고, 근무표가 비어 있으면 점포 소속 재직자를 보완합니다.
+     * 근무표 미등록 때문에 생산 입력 자체가 막히지 않도록 하되 다른 점포 직원은 포함하지 않습니다.
+     */
+    private function availableWorkers(int $storeId, string $date)
+    {
+        $scheduledIds = WorkSchedule::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->pluck('user_id');
+
+        $assignedIds = EmployeeAssignment::query()
+            ->where('store_id', $storeId)
+            ->whereDate('effective_from', '<=', $date)
+            ->where(function ($query) use ($date) {
+                $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $date);
+            })
+            ->pluck('user_id');
+
+        $workerIds = $scheduledIds->merge($assignedIds)->unique();
+        if ($workerIds->isEmpty()) {
+            $workerIds = User::query()->where('store_id', $storeId)->pluck('id');
+        }
+
+        return User::query()
+            ->whereIn('id', $workerIds)
+            ->where('employment_status', 'active')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'department']);
+    }
+
     /** 작업자로 선택된 직원이 해당 날짜에 실제 근무 예정인지 확인합니다. */
     private function assertWorkersScheduled(int $storeId, string $date, array $workers): void
     {
@@ -681,8 +761,8 @@ class ProductionManagementController extends Controller
             return;
         }
         $ids = collect($workers)->pluck('user_id')->unique()->values();
-        $scheduled = WorkSchedule::query()->where('store_id', $storeId)->whereDate('work_date', $date)->whereIn('user_id', $ids)->pluck('user_id')->unique();
-        abort_unless($scheduled->count() === $ids->count(), 422, '해당 날짜에 근무하지 않는 직원이 작업자에 포함되어 있습니다.');
+        $allowed = $this->availableWorkers($storeId, $date)->pluck('id');
+        abort_unless($ids->diff($allowed)->isEmpty(), 422, '선택한 작업자의 점포 소속 또는 재직 상태를 확인해주세요.');
     }
 
     /** 마감된 날짜의 일반 수정을 차단합니다. */
@@ -758,7 +838,7 @@ class ProductionManagementController extends Controller
         }
     }
 
-    /** 시식·서비스·직원사용 등 비판매 출고를 현재 입력값으로 교체합니다. */
+    /** 시식·서비스·직원사용 등 기타 출고를 현재 입력값으로 교체합니다. */
     private function replaceOutflows(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
         ProductionOtherOutflow::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->delete();

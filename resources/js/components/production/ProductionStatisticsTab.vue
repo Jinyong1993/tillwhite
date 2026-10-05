@@ -36,14 +36,13 @@
         <table class="statistics-table">
           <thead>
             <tr>
-              <th>날짜</th><th>생산</th><th>판매</th><th>이월</th><th>로스</th><th>폐기</th><th>폐기율</th>
+              <th>날짜</th><th>생산</th><th>이월</th><th>로스</th><th>폐기</th><th>폐기율</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in series" :key="row.date">
               <td>{{ shortDate(row.date) }}</td>
               <td>{{ row.production }}</td>
-              <td>{{ row.sale }}</td>
               <td>{{ row.carryover }}</td>
               <td>{{ row.loss }}</td>
               <td>{{ row.waste }}</td>
@@ -73,7 +72,6 @@ const totals = ref({});
 
 const cards = computed(() => [
   { title: '생산', value: totals.value.production || 0 },
-  { title: '판매', value: totals.value.sale || 0 },
   { title: '이월', value: totals.value.carryover || 0 },
   { title: '로스', value: totals.value.loss || 0 },
   { title: '폐기', value: totals.value.waste || 0 },
@@ -115,8 +113,10 @@ function shortDate(date) {
 .tab-heading p { margin:4px 0 0; font-size:.72rem; color:rgba(var(--v-theme-on-surface),.56); }
 .period-fields { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:center; padding-bottom:16px; }
 .statistics-section { padding:16px 0; }
-.stat-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:10px; }
+.stat-cards { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; margin-top:10px; }
 .stat-cards>div { padding:10px 6px; border:1px solid rgba(var(--v-border-color),.62); border-radius:10px; text-align:center; box-shadow:0 2px 7px rgba(0,0,0,.04); }
+.stat-cards>div:first-child { background:rgba(76,175,80,.09); border-color:rgba(76,175,80,.2); }
+.stat-cards>div:nth-child(4) { background:rgba(239,83,80,.08); border-color:rgba(239,83,80,.18); }
 .stat-cards span,.stat-cards strong { display:block; }
 .stat-cards span { font-size:.65rem; color:rgba(var(--v-theme-on-surface),.56); }
 .stat-cards strong { margin-top:3px; font-size:.98rem; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -127,6 +127,9 @@ function shortDate(date) {
 .statistics-table th,.statistics-table td { height:31px; padding:4px 3px; border-bottom:1px solid rgba(var(--v-border-color),.55); text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .statistics-table th { color:rgba(var(--v-theme-on-surface),.56); font-weight:550; }
 .statistics-table th:first-child,.statistics-table td:first-child { position:sticky; left:0; z-index:1; width:54px; text-align:left; background:rgb(var(--v-theme-surface)); }
+@media (max-width: 600px) {
+  .stat-cards { grid-template-columns:repeat(3,1fr); }
+}
 @media (max-width: 430px) {
   .period-fields { grid-template-columns:1fr 1fr; }
   .period-fields :deep(.v-btn) { grid-column:1/-1; }

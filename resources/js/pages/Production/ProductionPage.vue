@@ -36,7 +36,7 @@
         </v-tabs>
         <v-divider class="production-divider" />
 
-        <v-window v-model="tab" class="mt-4">
+        <v-window v-model="tab" class="mt-2">
           <v-window-item value="list">
             <ProductionDailyTab
               :daily="daily"
@@ -328,7 +328,7 @@ onBeforeUnmount(disposePage);
 .store-select { flex:0 1 190px; max-width:190px; }
 .store-select :deep(.v-field__input) { justify-content:flex-end; min-height:34px; padding-inline:4px; font-size:.86rem; font-weight:650; text-align:right; }
 .store-read-only { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); text-align:right; }
-.production-divider { width:100%; }
+.production-divider { width:calc(100% + 32px); margin-inline:-16px; }
 .production-tabs { min-height:42px; }
 .production-tabs :deep(.v-tab) { min-width:0; padding-inline:4px; font-size:.78rem; font-weight:500; letter-spacing:-.01em; text-transform:none; }
 .production-tabs :deep(.v-tab--selected) { font-weight:700; }

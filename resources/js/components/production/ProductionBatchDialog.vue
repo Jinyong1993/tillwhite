@@ -4,7 +4,7 @@
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
         <div>생산</div>
-        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}의 생산 수량과 작업 내용을 기록합니다.</div>
+        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }} · 생산 수량을 먼저 입력해 주세요.</div>
       </div>
       <v-btn icon="mdi-close" size="small" variant="text" :disabled="saving" @click="requestClose" />
     </v-card-title>
@@ -21,8 +21,19 @@
         </v-list>
       </div>
       <div class="text-subtitle-2 mb-2">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
-      <v-number-input v-model="form.quantity" label="생산 수량" variant="outlined" :min="1" />
-      <v-select v-model="form.workerIds" :items="workers" item-title="name" item-value="id" label="작업자" variant="outlined" multiple chips clearable />
+      <v-number-input v-model="form.quantity" label="생산 수량" variant="outlined" :min="1" class="primary-quantity-input" />
+      <v-select
+        v-model="form.workerIds"
+        :items="workers"
+        item-title="name"
+        item-value="id"
+        label="작업자 · 선택"
+        variant="outlined"
+        multiple
+        chips
+        clearable
+        no-data-text="선택할 수 있는 작업자가 없습니다"
+      />
       <v-checkbox v-model="form.recipeDeviated" label="레시피와 다르게 작업함" density="compact" />
       <v-textarea v-if="form.recipeDeviated" v-model="form.recipeDeviationNote" label="달라진 작업 내용" variant="outlined" rows="2" />
       <v-checkbox v-model="form.recommendationReferenced" label="추천 참고" density="compact"/>
@@ -202,3 +213,7 @@ async function save() {
   }
 }
 </script>
+
+<style scoped>
+.primary-quantity-input :deep(input) { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+</style>

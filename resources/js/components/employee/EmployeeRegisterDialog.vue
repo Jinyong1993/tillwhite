@@ -34,7 +34,7 @@
         </div>
       </div>
 
-      <v-divider />
+      <v-divider class="app-section-divider" />
 
       <!--
         직원 등록 내용
@@ -173,7 +173,7 @@
           </div>
         </section>
 
-        <v-divider />
+        <v-divider class="app-section-divider" />
 
         <!-- 계정 정보 -->
         <section class="register-section">
@@ -247,7 +247,7 @@
           </div>
         </section>
 
-        <v-divider />
+        <v-divider class="app-section-divider" />
 
         <!-- 소속 정보 -->
         <section class="register-section">
@@ -396,7 +396,7 @@
         </section>
       </div>
 
-      <v-divider />
+      <v-divider class="app-section-divider" />
 
       <!--
         직원 등록 고정 하단 영역

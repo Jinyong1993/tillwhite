@@ -1,25 +1,31 @@
 <template>
 <div class="daily-page">
   <section class="daily-section date-section">
-    <div class="production-date-nav">
+    <div class="date-panel">
       <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 날짜" @click="moveDate(-1)" />
       <v-menu v-model="dateMenu" :close-on-content-click="false">
         <template #activator="{ props: menuProps }">
-          <v-btn v-bind="menuProps" variant="text" class="date-button">{{ formatKoreanDate(workDate) }}</v-btn>
+          <button v-bind="menuProps" type="button" class="date-main-button">
+            <span>{{ formatKoreanDate(workDate) }}</span>
+            <small>{{ workDate === today ? '오늘 업무' : '선택 날짜 업무' }}</small>
+          </button>
         </template>
         <v-date-picker :model-value="workDate" @update:model-value="selectPickerDate" />
       </v-menu>
       <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 날짜" @click="moveDate(1)" />
-      <v-btn v-if="workDate !== today" size="small" variant="text" @click="emit('update:workDate', today)">오늘</v-btn>
+      <v-btn v-if="workDate !== today" size="small" variant="outlined" class="today-button" @click="emit('update:workDate', today)">오늘</v-btn>
     </div>
   </section>
 
-  <v-divider />
-
-  <v-alert v-if="daily.blocking_previous_date" type="warning" variant="tonal" density="compact" class="my-3 app-supporting-alert">
-    {{ daily.blocking_previous_date }} 업무가 아직 마감되지 않았습니다. 이전 날짜를 먼저 마감해 주세요.
+  <v-alert v-if="daily.blocking_previous_date" type="warning" variant="tonal" density="compact" class="previous-close-alert app-supporting-alert">
+    <div class="previous-close-copy">
+      <strong>이전 업무 마감이 필요합니다</strong>
+      <span>{{ daily.blocking_previous_date }} 업무를 먼저 마감해 주세요.</span>
+    </div>
     <template #append>
-      <v-btn size="small" variant="text" @click="emit('update:workDate', daily.blocking_previous_date)">이동</v-btn>
+      <v-btn size="small" variant="outlined" class="previous-close-action" @click="emit('update:workDate', daily.blocking_previous_date)">
+        {{ shortDateLabel(daily.blocking_previous_date) }}로 이동
+      </v-btn>
     </template>
   </v-alert>
 
@@ -46,6 +52,18 @@
         <p>{{ progressText }}</p>
         <div class="work-progress" aria-label="제품 기록 진행률"><span :style="{ width: `${progressPercent}%` }" /></div>
         <div v-if="missingSummaryText" class="missing-summary">{{ missingSummaryText }}</div>
+        <div class="missing-type-grid">
+          <button
+            v-for="item in missingItems"
+            :key="item.key"
+            type="button"
+            :class="['missing-type-button', { active: missingType === item.key, complete: item.count === 0 }]"
+            @click="toggleMissingType(item.key)"
+          >
+            <span>{{ item.label }}</span>
+            <strong>{{ item.count ? `${item.count}개` : '완료' }}</strong>
+          </button>
+        </div>
       </div>
       <v-menu v-if="canMutate" location="bottom end">
         <template #activator="{ props: menuProps }">
@@ -78,7 +96,7 @@
         <v-btn value="missing">기록 미완료</v-btn>
         <v-btn value="occurred">변동 있음</v-btn>
       </v-btn-toggle>
-      <span class="app-supporting-text text-medium-emphasis">{{ filteredRows.length }}개 제품</span>
+      <span class="app-supporting-text text-medium-emphasis">{{ filterResultLabel }}</span>
     </div>
 
     <section v-for="group in groupedRows" :key="group.name" class="category-block">
@@ -109,29 +127,27 @@
           <table class="product-table">
             <colgroup>
               <col class="product-column" />
-              <col v-for="key in 6" :key="key" class="number-column" />
+              <col v-for="key in 5" :key="key" class="number-column" />
             </colgroup>
             <thead>
               <tr>
-                <th>제품명</th><th>생산</th><th>이월</th><th>판매</th><th>로스</th><th>폐기</th><th>폐기율</th>
+                <th>제품명</th><th>생산</th><th>이월</th><th>로스</th><th>폐기</th><th>폐기율</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in group.rows" :key="row.id" :class="{ 'row-inactive': !row.is_active, 'row-needs-check': !row.complete && row.is_active }">
                 <td>
                   <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
-                  <span v-if="row.mismatch" class="row-warning">수량 오류</span>
                 </td>
-                <td><button type="button" class="table-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
+                <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
                 <td><button type="button" class="table-value" @click="openFlow(row, 'carryover')">{{ row.carryover_in }}</button></td>
-                <td><button type="button" class="table-value calculated" @click="openSale(row)">{{ row.sale }}</button></td>
                 <td><button type="button" class="table-value" :class="{ attention: row.loss > 0, pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
-                <td><button type="button" class="table-value" :class="{ attention: row.waste > 0, pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
+                <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
                 <td class="rate-value">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</td>
               </tr>
               <tr class="subtotal-row">
                 <td>소계</td>
-                <td>{{ sum(group.rows, 'production') }}</td><td>{{ sum(group.rows, 'carryover_in') }}</td><td>{{ sum(group.rows, 'sale') }}</td><td>{{ sum(group.rows, 'loss') }}</td><td>{{ sum(group.rows, 'waste') }}</td><td>{{ groupWasteRate(group.rows) }}</td>
+                <td>{{ sum(group.rows, 'production') }}</td><td>{{ sum(group.rows, 'carryover_in') }}</td><td>{{ sum(group.rows, 'loss') }}</td><td>{{ sum(group.rows, 'waste') }}</td><td>{{ groupWasteRate(group.rows) }}</td>
               </tr>
             </tbody>
           </table>
@@ -146,7 +162,7 @@
     <v-btn variant="text" prepend-icon="mdi-history" @click="openHistory">변경 이력</v-btn>
     <v-spacer />
     <v-btn v-if="daily.closure_status === 'closed'" variant="outlined" :disabled="!canCorrect" @click="correctionOpen=true">마감 후 수정</v-btn>
-    <v-btn v-else variant="flat" :disabled="daily.closure_status === 'store_closed' || !canMutate" @click="previewClose">오늘 마감</v-btn>
+    <v-btn v-else variant="flat" :disabled="daily.closure_status === 'store_closed' || !canMutate" @click="previewClose">마감</v-btn>
   </div>
   <ProductionBatchDialog v-model="batchOpen" :product="selectedProduct" :store-id="storeId" :work-date="workDate" :workers="options.workers || []" :zero-reasons="options.zero_reasons || []" @saved="handleSaved" @error="emit('error', $event)" />
   <ProductionFlowDialog
@@ -198,19 +214,7 @@
         </div>
         <div class="summary-detail-meta">{{ formatKoreanDate(workDate) }} · {{ detailSelectedRow?.name || `${activeRows.length}개 제품` }}</div>
         <v-divider class="dialog-full-divider" />
-        <template v-if="detailSelectedRow && detailMetricKey === 'sale'">
-          <div class="summary-detail-heading">판매 계산 기준</div>
-          <div class="sale-calculation">
-            <div><span>생산</span><strong>{{ detailSelectedRow.production }}</strong></div>
-            <div><span>전일 이월</span><strong>+ {{ detailSelectedRow.carryover_in }}</strong></div>
-            <div><span>로스</span><strong>- {{ detailSelectedRow.loss }}</strong></div>
-            <div><span>폐기</span><strong>- {{ detailSelectedRow.waste }}</strong></div>
-            <div><span>기타 출고</span><strong>- {{ detailSelectedRow.other_outflow }}</strong></div>
-            <div><span>다음날 이월</span><strong>- {{ detailSelectedRow.carryover_out }}</strong></div>
-          </div>
-          <p class="calculation-note">판매는 생산과 이월에서 로스·폐기·기타 출고·다음날 이월을 제외해 계산합니다.</p>
-        </template>
-        <template v-else>
+
         <div class="summary-detail-heading">제품별 {{ detailMetricTitle }}</div>
         <div v-if="detailRows.length" class="summary-detail-list">
           <div v-for="row in detailRows" :key="row.id" class="summary-detail-row">
@@ -219,7 +223,7 @@
           </div>
         </div>
         <div v-else class="summary-detail-empty">표시할 기록이 없습니다.</div>
-        </template>
+
       </v-card-text>
       <v-card-actions class="app-dialog-footer">
         <v-btn variant="text" @click="detailOpen=false">닫기</v-btn>
@@ -232,10 +236,18 @@
         <span>변경 이력</span>
         <v-btn icon="mdi-close" size="small" variant="text" @click="historyOpen=false"/>
       </v-card-title>
-      <v-card-text class="app-dialog-body">
-        <v-list v-if="historyLogs.length" lines="two">
-          <v-list-item v-for="log in historyLogs" :key="log.id" :title="log.description" :subtitle="`${log.user?.name || '-'} · ${new Date(log.created_at).toLocaleString('ko-KR')}`"/>
-        </v-list>
+      <v-card-text class="app-dialog-body history-body">
+        <div class="history-context">{{ formatKoreanDate(workDate) }}의 생산·이월·로스·폐기 변경 기록입니다.</div>
+        <v-divider class="app-section-divider" />
+        <div v-if="historyLogs.length" class="history-list">
+          <article v-for="log in historyLogs" :key="log.id" class="history-item">
+            <div class="history-item-head">
+              <strong>{{ log.description || '업무 기록 변경' }}</strong>
+              <span class="history-action">{{ historyActionLabel(log.action) }}</span>
+            </div>
+            <div class="history-meta">{{ log.user?.name || '-' }} · {{ new Date(log.created_at).toLocaleString('ko-KR') }}</div>
+          </article>
+        </div>
         <v-empty-state v-else title="변경 이력이 없습니다." icon="mdi-history"/>
       </v-card-text>
       <v-card-actions class="app-dialog-footer">
@@ -245,9 +257,9 @@
   </v-dialog>
   <v-dialog v-model="closeOpen" max-width="720" persistent>
     <v-card rounded="lg" class="app-dialog-card">
-      <v-card-title class="app-dialog-header">하루 마감 최종 확인</v-card-title>
+      <v-card-title class="app-dialog-header">마감 최종확인</v-card-title>
       <v-card-text class="app-dialog-body">
-        <div class="app-supporting-text text-medium-emphasis mb-3">저장 전에 생산·이월·판매·로스·폐기와 미처리 항목을 다시 확인합니다.</div>
+        <div class="app-supporting-text text-medium-emphasis mb-3">저장 전에 생산·이월·로스·폐기와 미확인 항목을 다시 확인합니다.</div>
         <div class="daily-metrics mb-4">
           <div v-for="metric in metrics" :key="metric.key" class="metric-item static">
             <span>{{ metric.title }}</span>
@@ -278,7 +290,7 @@
       <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn variant="text" @click="closeOpen=false">취소</v-btn>
         <v-spacer />
-        <v-btn variant="flat" :disabled="!closePreview?.can_close" @click="confirmCloseOpen=true">저장</v-btn>
+        <v-btn variant="flat" :disabled="!closePreview?.can_close" @click="confirmCloseOpen=true">마감</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -297,8 +309,8 @@
     </v-card>
   </v-dialog>
   <ConfirmDialog v-model="correctionConfirmOpen" title="마감 후 수정" message="마감된 기록의 수정을 시작하시겠습니까? 연결된 이월 기록이 있으면 영향 날짜도 함께 확인해야 합니다." @confirm="openCorrection"/>
-  <ConfirmDialog v-model="bulkZeroConfirmOpen" :title="`${bulkZeroType === 'loss' ? '로스' : '폐기'} 일괄 확인`" :message="`미확인 제품 ${bulkZeroType === 'loss' ? missingLossCount : missingWasteCount}개를 없음(0)으로 확인합니다. 기존에 입력된 기록은 변경하지 않습니다.`" @confirm="bulkZero" />
-  <ConfirmDialog v-model="confirmCloseOpen" title="하루 마감" message="현재 확인한 내용으로 하루 업무를 마감하시겠습니까? 마감 후 일반 수정은 제한됩니다." :loading="closing" @confirm="closeDay" />
+  <ConfirmDialog v-model="bulkZeroConfirmOpen" :title="`${bulkZeroType === 'loss' ? '로스' : '폐기'} 일괄 확인`" :message="`미확인 제품 ${bulkZeroType === 'loss' ? missingLossCount : missingWasteCount}개를 없음(0)으로 확인합니다. 기존에 입력된 기록은 변경하지 않습니다.`" :loading="bulkZeroLoading" @confirm="bulkZero" />
+  <ConfirmDialog v-model="confirmCloseOpen" title="마감 최종확인" message="현재 확인한 내용으로 하루 업무를 마감하시겠습니까? 마감 후 일반 수정은 제한됩니다." :loading="closing" @confirm="closeDay" />
 </div>
 </template>
 
@@ -329,6 +341,7 @@ const today = toLocalDateString();
 const dateMenu = ref(false);
 const filter = ref('all');
 const search = ref('');
+const missingType = ref(null);
 const collapsed = ref(new Set());
 const selectedProduct = ref(null);
 const productDetail = ref(null);
@@ -351,6 +364,7 @@ const closeOpen = ref(false);
 const confirmCloseOpen = ref(false);
 const bulkZeroConfirmOpen = ref(false);
 const bulkZeroType = ref('loss');
+const bulkZeroLoading = ref(false);
 const closePreview = ref(null);
 const closing = ref(false);
 
@@ -363,15 +377,17 @@ const progressPercent = computed(() => {
   const required = Number(props.daily.required_count || 0);
   return required ? Math.round((Number(props.daily.complete_count || 0) / required) * 100) : 100;
 });
-const missingSummaryText = computed(() => {
-  const parts = [
-    ['생산', missingProductionCount.value],
-    ['로스', missingLossCount.value],
-    ['폐기', missingWasteCount.value],
-    ['이월', missingDispositionCount.value],
-  ].filter(([, count]) => count > 0).map(([label, count]) => `${label} ${count}`);
-  return parts.length ? `확인할 기록 · ${parts.join(' · ')}` : '모든 필수 기록이 확인되었습니다.';
-});
+const missingItems = computed(() => [
+  { key: 'production', label: '생산', count: missingProductionCount.value },
+  { key: 'carryover', label: '이월', count: missingDispositionCount.value },
+  { key: 'loss', label: '로스', count: missingLossCount.value },
+  { key: 'waste', label: '폐기', count: missingWasteCount.value },
+]);
+const missingSummaryText = computed(() => (
+  missingItems.value.some((item) => item.count > 0)
+    ? '확인이 필요한 기록을 선택하면 해당 제품만 빠르게 확인할 수 있습니다.'
+    : '모든 제품의 필수 기록이 확인되었습니다.'
+));
 const detailMetricTitle = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.title || '상세');
 const detailMetricValue = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.value ?? '-');
 const detailRows = computed(() => activeRows.value.map((row) => {
@@ -387,8 +403,6 @@ const metrics = computed(() => [ {
 }, {
   key:'carryover', title:'이월', value: props.daily.totals?.carryover || 0
 }, {
-  key:'sale', title:'판매', value: props.daily.totals?.sale || 0
-}, {
   key:'loss', title:'로스', value: props.daily.totals?.loss || 0
 }, {
   key:'waste', title:'폐기', value: props.daily.totals?.waste || 0
@@ -402,6 +416,16 @@ const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
     return false;
   }
 
+  if (missingType.value) {
+    const field = {
+      production: 'production_confirmed',
+      carryover: 'disposition_confirmed',
+      loss: 'loss_confirmed',
+      waste: 'waste_confirmed',
+    }[missingType.value];
+    if (field && row[field]) return false;
+  }
+
   if (filter.value === 'missing') {
     return !row.complete;
   }
@@ -412,6 +436,13 @@ const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
 
   return true;
 }));
+
+const filterResultLabel = computed(() => {
+  if (search.value?.trim()) return `검색 결과 ${filteredRows.value.length}개`;
+  if (filter.value === 'missing') return `확인이 필요한 제품 ${filteredRows.value.length}개`;
+  if (filter.value === 'occurred') return `변동이 있는 제품 ${filteredRows.value.length}개`;
+  return `전체 제품 ${filteredRows.value.length}개`;
+});
 const groupedRows = computed(() => {
   const map = new Map();
 
@@ -433,7 +464,9 @@ const progressText = computed(() => {
   const required = Number(props.daily.required_count || 0);
   const complete = Number(props.daily.complete_count || 0);
   const remaining = Math.max(0, required - complete);
-  return remaining > 0 ? `${remaining}개 제품 기록 미완료` : `${required}개 제품 확인 완료`;
+  return remaining > 0
+    ? `전체 ${required}개 중 ${remaining}개 제품의 확인이 필요합니다.`
+    : `전체 ${required}개 제품의 기록이 확인되었습니다.`;
 });
 
 const selectedProductMetrics = computed(() => {
@@ -442,7 +475,6 @@ const selectedProductMetrics = computed(() => {
   return [
     { label: '생산', value: row.production },
     { label: '이월', value: row.carryover_in },
-    { label: '판매', value: row.sale },
     { label: '로스', value: row.loss },
     { label: '폐기', value: row.waste },
     { label: '폐기율', value: row.waste_rate == null ? '-' : `${row.waste_rate}%` },
@@ -452,7 +484,6 @@ const selectedProductMetrics = computed(() => {
 const selectedProductAnalysis = computed(() => {
   const row = selectedProduct.value;
   if (!row) return '-';
-  if (row.mismatch) return '수량 흐름이 맞지 않습니다. 생산·이월·로스·폐기 기록을 확인해 주세요.';
   if (!row.complete) return missingReasonText(row);
   if (row.waste > 0 || row.loss > 0) return `로스 ${row.loss}, 폐기 ${row.waste}가 기록되어 있습니다. 필요하면 원인과 수량을 다시 확인해 주세요.`;
   return '선택 날짜의 필수 확인이 모두 완료되었고 수량 흐름도 정상입니다.';
@@ -464,8 +495,20 @@ function missingReasonText(row) {
   if (!row.production_confirmed) missing.push('생산');
   if (!row.loss_confirmed) missing.push('로스');
   if (!row.waste_confirmed) missing.push('폐기');
-  if (!row.disposition_confirmed) missing.push('마감 수량');
+  if (!row.disposition_confirmed) missing.push('이월');
   return missing.length ? `${missing.join(' · ')} 확인이 필요합니다.` : '확인이 필요한 항목이 있습니다.';
+}
+
+/** 현황의 미확인 종류를 누르면 해당 제품만 표에 남깁니다. */
+function toggleMissingType(type) {
+  missingType.value = missingType.value === type ? null : type;
+  if (missingType.value) filter.value = 'missing';
+}
+
+/** 경고 버튼에서 연도 없이 월/일만 간결하게 표시합니다. */
+function shortDateLabel(date) {
+  const [, month, day] = String(date).split('-');
+  return `${Number(month)}월 ${Number(day)}일`;
 }
 
 function categoryCompleteCount(rows) {
@@ -566,13 +609,6 @@ function openFlow(row, type) {
   flowType.value = type;
   flowOpen.value = true;
 }
-/** 계산 판매량의 근거를 읽기 전용으로 보여줍니다. */
-function openSale(row) {
-  detailMetricKey.value = 'sale';
-  detailSelectedRow.value = row;
-  detailTitle.value = '판매';
-  detailOpen.value = true;
-}
 /** 제품 관리의 상세 데이터를 재사용해 레시피와 선택 날짜 생산 현황을 함께 보여줍니다. */
 async function openProduct(row) {
   selectedProduct.value = row;
@@ -604,7 +640,8 @@ function askBulkZero(type) {
 /** 확인창에서 선택한 로스 또는 폐기 미입력 항목을 0개로 일괄 확인합니다. */
 async function bulkZero() {
   const type = bulkZeroType.value;
-  if (!ensureMutable()) return;
+  if (!ensureMutable() || bulkZeroLoading.value) return;
+  bulkZeroLoading.value = true;
   try {
     const {
       data
@@ -615,7 +652,9 @@ async function bulkZero() {
     emit('success', data.message);
     emit('reload');
   } catch (error) {
-    emit('error', error.response?.data?.message || '일괄 확인하지 못했습니다.');
+    emit('error', error.response?.data?.message || '일괄 확인 중 오류가 발생했습니다.');
+  } finally {
+    bulkZeroLoading.value = false;
   }
 }
 /** 하위 다이얼로그 저장 성공 후 최신 일일 데이터를 다시 조회합니다. */
@@ -628,6 +667,18 @@ function handleSaved(message) {
     refreshClosePreview();
   }
 }
+/** 감사 로그의 내부 action 값을 직원이 이해하기 쉬운 상태명으로 바꿉니다. */
+function historyActionLabel(action) {
+  return {
+    create: '등록',
+    update: '수정',
+    delete: '삭제',
+    confirm: '확인',
+    close: '마감',
+    correction_open: '수정 시작',
+  }[action] || '변경';
+}
+
 /** 선택 날짜의 감사 로그를 불러와 일일 변경 이력 다이얼로그를 엽니다. */
 async function openHistory() {
   try {
@@ -782,10 +833,6 @@ async function closeDay() {
 .summary-detail-row { display:flex; justify-content:space-between; gap:16px; padding:9px 0; border-bottom:1px solid rgba(var(--v-border-color),.55); font-size:.76rem; }
 .summary-detail-row strong { font-variant-numeric:tabular-nums; }
 .summary-detail-empty { padding:18px 0; font-size:.75rem; color:rgba(var(--v-theme-on-surface),.55); }
-.sale-calculation { display:flex; flex-direction:column; }
-.sale-calculation>div { display:flex; justify-content:space-between; gap:16px; padding:8px 0; border-bottom:1px solid rgba(var(--v-border-color),.5); font-size:.76rem; }
-.sale-calculation strong { font-variant-numeric:tabular-nums; }
-.calculation-note { margin:12px 0 0; font-size:.69rem; line-height:1.5; color:rgba(var(--v-theme-on-surface),.58); }
 .production-product-section { padding:20px 24px; }
 .production-product-title { margin-bottom:12px; font-size:.88rem; font-weight:650; }
 .product-detail-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
@@ -794,6 +841,13 @@ async function closeDay() {
 .product-detail-metrics span { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); }
 .product-detail-metrics strong { margin-top:2px; font-size:.9rem; font-weight:600; }
 .product-analysis-copy { margin:0; font-size:.78rem; line-height:1.65; color:rgba(var(--v-theme-on-surface),.72); }
+.history-context { padding:2px 0 14px; font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
+.history-list { display:flex; flex-direction:column; }
+.history-item { padding:12px 0; border-bottom:1px solid rgba(var(--v-border-color),.52); }
+.history-item-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.history-item-head strong { min-width:0; font-size:.8rem; font-weight:650; }
+.history-action { flex:none; padding:3px 7px; border-radius:999px; background:rgba(var(--v-theme-on-surface),.06); font-size:.62rem; font-weight:650; }
+.history-meta { margin-top:4px; font-size:.67rem; color:rgba(var(--v-theme-on-surface),.55); }
 .close-check-list { display:flex; flex-direction:column; gap:8px; }
 .close-check-item { padding:12px; border:1px solid rgba(var(--v-border-color),.7); border-radius:10px; }
 .close-check-copy { display:flex; flex-direction:column; gap:2px; }
@@ -801,14 +855,58 @@ async function closeDay() {
 .close-check-copy span { font-size:.7rem; color:rgba(var(--v-theme-on-surface),.58); }
 .close-check-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .close-ready { padding:12px; border-radius:10px; background:rgba(var(--v-theme-success),.08); font-size:.78rem; font-weight:600; }
+
+.date-section { padding: 4px 0 10px; }
+.date-panel { display:flex; align-items:center; justify-content:center; gap:4px; min-height:54px; }
+.date-main-button { min-width:170px; padding:6px 12px; border:0; border-radius:10px; background:transparent; color:inherit; text-align:center; cursor:pointer; }
+.date-main-button span,.date-main-button small { display:block; }
+.date-main-button span { font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
+.date-main-button small { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.52); }
+.today-button { min-width:48px; }
+.previous-close-alert { margin:2px 0 8px; }
+.previous-close-copy { display:flex; flex-direction:column; gap:2px; }
+.previous-close-copy strong { font-size:.78rem; }
+.previous-close-copy span { font-size:.69rem; line-height:1.4; }
+.previous-close-action { min-height:38px; font-weight:650; }
+.summary-section { padding-top:10px; }
+.daily-metrics { grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; }
+.metric-item { padding:10px 6px; }
+.metric-item:first-child { background:rgba(76,175,80,.09); border-color:rgba(76,175,80,.2); }
+.metric-item:nth-child(4) { background:rgba(239,83,80,.08); border-color:rgba(239,83,80,.18); }
+.missing-type-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:10px; }
+.missing-type-button { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:34px; padding:6px 8px; border:1px solid rgba(var(--v-border-color),.65); border-radius:8px; background:transparent; color:inherit; cursor:pointer; }
+.missing-type-button span { font-size:.67rem; color:rgba(var(--v-theme-on-surface),.58); }
+.missing-type-button strong { font-size:.7rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.missing-type-button.active { border-color:rgba(var(--v-theme-primary),.55); background:rgba(var(--v-theme-primary),.07); }
+.missing-type-button.complete { opacity:.58; }
+.status-filter { width:100%; display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid rgba(var(--v-border-color),.65); }
+.status-filter :deep(.v-btn) { border-radius:0; }
+.status-filter :deep(.v-btn--active) { border-bottom:2px solid rgb(var(--v-theme-primary)); }
+.product-filter-row { align-items:flex-end; flex-wrap:wrap; }
+.product-filter-row > span { margin-left:auto; }
+.product-table { min-width:445px; font-size:.7rem; }
+.product-column { width:112px; }
+.number-column { width:58px; }
+.product-table th,.product-table td { height:31px; padding:3px 2px; }
+.product-table tbody tr:hover td,.product-table tbody tr:hover td:first-child { background:rgba(var(--v-theme-on-surface),.035); }
+.table-value { min-width:30px; padding:4px 6px; border:1px solid transparent; border-radius:999px; background:rgba(var(--v-theme-on-surface),.045); }
+.table-value.production-value { background:rgba(76,175,80,.12); color:rgb(46,125,50); }
+.table-value.waste-value { background:rgba(239,83,80,.11); color:rgb(198,40,40); }
+.table-value.pending { background:rgba(var(--v-theme-on-surface),.035); color:rgba(var(--v-theme-on-surface),.42); }
+.rate-value { font-weight:650; }
 @media(max-width:760px) {
   .daily-section { padding:14px 0; }
-  .daily-metrics { grid-template-columns:repeat(3,1fr); }
+  .daily-metrics { grid-template-columns:repeat(6,1fr); }
+  .daily-metrics .metric-item { grid-column:span 2; }
+  .daily-metrics .metric-item:nth-child(4),.daily-metrics .metric-item:nth-child(5) { grid-column:span 3; }
+  .missing-type-grid { grid-template-columns:repeat(2,1fr); }
+  .previous-close-alert :deep(.v-alert__content) { min-width:0; }
+  .previous-close-alert :deep(.v-alert__append) { margin-inline-start:8px; }
   .product-heading { align-items:stretch; flex-direction:column; }
   .product-search { max-width:none; }
   .product-column,.product-table th:first-child,.product-table td:first-child { width:112px; max-width:112px; }
-  .number-column { width:52px; }
-  .product-table { min-width:424px; font-size:.68rem; }
+  .number-column { width:50px; }
+  .product-table { min-width:405px; font-size:.66rem; }
   .product-table th,.product-table td { height:32px; padding:4px 3px; }
   .product-name { font-size:.72rem; }
   .product-detail-metrics { grid-template-columns:repeat(2,1fr); }

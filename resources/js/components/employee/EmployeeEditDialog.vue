@@ -20,7 +20,7 @@
         </div>
       </div>
 
-      <v-divider />
+      <v-divider class="app-section-divider" />
 
       <!-- 직원 등록 화면과 같은 정보 구조와 입력 스타일을 사용합니다. -->
       <v-card-text class="pa-5 edit-scroll">
@@ -64,7 +64,7 @@
           </div>
         </section>
 
-        <v-divider class="my-5" />
+        <v-divider class="app-section-divider my-5" />
 
         <section class="edit-section">
           <div class="edit-section-title"><v-icon icon="mdi-lock-outline" size="18" /> 계정 정보</div>
@@ -81,7 +81,7 @@
           </div>
         </section>
 
-        <v-divider class="my-5" />
+        <v-divider class="app-section-divider my-5" />
 
         <section class="edit-section">
           <div class="edit-section-title"><v-icon icon="mdi-office-building-outline" size="18" /> 소속 정보</div>
@@ -136,7 +136,7 @@
           </div>
         </section>
 
-        <v-divider class="my-5" />
+        <v-divider class="app-section-divider my-5" />
 
         <!-- 별도 상태 저장 기능을 없애고 일반 직원 수정에 재직 상태를 통합합니다. -->
         <section class="edit-section">
@@ -152,7 +152,7 @@
         </section>
       </v-card-text>
 
-      <v-divider />
+      <v-divider class="app-section-divider" />
       <v-card-actions class="pa-4 px-5">
         <v-btn variant="text" :disabled="loading" @click="requestClose">취소</v-btn>
         <v-spacer />
@@ -174,7 +174,7 @@
     <v-card rounded="lg">
       <v-card-title class="pa-5 pb-2">수정을 취소하시겠습니까?</v-card-title>
       <v-card-text class="px-5 pb-5 app-supporting-text">수정한 내용이 저장되지 않습니다.</v-card-text>
-      <v-divider />
+      <v-divider class="app-section-divider" />
       <v-card-actions class="pa-4 px-5">
         <v-btn variant="text" @click="discardDialog = false">아니오</v-btn>
         <v-spacer />

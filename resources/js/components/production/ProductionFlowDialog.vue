@@ -44,18 +44,16 @@
         </div>
 
         <template v-if="isReasonMode">
+          <div class="flow-input-heading">{{ dialogTitle }} 수량과 사유</div>
           <ReasonRows v-model="reasonRows" :reason-options="reasonOptions" />
-          <v-btn
-            size="small"
-            variant="text"
-            prepend-icon="mdi-plus"
-            @click="reasonRows.push(emptyReason())"
-          >
-            사유 추가
-          </v-btn>
+          <div class="reason-actions">
+            <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="reasonRows.push(emptyReason())">사유 추가</v-btn>
+            <v-btn size="small" variant="outlined" @click="setZero">{{ dialogTitle }} 없음</v-btn>
+          </div>
         </template>
 
         <template v-else>
+          <div class="flow-input-heading">다음 영업일로 넘길 수량</div>
           <v-number-input
             v-model="carryoverQuantity"
             label="다음 영업일 이월 수량"
@@ -187,7 +185,7 @@ const dialogDescription = computed(() => ({
   carryover: '다음 영업일로 넘길 수량만 확인합니다.',
   loss: '로스 사유와 수량만 기록합니다.',
   waste: '폐기 사유와 수량만 기록합니다.',
-  other_outflow: '판매가 아닌 출고 사유와 수량만 기록합니다.',
+  other_outflow: '시식·서비스 등 기타 출고 수량을 기록합니다.',
 }[props.type]));
 
 const reasonOptions = computed(() => ({
@@ -303,11 +301,17 @@ function sumRows(rows) {
 watch(() => props.modelValue, (value) => {
   if (!value) return;
 
-  reasonRows.value = [];
+  reasonRows.value = isReasonMode.value ? [emptyReason()] : [];
   carryoverQuantity.value = Number(props.product?.carryover_out || 0);
   carryoverSource.value = props.product?.carryover_in > 0 ? 'incoming' : 'today';
   note.value = '';
 });
+
+/** 로스·폐기가 없을 때 0개 확인을 한 번의 행동으로 입력합니다. */
+function setZero() {
+  reasonRows.value = [];
+  askSave();
+}
 
 /** 사용자가 실제로 입력한 내용이 있는지 확인합니다. */
 function isDirty() {
@@ -315,7 +319,7 @@ function isDirty() {
     return carryoverQuantity.value !== Number(props.product?.carryover_out || 0) || Boolean(note.value);
   }
 
-  return reasonRows.value.length > 0 || Boolean(note.value);
+  return reasonRows.value.length !== 1 || reasonRows.value.some((row) => row.reason_code || Number(row.quantity || 0) !== 1) || Boolean(note.value);
 }
 
 /** 작성 중인 값이 있으면 확인창을 거친 뒤 닫습니다. */
@@ -338,7 +342,7 @@ function forceClose() {
 
 /** 사유 필수값과 수량 범위를 확인한 뒤 저장 확인창을 엽니다. */
 function askSave() {
-  if (isReasonMode.value && reasonRows.value.some((row) => !row.reason_code || !row.quantity)) {
+  if (isReasonMode.value && reasonRows.value.length > 0 && reasonRows.value.some((row) => !row.reason_code || !row.quantity)) {
     emit('error', '추가한 사유와 수량을 모두 입력해주세요.');
     return;
   }
@@ -406,6 +410,9 @@ async function save() {
   color: rgba(var(--v-theme-on-surface), 0.62);
 }
 
+.flow-input-heading { margin-bottom: 8px; font-size: .8rem; font-weight: 650; }
+.reason-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:2px; }
+
 .reason-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 120px auto;
@@ -418,7 +425,10 @@ async function save() {
     grid-template-columns: 1fr;
   }
 
-  .reason-row {
+  .flow-input-heading { margin-bottom: 8px; font-size: .8rem; font-weight: 650; }
+.reason-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:2px; }
+
+.reason-row {
     grid-template-columns: minmax(0, 1fr) 100px auto;
   }
 }

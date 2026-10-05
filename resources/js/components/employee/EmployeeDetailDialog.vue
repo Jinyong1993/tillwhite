@@ -81,7 +81,7 @@
         </div>
       </div>
 
-      <v-divider />
+      <v-divider class="app-section-divider" />
 
       <!--
         직원 상세정보 스크롤 영역
@@ -150,7 +150,7 @@
           </div>
         </section>
 
-        <v-divider />
+        <v-divider class="app-section-divider" />
 
         <!-- 소속 정보 -->
         <section class="detail-section">
@@ -198,7 +198,7 @@
           </div>
         </section>
 
-        <v-divider />
+        <v-divider class="app-section-divider" />
 
         <!-- 재직 정보 -->
         <section class="detail-section">
@@ -244,7 +244,7 @@
           </div>
         </section>
 
-        <v-divider />
+        <v-divider class="app-section-divider" />
 
         <!--
           시스템 정보
@@ -332,7 +332,7 @@
 
       </div>
 
-      <v-divider />
+      <v-divider class="app-section-divider" />
 
       <!--
         직원 상세보기 고정 하단 버튼

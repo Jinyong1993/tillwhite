@@ -55,3 +55,24 @@
         max-height: calc(100dvh - 16px);
     }
 }
+
+/*
+ * 섹션 경계를 화면별로 제각각 만들지 않도록 사용하는 공통 구분선입니다.
+ * 다이얼로그 본문처럼 좌우 패딩이 있는 영역에서는 --app-section-gutter만 지정하면
+ * 내용 패딩을 유지하면서 선만 양끝까지 자연스럽게 확장할 수 있습니다.
+ */
+.app-section-divider {
+    width: calc(100% + (var(--app-section-gutter, 0px) * 2));
+    margin-inline: calc(var(--app-section-gutter, 0px) * -1);
+    border-color: rgba(var(--v-border-color), 0.68);
+}
+
+.app-dialog-body .app-section-divider {
+    --app-section-gutter: 24px;
+}
+
+@media (max-width: 600px) {
+    .app-dialog-body .app-section-divider {
+        --app-section-gutter: 16px;
+    }
+}
