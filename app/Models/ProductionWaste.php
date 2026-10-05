@@ -16,4 +16,10 @@ class ProductionWaste extends Model
     {
         return ['work_date' => 'date', 'attribution_date' => 'date', 'quantity' => 'integer', 'lock_version' => 'integer'];
     }
+
+    /** 사유별 배분 내역을 상세·분석 화면에서 재사용합니다. */
+    public function reasons()
+    {
+        return $this->hasMany(ProductionWasteReason::class, 'production_waste_id');
+    }
 }

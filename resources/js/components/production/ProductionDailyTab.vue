@@ -89,7 +89,7 @@
       <v-btn-toggle v-model="filter" mandatory density="compact" variant="text" class="status-filter">
         <v-btn value="all">전체</v-btn>
         <v-btn value="missing">기록 미완료</v-btn>
-        <v-btn value="occurred">변동 있음</v-btn>
+        <v-btn value="occurred">기록 발생</v-btn>
       </v-btn-toggle>
       <span class="app-supporting-text text-medium-emphasis">{{ filterResultLabel }}</span>
     </div>
@@ -135,10 +135,10 @@
                   <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
                 </td>
                 <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
-                <td><button type="button" class="table-value" @click="openFlow(row, 'carryover')">{{ row.carryover_in }}</button></td>
+                <td><button type="button" class="table-value" :class="{ pending: !row.disposition_confirmed }" @click="openFlow(row, 'carryover')">{{ row.disposition_confirmed ? row.carryover_in : '-' }}</button></td>
                 <td><button type="button" class="table-value" :class="{ attention: row.loss > 0, pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
                 <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
-                <td class="rate-value">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</td>
+                <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</button></td>
               </tr>
               <tr class="subtotal-row">
                 <td>소계</td>
@@ -203,28 +203,42 @@
     </template>
   </ProductDetailDialog>
 
-  <v-dialog v-model="detailOpen" max-width="680">
+  <v-dialog v-model="detailOpen" max-width="680" persistent>
     <v-card rounded="lg" class="app-dialog-card">
-      <v-card-title class="app-dialog-header d-flex justify-space-between">
-        <span>{{ detailTitle }}</span>
-        <v-btn icon="mdi-close" size="small" variant="text" @click="detailOpen=false" />
-      </v-card-title>
+      <v-card-title class="app-dialog-header">{{ detailTitle }}</v-card-title>
       <v-card-text class="app-dialog-body">
         <div class="summary-detail-hero">
           <span>총 {{ detailMetricTitle }}</span>
           <strong>{{ detailMetricValue }}</strong>
+          <small>{{ detailInsight }}</small>
         </div>
-        <div class="summary-detail-meta">{{ formatKoreanDate(workDate) }} · {{ detailSelectedRow?.name || `${activeRows.length}개 제품` }}</div>
+        <div class="summary-detail-facts">
+          <div><span>기록 제품</span><strong>{{ detailRecordedCount }}개</strong></div>
+          <div><span>확인 완료</span><strong>{{ detailConfirmedCount }} / {{ activeRows.length }}</strong></div>
+          <div><span>미확인</span><strong>{{ Math.max(0, activeRows.length - detailConfirmedCount) }}개</strong></div>
+          <div><span>기준 날짜</span><strong>{{ shortDateLabel(workDate) }}</strong></div>
+        </div>
+        <div v-if="detailMetricKey === 'waste_rate'" class="waste-analysis-note">
+          <strong>폐기율 확인 기준</strong>
+          <span>제품별 생산량과 폐기량을 기준으로 계산합니다. 폐기 미확인 제품은 0%로 단정하지 않습니다.</span>
+        </div>
         <v-divider class="dialog-full-divider" />
 
         <div class="summary-detail-heading">제품별 {{ detailMetricTitle }}</div>
         <div v-if="detailRows.length" class="summary-detail-list">
-          <div v-for="row in detailRows" :key="row.id" class="summary-detail-row">
-            <span>{{ row.name }}</span>
+          <button v-for="row in detailRows" :key="row.id" type="button" class="summary-detail-row" @click="openMetricProduct(row)">
+            <span>
+              <b>{{ row.name }}</b>
+              <small>{{ row.share }} · {{ row.confirmed ? '확인 완료' : '미확인' }}</small>
+              <small v-if="row.reasonSummary">{{ row.reasonSummary }}</small>
+            </span>
             <strong>{{ row.value }}</strong>
-          </div>
+          </button>
         </div>
-        <div v-else class="summary-detail-empty">표시할 기록이 없습니다.</div>
+        <div v-else class="summary-detail-empty">
+          <strong>{{ detailEmptyTitle }}</strong>
+          <span>{{ detailEmptyText }}</span>
+        </div>
 
       </v-card-text>
       <v-card-actions class="app-dialog-footer">
@@ -232,12 +246,9 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
-  <v-dialog v-model="historyOpen" max-width="720">
+  <v-dialog v-model="historyOpen" max-width="720" persistent>
     <v-card rounded="lg" class="app-dialog-card">
-      <v-card-title class="app-dialog-header d-flex justify-space-between">
-        <span>변경 이력</span>
-        <v-btn icon="mdi-close" size="small" variant="text" @click="historyOpen=false"/>
-      </v-card-title>
+      <v-card-title class="app-dialog-header">변경 이력</v-card-title>
       <v-card-text class="app-dialog-body history-body">
         <div class="history-context">{{ formatKoreanDate(workDate) }}의 생산·이월·로스·폐기 변경 기록입니다.</div>
         <v-divider class="app-section-divider" />
@@ -295,7 +306,7 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
-  <v-dialog v-model="correctionOpen" max-width="560">
+  <v-dialog v-model="correctionOpen" max-width="560" persistent>
     <v-card rounded="lg" class="app-dialog-card">
       <v-card-title class="app-dialog-header">마감 후 수정</v-card-title>
       <v-card-text class="app-dialog-body">
@@ -394,13 +405,51 @@ const missingSummaryText = computed(() => (
 ));
 const detailMetricTitle = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.title || '상세');
 const detailMetricValue = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.value ?? '-');
-const detailRows = computed(() => activeRows.value.map((row) => {
+const detailRows = computed(() => {
   const key = detailMetricKey.value === 'carryover' ? 'carryover_in' : detailMetricKey.value;
-  const value = detailMetricKey.value === 'waste_rate'
-    ? (row.waste_rate == null ? '-' : `${row.waste_rate}%`)
-    : Number(row[key] || 0);
-  return { id: row.id, name: row.name, value };
-}).filter((row) => row.value !== 0 && row.value !== '-'));
+  const total = detailMetricKey.value === 'waste_rate'
+    ? activeRows.value.reduce((sum, row) => sum + Number(row.waste || 0), 0)
+    : activeRows.value.reduce((sum, row) => sum + Number(row[key] || 0), 0);
+
+  return activeRows.value.map((row) => {
+    const rawValue = detailMetricKey.value === 'waste_rate' ? Number(row.waste_rate || 0) : Number(row[key] || 0);
+    const shareBase = detailMetricKey.value === 'waste_rate' ? Number(row.waste || 0) : rawValue;
+    return {
+      id: row.id,
+      name: row.name,
+      source: row,
+      rawValue,
+      value: detailMetricKey.value === 'waste_rate' ? `${rawValue}%` : rawValue,
+      share: total > 0 && shareBase > 0 ? `전체의 ${(shareBase / total * 100).toFixed(1)}%` : '기록 확인',
+      confirmed: Boolean(row[detailConfirmationField.value]),
+      reasonSummary: detailMetricKey.value === 'waste_rate'
+        ? reasonSummary(row.waste_details, '폐기 사유')
+        : detailMetricKey.value === 'waste'
+          ? reasonSummary(row.waste_details, '폐기 사유')
+          : detailMetricKey.value === 'loss'
+            ? reasonSummary(row.loss_details, '로스 사유')
+            : '',
+    };
+  }).filter((row) => row.rawValue > 0).sort((a, b) => b.rawValue - a.rawValue);
+});
+const detailRecordedCount = computed(() => detailRows.value.length);
+const detailConfirmationField = computed(() => ({
+  production: 'production_confirmed',
+  carryover: 'disposition_confirmed',
+  loss: 'loss_confirmed',
+  waste: 'waste_confirmed',
+  waste_rate: 'waste_confirmed',
+}[detailMetricKey.value]));
+const detailConfirmedCount = computed(() => activeRows.value.filter((row) => row[detailConfirmationField.value]).length);
+const detailInsight = computed(() => {
+  if (!detailRows.value.length) return `${detailConfirmedCount.value}개 제품이 확인을 완료했습니다.`;
+  const top = detailRows.value[0];
+  return `${top.name}이(가) 가장 높습니다 · ${top.value}`;
+});
+const detailEmptyTitle = computed(() => `이 날짜에는 ${detailMetricTitle.value} 기록이 없습니다.`);
+const detailEmptyText = computed(() => detailConfirmedCount.value === activeRows.value.length
+  ? '모든 제품이 없음(0)으로 확인된 상태입니다.'
+  : `아직 확인하지 않은 제품이 ${activeRows.value.length - detailConfirmedCount.value}개 있습니다.`);
 
 const metrics = computed(() => [ {
   key:'production', title:'생산', value: props.daily.totals?.production || 0
@@ -448,7 +497,7 @@ const filterResultLabel = computed(() => {
     return `${label} 확인 필요 · ${filteredRows.value.length}개`;
   }
   if (filter.value === 'missing') return `확인이 필요한 제품 ${filteredRows.value.length}개`;
-  if (filter.value === 'occurred') return `변동이 있는 제품 ${filteredRows.value.length}개`;
+  if (filter.value === 'occurred') return `로스·폐기가 발생한 제품 ${filteredRows.value.length}개`;
   return `전체 제품 ${filteredRows.value.length}개`;
 });
 const emptyProductTitle = computed(() => search.value?.trim() ? '검색 결과가 없습니다.' : '표시할 제품이 없습니다.');
@@ -498,6 +547,14 @@ const selectedProductAnalysis = computed(() => {
   if (row.waste > 0 || row.loss > 0) return `로스 ${row.loss}, 폐기 ${row.waste}가 기록되어 있습니다. 필요하면 원인과 수량을 다시 확인해 주세요.`;
   return '선택 날짜의 필수 확인이 모두 완료되었고 수량 흐름도 정상입니다.';
 });
+
+
+/** 사유별 기록을 상세 목록에서 짧게 읽을 수 있도록 요약합니다. */
+function reasonSummary(details, label) {
+  if (!Array.isArray(details) || !details.length) return '';
+  const names = details.slice(0, 2).map((item) => item.reason_text || item.reason_code || '기타');
+  return `${label}: ${names.join(' · ')}${details.length > 2 ? ` 외 ${details.length - 2}건` : ''}`;
+}
 
 /** 제품별 확인 상태를 실제 미확인 항목 이름으로 설명합니다. */
 function missingReasonText(row) {
@@ -640,6 +697,19 @@ function openMetric(key) {
   detailMetricKey.value = key;
   detailTitle.value = `${metrics.value.find((metric) => metric.key === key)?.title || '상세'} 상세`;
   detailOpen.value = true;
+}
+/** 폐기율 숫자는 같은 요약 상세에서 제품별 폐기율과 비중을 분석합니다. */
+function openWasteRate(row) {
+  detailSelectedRow.value = row;
+  detailMetricKey.value = 'waste_rate';
+  detailTitle.value = `${row.name} 폐기 분석`;
+  detailOpen.value = true;
+}
+/** 요약 상세의 제품을 누르면 기존 제품 상세를 재사용해 더 깊은 기록을 확인합니다. */
+function openMetricProduct(item) {
+  if (!item?.source) return;
+  detailOpen.value = false;
+  openProduct(item.source);
 }
 /** 아직 확인하지 않은 생산·이월·로스·폐기만 0개 상태로 일괄 확인합니다. */
 function askBulkZero(type) {
@@ -784,7 +854,7 @@ async function closeDay() {
 .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
 .section-heading h3 { margin:0; font-size:.98rem; font-weight:650; letter-spacing:-.02em; }
 .section-heading p { margin:4px 0 0; font-size:.76rem; color:rgba(var(--v-theme-on-surface),.58); }
-.work-progress { width:min(260px,100%); height:4px; margin-top:8px; overflow:hidden; border-radius:999px; background:rgba(var(--v-theme-on-surface),.07); }
+.work-progress { width:100%; height:4px; margin-top:8px; overflow:hidden; border-radius:999px; background:rgba(var(--v-theme-on-surface),.07); }
 .work-progress span { display:block; height:100%; border-radius:inherit; background:rgb(var(--v-theme-primary)); }
 .missing-summary { margin-top:6px; font-size:.7rem; color:rgba(var(--v-theme-on-surface),.62); }
 .bulk-menu :deep(.v-list-item-title) { display:flex; justify-content:space-between; gap:16px; font-size:.8rem; font-weight:650; }
@@ -837,13 +907,27 @@ async function closeDay() {
 .summary-detail-hero span,.summary-detail-hero strong { display:block; }
 .summary-detail-hero span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
 .summary-detail-hero strong { margin-top:3px; font-size:1.7rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.summary-detail-hero small { display:block; margin-top:6px; font-size:.7rem; color:rgba(var(--v-theme-on-surface),.58); }
+.summary-detail-facts { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; }
+.summary-detail-facts>div { padding:9px 8px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); text-align:center; }
+.summary-detail-facts span,.summary-detail-facts strong { display:block; }
+.summary-detail-facts span { font-size:.64rem; color:rgba(var(--v-theme-on-surface),.55); }
+.summary-detail-facts strong { margin-top:2px; font-size:.78rem; font-weight:650; }
+.waste-analysis-note { display:flex; flex-direction:column; gap:3px; margin:-4px 0 14px; padding:9px 10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); font-size:.68rem; }
+.waste-analysis-note span { color:rgba(var(--v-theme-on-surface),.58); line-height:1.45; }
 .summary-detail-meta { margin-bottom:16px; font-size:.7rem; color:rgba(var(--v-theme-on-surface),.55); }
 .dialog-full-divider { margin-inline:-24px; }
 .summary-detail-heading { padding:16px 0 8px; font-size:.8rem; font-weight:650; }
 .summary-detail-list { display:flex; flex-direction:column; }
-.summary-detail-row { display:flex; justify-content:space-between; gap:16px; padding:9px 0; border-bottom:1px solid rgba(var(--v-border-color),.55); font-size:.76rem; }
+.summary-detail-row { width:100%; display:flex; justify-content:space-between; align-items:center; gap:16px; padding:9px 2px; border:0; border-bottom:1px solid rgba(var(--v-border-color),.55); background:transparent; color:inherit; text-align:left; font-size:.76rem; cursor:pointer; }
+.summary-detail-row>span { display:flex; flex-direction:column; min-width:0; }
+.summary-detail-row small { margin-top:2px; font-size:.63rem; color:rgba(var(--v-theme-on-surface),.5); }
+.summary-detail-row:hover { background:rgba(var(--v-theme-on-surface),.035); }
 .summary-detail-row strong { font-variant-numeric:tabular-nums; }
 .summary-detail-empty { padding:18px 0; font-size:.75rem; color:rgba(var(--v-theme-on-surface),.55); }
+.summary-detail-empty strong,.summary-detail-empty span { display:block; }
+.summary-detail-empty strong { color:rgb(var(--v-theme-on-surface)); }
+.summary-detail-empty span { margin-top:3px; font-size:.68rem; }
 .production-product-section { padding:20px 24px; }
 .production-product-title { margin-bottom:12px; font-size:.88rem; font-weight:650; }
 .product-detail-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
@@ -868,11 +952,12 @@ async function closeDay() {
 .close-ready { padding:12px; border-radius:10px; background:rgba(var(--v-theme-success),.08); font-size:.78rem; font-weight:600; }
 
 .date-section { padding: 4px 0 10px; }
-.date-panel { display:flex; align-items:center; justify-content:center; gap:4px; min-height:54px; }
+.date-panel { display:grid; grid-template-columns:40px minmax(170px,220px) 40px 56px; align-items:center; justify-content:center; gap:4px; min-height:54px; }
 .date-main-button { min-width:170px; padding:6px 12px; border:0; border-radius:10px; background:transparent; color:inherit; text-align:center; cursor:pointer; }
 .date-main-button span,.date-main-button small { display:block; }
 .date-main-button span { font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
 .date-main-button small { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.52); }
+.today-slot { width:56px; display:flex; justify-content:flex-end; }
 .today-button { min-width:48px; }
 .previous-close-alert { margin:2px 0 8px; }
 .previous-close-copy { display:flex; flex-direction:column; gap:2px; }
@@ -919,5 +1004,6 @@ async function closeDay() {
   .product-table th,.product-table td { height:32px; padding:4px 3px; }
   .product-name { font-size:.72rem; }
   .product-detail-metrics { grid-template-columns:repeat(2,1fr); }
+  .summary-detail-facts { grid-template-columns:repeat(2,1fr); }
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <v-dialog v-model="open" max-width="620" :persistent="saving">
+  <v-dialog v-model="open" max-width="620" persistent>
     <v-card rounded="lg" class="app-dialog-card">
       <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
         <div>
@@ -8,13 +8,6 @@
             {{ product?.name || '-' }}
           </div>
         </div>
-        <v-btn
-          icon="mdi-close"
-          size="small"
-          variant="text"
-          :disabled="saving"
-          @click="requestClose"
-        />
       </v-card-title>
 
       <v-card-text class="app-dialog-body">
@@ -28,6 +21,12 @@
           입력한 수량이 남은 수량보다 많습니다.
         </v-alert>
 
+        <div class="flow-overview">
+          <div><span>현재 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
+          <div><span>들어온 이월</span><strong>{{ Number(product?.carryover_in || 0) }}개</strong></div>
+          <div><span>확인 상태</span><strong>{{ flowConfirmed ? '완료' : '미확인' }}</strong></div>
+        </div>
+
         <div class="flow-guide">
           <div><span>남은 수량</span><strong>{{ remainingAvailable }}개</strong></div>
           <p>{{ dialogDescription }}</p>
@@ -36,6 +35,13 @@
         <div class="flow-summary">
           <div><span>사용 가능</span><strong>{{ available }}개</strong></div>
           <div><span>다른 처리</span><strong>{{ otherAllocated }}개</strong></div>
+        </div>
+
+        <div v-if="savedDetails.length" class="saved-flow-details">
+          <div class="flow-input-heading">현재 기록</div>
+          <div v-for="(item, index) in savedDetails" :key="`${item.reason_code || 'reason'}-${index}`" class="saved-flow-row">
+            <span>{{ item.reason_text || item.reason_code || '기타' }}</span><strong>{{ item.quantity }}개</strong>
+          </div>
         </div>
 
         <template v-if="isReasonMode">
@@ -81,7 +87,7 @@
       </v-card-text>
 
       <v-card-actions class="app-dialog-footer px-4 pb-4">
-        <v-btn variant="text" :disabled="saving" @click="requestClose">취소</v-btn>
+        <v-btn variant="text" :disabled="saving" @click="requestClose">닫기</v-btn>
         <v-spacer />
         <v-btn
           variant="flat"
@@ -169,6 +175,18 @@ const open = computed({
 });
 
 const isReasonMode = computed(() => props.type !== 'carryover');
+const flowConfirmed = computed(() => ({
+  carryover: props.product?.disposition_confirmed,
+  loss: props.product?.loss_confirmed,
+  waste: props.product?.waste_confirmed,
+  other_outflow: props.product?.disposition_confirmed,
+}[props.type] ?? false));
+const savedDetails = computed(() => {
+  if (props.type === 'loss') return props.product?.loss_details || [];
+  if (props.type === 'waste') return props.product?.waste_details || [];
+  return [];
+});
+
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
 
 const dialogTitle = computed(() => ({
@@ -390,6 +408,14 @@ async function save() {
 </script>
 
 <style scoped>
+.flow-overview { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:10px; }
+.flow-overview>div { padding:9px 7px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); text-align:center; }
+.flow-overview span,.flow-overview strong { display:block; }
+.flow-overview span { font-size:.63rem; color:rgba(var(--v-theme-on-surface),.55); }
+.flow-overview strong { margin-top:2px; font-size:.82rem; font-weight:650; }
+.saved-flow-details { margin:12px 0; }
+.saved-flow-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:32px; padding:5px 2px; border-bottom:1px solid rgba(var(--v-border-color),.5); font-size:.72rem; }
+.saved-flow-row strong { font-variant-numeric:tabular-nums; }
 .flow-guide { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; padding:10px 12px; border-radius:10px; background:rgba(var(--v-theme-on-surface),.04); }
 .flow-guide div { flex:none; }
 .flow-guide span,.flow-guide strong { display:block; }

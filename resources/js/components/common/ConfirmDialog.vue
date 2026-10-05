@@ -20,7 +20,7 @@
   -->
   <v-dialog
     :model-value="modelValue"
-    :persistent="loading"
+    persistent
     max-width="420"
     @update:model-value="handleModelValue"
   >
@@ -31,19 +31,6 @@
       >
         <span>{{ title }}</span>
 
-        <!--
-          닫기 버튼
-
-          일반 상태에서는 취소와 동일하게 동작합니다.
-          처리 중에는 닫을 수 없습니다.
-        -->
-        <v-btn
-          icon="mdi-close"
-          size="small"
-          variant="text"
-          :disabled="loading"
-          @click="cancel"
-        />
       </v-card-title>
 
       <!-- 확인 메시지 -->
@@ -210,12 +197,8 @@ function confirm() {
  * Vuetify Dialog에서 발생하는
  * modelValue 변경 요청을 처리합니다.
  *
- * ESC 또는 바깥 영역 클릭 등으로
- * 확인창을 닫으려는 경우에도
- * 처리 중이라면 닫기를 허용하지 않습니다.
- *
- * 일반 상태에서 닫기 요청이 발생하면
- * 취소와 동일하게 처리합니다.
+ * 바깥 영역 클릭과 ESC는 persistent 설정으로 차단합니다.
+ * 모델 변경은 명시적인 버튼 동작에서만 처리합니다.
  */
 function handleModelValue(value) {
   if (value) {

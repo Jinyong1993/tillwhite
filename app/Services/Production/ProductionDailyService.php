@@ -65,8 +65,8 @@ class ProductionDailyService
             ->keyBy('product_category_id');
 
         $batches = ProductionBatch::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
-        $losses = ProductionLoss::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
-        $attributedWastes = ProductionWaste::query()->where('store_id', $storeId)->whereDate('attribution_date', $date)->get()->groupBy('product_id');
+        $losses = ProductionLoss::query()->with('reasons')->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
+        $attributedWastes = ProductionWaste::query()->with('reasons')->where('store_id', $storeId)->whereDate('attribution_date', $date)->get()->groupBy('product_id');
         $operationalWastes = ProductionWaste::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
         $outflows = ProductionOtherOutflow::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
         $incoming = ProductStockMovement::query()->where('store_id', $storeId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->get()->groupBy('product_id');
@@ -91,6 +91,15 @@ class ProductionDailyService
             $confirmation = $confirmations->get($product->id);
             $wasteRate = $production > 0 ? round($waste / $production * 100, 1) : null;
 
+            // 실제 기록이 존재하는데 과거 확인 플래그만 비어 있는 경우도 완료로 복구합니다.
+            // 0개 확인은 기록 행이 없으므로 반드시 ProductionConfirmation의 명시적 플래그를 사용합니다.
+            $productionConfirmed = (bool) ($confirmation?->production_confirmed ?? false) || ($batches->get($product->id)?->isNotEmpty() ?? false);
+            $lossConfirmed = (bool) ($confirmation?->loss_confirmed ?? false) || ($losses->get($product->id)?->isNotEmpty() ?? false);
+            $wasteConfirmed = (bool) ($confirmation?->waste_confirmed ?? false) || ($operationalWastes->get($product->id)?->isNotEmpty() ?? false);
+            $dispositionConfirmed = (bool) ($confirmation?->disposition_confirmed ?? false)
+                || ($outgoing->get($product->id)?->isNotEmpty() ?? false)
+                || ($outflows->get($product->id)?->isNotEmpty() ?? false);
+
             return [
                 'id' => $product->id,
                 'name' => $history?->name ?? $product->name,
@@ -106,6 +115,16 @@ class ProductionDailyService
                     'lock_version' => $batch->lock_version,
                     'created_at' => $batch->created_at,
                 ])->values(),
+                'loss_details' => ($losses->get($product->id) ?? collect())->flatMap(fn ($loss) => $loss->reasons->map(fn ($reason) => [
+                    'reason_code' => $reason->reason_code,
+                    'reason_text' => $reason->reason_text,
+                    'quantity' => (int) $reason->quantity,
+                ]))->values(),
+                'waste_details' => ($attributedWastes->get($product->id) ?? collect())->flatMap(fn ($wasteRow) => $wasteRow->reasons->map(fn ($reason) => [
+                    'reason_code' => $reason->reason_code,
+                    'reason_text' => $reason->reason_text,
+                    'quantity' => (int) $reason->quantity,
+                ]))->values(),
                 'carryover_in' => $carryIn,
                 'loss' => $loss,
                 'waste' => $waste,
@@ -113,13 +132,25 @@ class ProductionDailyService
                 'other_outflow' => $other,
                 'carryover_out' => $carryOut,
                 'waste_rate' => $wasteRate,
-                'production_confirmed' => (bool) ($confirmation?->production_confirmed ?? false),
-                'loss_confirmed' => (bool) ($confirmation?->loss_confirmed ?? false),
-                'waste_confirmed' => (bool) ($confirmation?->waste_confirmed ?? false),
-                'disposition_confirmed' => (bool) ($confirmation?->disposition_confirmed ?? false),
+                'production_confirmed' => $productionConfirmed,
+                'loss_confirmed' => $lossConfirmed,
+                'waste_confirmed' => $wasteConfirmed,
+                'disposition_confirmed' => $dispositionConfirmed,
                 'zero_production_reason' => $confirmation?->zero_production_reason,
-                'complete' => $this->isComplete($isActive, $confirmation),
+                'complete' => ! $isActive || ($productionConfirmed && $lossConfirmed && $wasteConfirmed && $dispositionConfirmed),
             ];
+        })->filter(function (array $row) {
+            if ($row['is_active']) {
+                return true;
+            }
+
+            // 삭제·비활성 제품도 선택 날짜에 실제 흐름이 남아 있으면 과거 기록 보존을 위해 표시합니다.
+            return $row['production'] > 0
+                || $row['carryover_in'] > 0
+                || $row['carryover_out'] > 0
+                || $row['loss'] > 0
+                || $row['waste'] > 0
+                || $row['other_outflow'] > 0;
         })->values();
 
         $activeRows = $rows->where('is_active', true);
@@ -155,18 +186,5 @@ class ProductionDailyService
     private function sum(?Collection $records): int
     {
         return (int) ($records?->sum('quantity') ?? 0);
-    }
-
-    /** 활성 제품이 마감에 필요한 네 가지 확인을 모두 마쳤는지 판단합니다. */
-    private function isComplete(bool $isActive, ?ProductionConfirmation $confirmation): bool
-    {
-        if (!$isActive) {
-            return true;
-        }
-
-        return (bool) ($confirmation?->production_confirmed ?? false)
-            && (bool) ($confirmation?->loss_confirmed ?? false)
-            && (bool) ($confirmation?->waste_confirmed ?? false)
-            && (bool) ($confirmation?->disposition_confirmed ?? false);
     }
 }

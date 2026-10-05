@@ -1,14 +1,19 @@
 <template>
-<v-dialog v-model="open" max-width="620" :persistent="saving">
+<v-dialog v-model="open" max-width="620" persistent>
   <v-card rounded="lg" class="app-dialog-card">
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
         <div>생산</div>
         <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}</div>
       </div>
-      <v-btn icon="mdi-close" size="small" variant="text" :disabled="saving" @click="requestClose" />
     </v-card-title>
     <v-card-text class="app-dialog-body">
+      <div class="dialog-overview">
+        <div><span>현재 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
+        <div><span>생산 기록</span><strong>{{ product?.batches?.length || 0 }}건</strong></div>
+        <div><span>확인 상태</span><strong>{{ product?.production_confirmed ? '완료' : '미확인' }}</strong></div>
+      </div>
+      <div class="dialog-guide overview-guide">생산 기록을 확인하고 새 생산량을 추가하거나 기존 기록을 수정할 수 있습니다.</div>
       <div v-if="product?.batches?.length" class="mb-4">
         <div class="text-subtitle-2 mb-2">오늘 생산 기록</div>
         <v-list density="compact" border rounded>
@@ -47,7 +52,7 @@
       <v-btn variant="outlined" block :disabled="!zeroReason || saving" @click="confirmZeroOpen = true">생산 0개 확인</v-btn>
     </v-card-text>
     <v-card-actions class="app-dialog-footer px-4 pb-4">
-      <v-btn variant="text" :disabled="saving" @click="requestClose">취소</v-btn>
+      <v-btn variant="text" :disabled="saving" @click="requestClose">닫기</v-btn>
       <v-spacer />
       <v-btn v-if="editingBatch" variant="text" :disabled="saving" @click="cancelEdit">수정 취소</v-btn>
       <v-btn variant="flat" :loading="saving" :disabled="saving" @click="save">{{ editingBatch ? '수정' : '저장' }}</v-btn>
@@ -217,6 +222,12 @@ async function save() {
 </script>
 
 <style scoped>
+.dialog-overview { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:8px; }
+.dialog-overview>div { padding:9px 7px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); text-align:center; }
+.dialog-overview span,.dialog-overview strong { display:block; }
+.dialog-overview span { font-size:.63rem; color:rgba(var(--v-theme-on-surface),.55); }
+.dialog-overview strong { margin-top:2px; font-size:.82rem; font-weight:650; }
+.overview-guide { margin-bottom:14px !important; }
 .dialog-guide { margin-bottom:9px; font-size:.7rem; line-height:1.45; color:rgba(var(--v-theme-on-surface),.6); }
 .primary-quantity-input :deep(input) { font-size:.9rem; font-weight:650; font-variant-numeric:tabular-nums; }
 .field-help { margin:-7px 0 9px 32px; font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }

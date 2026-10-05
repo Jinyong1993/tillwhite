@@ -593,8 +593,35 @@ class ProductionManagementController extends Controller
         $productionTotal = (int) $series->sum('production');
         $wasteTotal = (int) $series->sum('waste');
 
+        // 도넛과 제품 순위는 일별 화면을 반복 조립하지 않고 제품별 합계 쿼리로 한 번씩 계산합니다.
+        $productNames = Product::withTrashed()
+            ->where('store_id', $storeId)
+            ->pluck('name', 'id');
+        $productMetrics = [
+            'production' => $this->sumByProduct(ProductionBatch::query(), $storeId, 'work_date', $data['from'], $data['to']),
+            'carryover' => $this->sumByProduct(
+                ProductStockMovement::query()->where('movement_type', 'carryover_in'),
+                $storeId,
+                'work_date',
+                $data['from'],
+                $data['to'],
+            ),
+            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'work_date', $data['from'], $data['to']),
+            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'attribution_date', $data['from'], $data['to']),
+        ];
+        $productIds = collect($productMetrics)->flatMap(fn (array $values) => array_keys($values))->unique()->values();
+        $productTotals = $productIds->map(fn ($productId) => [
+            'product_id' => (int) $productId,
+            'product_name' => $productNames[$productId] ?? '-',
+            'production' => (int) ($productMetrics['production'][$productId] ?? 0),
+            'carryover' => (int) ($productMetrics['carryover'][$productId] ?? 0),
+            'loss' => (int) ($productMetrics['loss'][$productId] ?? 0),
+            'waste' => (int) ($productMetrics['waste'][$productId] ?? 0),
+        ])->values();
+
         return response()->json([
             'series' => $series,
+            'product_totals' => $productTotals,
             'totals' => [
                 'production' => $productionTotal,
                 'carryover' => (int) $series->sum('carryover'),
@@ -615,6 +642,20 @@ class ProductionManagementController extends Controller
             ->selectRaw("DATE({$dateColumn}) as aggregate_date, SUM(quantity) as aggregate_quantity")
             ->groupByRaw("DATE({$dateColumn})")
             ->pluck('aggregate_quantity', 'aggregate_date')
+            ->map(fn ($quantity) => (int) $quantity)
+            ->all();
+    }
+
+    /** 날짜 범위의 quantity를 제품별로 합산해 그래프와 순위에서 재사용합니다. */
+    private function sumByProduct($query, int $storeId, string $dateColumn, string $from, string $to): array
+    {
+        return $query
+            ->where('store_id', $storeId)
+            ->whereDate($dateColumn, '>=', $from)
+            ->whereDate($dateColumn, '<=', $to)
+            ->selectRaw('product_id, SUM(quantity) as aggregate_quantity')
+            ->groupBy('product_id')
+            ->pluck('aggregate_quantity', 'product_id')
             ->map(fn ($quantity) => (int) $quantity)
             ->all();
     }

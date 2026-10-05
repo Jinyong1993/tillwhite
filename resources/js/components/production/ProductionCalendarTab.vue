@@ -51,12 +51,9 @@
   <div class="calendar-actions">
     <v-btn v-if="canMutate" variant="flat" prepend-icon="mdi-calendar-plus" @click="openEventDialog">행사</v-btn>
   </div>
-  <v-dialog v-model="dayOpen" max-width="640" :persistent="jumping">
+  <v-dialog v-model="dayOpen" max-width="640" persistent>
     <v-card rounded="lg" class="app-dialog-card">
-      <v-card-title class="app-dialog-header d-flex justify-space-between">
-        <span>{{ selectedDay?.date || '-' }}</span>
-        <v-btn icon="mdi-close" size="small" variant="text"  :disabled="jumping" @click="dayOpen=false" />
-      </v-card-title>
+      <v-card-title class="app-dialog-header">{{ selectedDay?.date || '-' }} 일일 현황</v-card-title>
       <v-card-text class="app-dialog-body">
         <div v-if="selectedDay">
           <div class="day-dialog-status mb-3">
@@ -74,6 +71,11 @@
             <div class="waste-detail"><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
             <div><span>폐기율</span><strong>{{ selectedDay.totals.waste_rate == null ? '-' : `${selectedDay.totals.waste_rate}%` }}</strong></div>
           </div>
+          <div v-if="hasDayData(selectedDay)" class="calendar-analysis">
+            <div class="calendar-analysis-title">하루 분석</div>
+            <strong>{{ selectedDayInsight.title }}</strong>
+            <span>{{ selectedDayInsight.text }}</span>
+          </div>
         </div>
         <div v-if="selectedDay?.events?.length" class="mt-4">
           <v-chip v-for="event in selectedDay.events" :key="event.id" class="mr-1 mb-1" size="small">{{ event.title }}</v-chip>
@@ -87,7 +89,7 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
-  <v-dialog v-model="eventOpen" max-width="620">
+  <v-dialog v-model="eventOpen" max-width="620" persistent>
     <v-card rounded="lg" class="app-dialog-card">
       <v-card-title class="app-dialog-header">행사</v-card-title>
       <v-card-text class="app-dialog-body event-form">
@@ -229,6 +231,22 @@ function openEventDialog() {
 const monthLabel = computed(() => {
   const [year, monthNumber] = month.value.split('-');
   return `${year}년 ${Number(monthNumber)}월`;
+});
+
+const selectedDayInsight = computed(() => {
+  const day = selectedDay.value;
+  if (!day?.totals) return { title: '기록을 확인할 수 없습니다.', text: '목록에서 상세 기록을 확인해 주세요.' };
+  const production = Number(day.totals.production || 0);
+  const waste = Number(day.totals.waste || 0);
+  const loss = Number(day.totals.loss || 0);
+  if (!production && !waste && !loss && !Number(day.totals.carryover || 0)) {
+    return { title: '수량 기록이 없는 날짜입니다.', text: day.status === 'closed' ? '0개 기록으로 마감된 날짜입니다.' : '아직 입력된 수량이 없습니다.' };
+  }
+  if (waste > 0) {
+    return { title: `폐기 ${waste}개가 기록되었습니다.`, text: day.totals.waste_rate == null ? '생산량이 없어 폐기율을 계산하지 않습니다.' : `생산 대비 폐기율은 ${day.totals.waste_rate}%입니다.` };
+  }
+  if (loss > 0) return { title: `로스 ${loss}개가 기록되었습니다.`, text: `생산 ${production}개와 함께 원인 기록을 목록에서 확인할 수 있습니다.` };
+  return { title: `생산 ${production}개가 기록되었습니다.`, text: '폐기·로스 수량은 현재 0개입니다.' };
 });
 
 const daysInMonth = computed(() => {
@@ -404,8 +422,8 @@ async function saveEvent() {
 </script>
 <style scoped>
 .calendar-page { min-height:420px; }
-.calendar-toolbar { position:relative; display:flex; align-items:center; justify-content:center; gap:8px; padding:4px 58px 16px; }
-.calendar-today-slot { position:absolute; right:0; width:52px; display:flex; justify-content:flex-end; }
+.calendar-toolbar { display:grid; grid-template-columns:40px minmax(180px,240px) 40px 56px; align-items:center; justify-content:center; gap:6px; padding:4px 0 16px; }
+.calendar-today-slot { width:56px; display:flex; justify-content:flex-end; }
 .calendar-month-copy { min-width:180px; text-align:center; }
 .calendar-month-copy strong,.calendar-month-copy span { display:block; }
 .calendar-month-copy strong { font-size:1rem; font-weight:650; }
@@ -461,6 +479,11 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
 .calendar-empty-state strong,.calendar-empty-state span { display:block; }
 .calendar-empty-state strong { font-size:.75rem; font-weight:600; }
 .calendar-empty-state span { margin-top:2px; font-size:.67rem; color:rgba(var(--v-theme-on-surface),.58); }
+.calendar-analysis { margin-top:12px; padding:12px; border-top:1px solid rgba(var(--v-border-color),.5); background:rgba(var(--v-theme-on-surface),.025); border-radius:9px; }
+.calendar-analysis-title { margin-bottom:5px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.5); }
+.calendar-analysis strong,.calendar-analysis span { display:block; }
+.calendar-analysis strong { font-size:.78rem; }
+.calendar-analysis span { margin-top:3px; font-size:.68rem; line-height:1.45; color:rgba(var(--v-theme-on-surface),.58); }
 @media(max-width:760px) {
   .calendar-grid { gap:3px; }
   .calendar-cell { min-height:72px; padding:5px; border-radius:7px; }
