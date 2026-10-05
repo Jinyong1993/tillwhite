@@ -2,6 +2,7 @@
 <div class="daily-page">
   <section class="daily-section date-section">
     <div class="date-panel">
+      <div class="date-navigation">
       <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 날짜" @click="moveDate(-1)" />
       <v-menu v-model="dateMenu" :close-on-content-click="false">
         <template #activator="{ props: menuProps }">
@@ -13,7 +14,8 @@
         <v-date-picker :model-value="workDate" @update:model-value="selectPickerDate" />
       </v-menu>
       <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 날짜" @click="moveDate(1)" />
-      <div class="today-slot"><v-btn v-show="workDate !== today" size="small" variant="outlined" class="today-button" @click="emit('update:workDate', today)">오늘</v-btn></div>
+      </div>
+      <v-btn v-if="workDate !== today" size="small" variant="outlined" class="today-button" @click="emit('update:workDate', today)">오늘</v-btn>
     </div>
   </section>
 
@@ -65,7 +67,9 @@
           </button>
         </div>
       </div>
-      <v-menu v-if="canMutate" location="bottom end">
+      <div v-if="canMutate" class="product-heading-actions">
+        <v-btn v-if="nextMissingRow" size="small" variant="text" prepend-icon="mdi-skip-next" @click="openNextMissing">다음 미확인</v-btn>
+      <v-menu location="bottom end">
         <template #activator="{ props: menuProps }">
           <v-btn v-bind="menuProps" size="small" variant="outlined" prepend-icon="mdi-check-all">미확인 일괄 확인</v-btn>
         </template>
@@ -81,6 +85,7 @@
           </v-list-item>
         </v-list>
       </v-menu>
+      </div>
     </div>
 
     <v-text-field v-model="search" prepend-inner-icon="mdi-magnify" label="제품 검색" placeholder="제품명을 입력하세요" variant="outlined" density="compact" hide-details clearable class="product-search mb-3" />
@@ -274,7 +279,7 @@
       <v-card-text class="app-dialog-body">
         <div class="app-supporting-text text-medium-emphasis mb-3">저장 전에 생산·이월·로스·폐기와 미확인 항목을 다시 확인합니다.</div>
         <div class="daily-metrics mb-4">
-          <div v-for="metric in metrics" :key="metric.key" class="metric-item static">
+          <div v-for="metric in closeMetrics" :key="metric.key" class="metric-item static">
             <span>{{ metric.title }}</span>
             <strong>{{ metric.value }}</strong>
           </div>
@@ -462,6 +467,18 @@ const metrics = computed(() => [ {
 }, {
   key:'waste_rate', title:'폐기율', value: props.daily.totals?.waste_rate == null ? '-' : `${props.daily.totals.waste_rate}%`
 }, ]);
+
+// 마감 다이얼로그는 목록의 이전 상태가 아니라 서버에서 다시 받은 최종 점검 수치를 사용합니다.
+const closeMetrics = computed(() => {
+  const source = closePreview.value?.daily?.totals || props.daily.totals || {};
+  return [
+    { key: 'production', title: '생산', value: source.production || 0 },
+    { key: 'carryover', title: '이월', value: source.carryover || 0 },
+    { key: 'loss', title: '로스', value: source.loss || 0 },
+    { key: 'waste', title: '폐기', value: source.waste || 0 },
+    { key: 'waste_rate', title: '폐기율', value: source.waste_rate == null ? '-' : `${source.waste_rate}%` },
+  ];
+});
 const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
   const q = search.value?.trim().toLocaleLowerCase('ko-KR');
 
@@ -489,6 +506,8 @@ const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
 
   return true;
 }));
+
+const nextMissingRow = computed(() => activeRows.value.find((row) => !row.complete) || null);
 
 const filterResultLabel = computed(() => {
   if (search.value?.trim()) return `검색 결과 ${filteredRows.value.length}개`;
@@ -660,6 +679,17 @@ function moveTableDrag(event) {
 function endTableDrag() {
   tableDrag.active = false;
   tableDrag.element = null;
+}
+
+/** 가장 먼저 남아 있는 미확인 항목을 열어 마감 전 연속 확인 동선을 줄입니다. */
+function openNextMissing() {
+  const row = nextMissingRow.value;
+  if (!row) return;
+
+  if (!row.production_confirmed) return openProduction(row);
+  if (!row.loss_confirmed) return openFlow(row, 'loss');
+  if (!row.waste_confirmed) return openFlow(row, 'waste');
+  if (!row.disposition_confirmed) return openFlow(row, 'carryover');
 }
 
 /** 생산 수량을 확인하거나 기록할 수 있는 생산 다이얼로그를 엽니다. */
@@ -867,6 +897,7 @@ async function closeDay() {
 .metric-item span { font-size:.7rem; font-weight:500; color:rgba(var(--v-theme-on-surface),.58); }
 .metric-item strong { margin-top:3px; font-size:1.08rem; font-weight:650; font-variant-numeric:tabular-nums; }
 .product-search { max-width:360px; }
+.product-heading-actions { display:flex; align-items:center; gap:4px; }
 .product-filter-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .status-filter { border-bottom:1px solid rgba(var(--v-border-color),.65); border-radius:0; }
 .status-filter :deep(.v-btn) { min-width:auto; padding-inline:12px; font-size:.76rem; font-weight:500; }
@@ -952,12 +983,13 @@ async function closeDay() {
 .close-ready { padding:12px; border-radius:10px; background:rgba(var(--v-theme-success),.08); font-size:.78rem; font-weight:600; }
 
 .date-section { padding: 4px 0 10px; }
-.date-panel { display:grid; grid-template-columns:40px minmax(170px,220px) 40px 56px; align-items:center; justify-content:center; gap:4px; min-height:54px; }
+.date-panel { position:relative; display:flex; align-items:center; justify-content:center; min-height:54px; }
+.date-navigation { display:grid; grid-template-columns:40px minmax(170px,220px) 40px; align-items:center; justify-content:center; gap:4px; }
 .date-main-button { min-width:170px; padding:6px 12px; border:0; border-radius:10px; background:transparent; color:inherit; text-align:center; cursor:pointer; }
 .date-main-button span,.date-main-button small { display:block; }
 .date-main-button span { font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
 .date-main-button small { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.52); }
-.today-slot { width:56px; display:flex; justify-content:flex-end; }
+.today-button { position:absolute; right:0; }
 .today-button { min-width:48px; }
 .previous-close-alert { margin:2px 0 8px; }
 .previous-close-copy { display:flex; flex-direction:column; gap:2px; }

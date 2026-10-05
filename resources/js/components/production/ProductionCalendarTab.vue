@@ -65,10 +65,10 @@
             <div><strong>이 날짜에는 기록이 없습니다.</strong><span>생산·이월·로스·폐기 기록이 생기면 여기에 표시됩니다.</span></div>
           </div>
           <div class="day-detail">
-            <div class="production-detail"><span>생산</span><strong>{{ selectedDay.totals.production }}</strong></div>
+            <div ><span>생산</span><strong>{{ selectedDay.totals.production }}</strong></div>
             <div><span>이월</span><strong>{{ selectedDay.totals.carryover }}</strong></div>
             <div><span>로스</span><strong>{{ selectedDay.totals.loss }}</strong></div>
-            <div class="waste-detail"><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
+            <div ><span>폐기</span><strong>{{ selectedDay.totals.waste }}</strong></div>
             <div><span>폐기율</span><strong>{{ selectedDay.totals.waste_rate == null ? '-' : `${selectedDay.totals.waste_rate}%` }}</strong></div>
           </div>
           <div v-if="hasDayData(selectedDay)" class="calendar-analysis">
@@ -76,6 +76,24 @@
             <strong>{{ selectedDayInsight.title }}</strong>
             <span>{{ selectedDayInsight.text }}</span>
           </div>
+          <div v-if="dayDetailLoading" class="day-record-loading">일일 기록을 불러오는 중입니다.</div>
+          <template v-else-if="selectedDayDaily?.rows?.length">
+            <v-btn-toggle v-model="dayFilter" mandatory density="compact" variant="text" class="day-filter">
+              <v-btn value="all">전체</v-btn><v-btn value="missing">확인 필요</v-btn><v-btn value="complete">기록 완료</v-btn>
+            </v-btn-toggle>
+            <div class="day-product-list">
+              <div v-for="row in filteredDayRows" :key="row.id" class="day-product-row">
+                <div class="day-product-head"><strong>{{ row.name }}</strong><span>{{ row.complete ? '완료' : '확인 필요' }}</span></div>
+                <div class="day-product-values">
+                  <span>생산 <b>{{ row.production_confirmed ? row.production : '-' }}</b></span>
+                  <span>이월 <b>{{ row.disposition_confirmed ? row.carryover_in : '-' }}</b></span>
+                  <span>로스 <b>{{ row.loss_confirmed ? row.loss : '-' }}</b></span>
+                  <span>폐기 <b>{{ row.waste_confirmed ? row.waste : '-' }}</b></span>
+                  <span>폐기율 <b>{{ row.waste_rate == null ? '-' : `${row.waste_rate}%` }}</b></span>
+                </div>
+              </div>
+            </div>
+          </template>
         </div>
         <div v-if="selectedDay?.events?.length" class="mt-4">
           <v-chip v-for="event in selectedDay.events" :key="event.id" class="mr-1 mb-1" size="small">{{ event.title }}</v-chip>
@@ -173,6 +191,9 @@ const monthCache = new Map();
 const dayOpen = ref(false);
 const confirmDayStatus = ref(false);
 const selectedDay = ref(null);
+const selectedDayDaily = ref(null);
+const dayDetailLoading = ref(false);
+const dayFilter = ref('all');
 const eventOpen = ref(false);
 const eventTarget = ref('all');
 const confirmEvent = ref(false);
@@ -233,6 +254,13 @@ const monthLabel = computed(() => {
   return `${year}년 ${Number(monthNumber)}월`;
 });
 
+
+const filteredDayRows = computed(() => {
+  const rows = (selectedDayDaily.value?.rows || []).filter((row) => row.is_active);
+  if (dayFilter.value === 'missing') return rows.filter((row) => !row.complete);
+  if (dayFilter.value === 'complete') return rows.filter((row) => row.complete);
+  return rows;
+});
 const selectedDayInsight = computed(() => {
   const day = selectedDay.value;
   if (!day?.totals) return { title: '기록을 확인할 수 없습니다.', text: '목록에서 상세 기록을 확인해 주세요.' };
@@ -353,9 +381,24 @@ function hasDayData(day) {
 }
 
 /** 선택 날짜의 생산·이월·로스·폐기 요약을 상세 다이얼로그로 엽니다. */
-function openDay(day) {
+async function openDay(day) {
   selectedDay.value = day;
+  selectedDayDaily.value = null;
+  dayFilter.value = 'all';
   dayOpen.value = true;
+  dayDetailLoading.value = true;
+
+  try {
+    const { data } = await window.axios.get('/tillwhite/api/production-management/daily', {
+      params: { store_id: props.storeId, date: day.date },
+      timeout: 20000,
+    });
+    selectedDayDaily.value = data;
+  } catch (error) {
+    emit('error', error.response?.data?.message || '일일 상세 기록을 불러오지 못했습니다.');
+  } finally {
+    dayDetailLoading.value = false;
+  }
 }
 
 /** 목록 이동이 끝날 때까지 상세 다이얼로그를 잠그고 성공한 경우에만 닫습니다. */
@@ -468,10 +511,19 @@ button.calendar-cell:hover { transform:translateY(-1px); border-color:rgba(var(-
 .day-dialog-status { display:flex; flex-direction:column; gap:2px; }
 .day-dialog-status strong { font-size:.86rem; font-weight:650; }
 .day-dialog-status span { font-size:.72rem; color:rgba(var(--v-theme-on-surface),.58); }
+.day-record-loading { margin-top:14px; padding:12px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); font-size:.68rem; color:rgba(var(--v-theme-on-surface),.58); }
+.day-filter { display:grid; grid-template-columns:repeat(3,1fr); width:100%; margin-top:14px; }
+.day-filter :deep(.v-btn) { min-width:0; font-size:.66rem; }
+.day-product-list { margin-top:8px; max-height:280px; overflow:auto; }
+.day-product-row { padding:9px 2px; border-bottom:1px solid rgba(var(--v-border-color),.45); }
+.day-product-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.day-product-head strong { font-size:.72rem; }
+.day-product-head span { font-size:.62rem; color:rgba(var(--v-theme-on-surface),.55); }
+.day-product-values { display:grid; grid-template-columns:repeat(5,1fr); gap:3px; margin-top:6px; }
+.day-product-values span { text-align:center; font-size:.58rem; color:rgba(var(--v-theme-on-surface),.55); }
+.day-product-values b { display:block; margin-top:1px; font-size:.67rem; color:rgb(var(--v-theme-on-surface)); }
 .day-detail { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
 .day-detail>div { padding:10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.035); text-align:center; }
-.day-detail>div.production-detail { background:rgba(76,175,80,.13); }
-.day-detail>div.waste-detail { background:rgba(239,83,80,.12); }
 .day-detail span,.day-detail strong { display:block; }
 .day-detail span { font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
 .day-detail strong { margin-top:2px; font-size:.9rem; font-weight:600; font-variant-numeric:tabular-nums; }

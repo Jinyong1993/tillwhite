@@ -255,6 +255,25 @@ class ProductionManagementController extends Controller
             'carryover' => '이월',
         ];
         $label = $labels[$data['type']];
+        $confirmationField = [
+            'loss' => 'loss_confirmed',
+            'waste' => 'waste_confirmed',
+            'other_outflow' => 'disposition_confirmed',
+            'carryover' => 'disposition_confirmed',
+        ][$data['type']];
+
+        // 0개 확인은 별도 수량 행이 생기지 않으므로 확인 플래그가 실제 DB에 저장됐는지
+        // 서버에서 다시 검증한 뒤에만 성공 응답을 보냅니다. 성공 알림과 실제 상태가 어긋나는 것을 막습니다.
+        $confirmed = ProductionConfirmation::query()
+            ->where('store_id', $data['store_id'])
+            ->where('product_id', $data['product_id'])
+            ->whereDate('work_date', $data['work_date'])
+            ->where($confirmationField, true)
+            ->exists();
+        abort_unless($confirmed, 500, "{$label} 확인 상태를 저장하지 못했습니다. 다시 시도해주세요.");
+
+        $freshDaily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
+        $freshRow = collect($freshDaily['rows'])->firstWhere('id', (int) $data['product_id']);
 
         $this->auditService->log(
             $user,
@@ -267,7 +286,10 @@ class ProductionManagementController extends Controller
             "{$label} 처리 저장",
         );
 
-        return response()->json(['message' => "{$label} 처리를 저장했습니다."]);
+        return response()->json([
+            'message' => "{$label} 처리를 저장했습니다.",
+            'row' => $freshRow,
+        ]);
     }
 
     /** 선택한 수량 처리 항목의 확인 상태만 갱신합니다. */
@@ -397,7 +419,19 @@ class ProductionManagementController extends Controller
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
         abort_if(collect($daily['rows'])->where('is_active', true)->contains('complete', false), 422, '아직 확인하지 않은 제품이 있어 마감할 수 없습니다.');
-        ProductionDailyClosure::updateOrCreate(['store_id' => $data['store_id'], 'work_date' => $data['work_date']], ['status' => 'closed', 'daily_memo' => $data['daily_memo'] ?? null, 'closed_by' => $user->id, 'closed_at' => now(), 'updated_by' => $user->id]);
+        $closure = ProductionDailyClosure::updateOrCreate(
+            ['store_id' => $data['store_id'], 'work_date' => $data['work_date']],
+            [
+                'status' => 'closed',
+                'daily_memo' => $data['daily_memo'] ?? null,
+                'closed_by' => $user->id,
+                'closed_at' => now(),
+                'updated_by' => $user->id,
+            ],
+        );
+        $closure->refresh();
+        abort_unless($closure->status === 'closed', 500, '마감 상태를 저장하지 못했습니다. 다시 시도해주세요.');
+
         StoreDailyWeather::firstOrCreate(['store_id' => $data['store_id'], 'work_date' => $data['work_date']], ['collection_status' => 'pending']);
         $openCorrection = ProductionCorrection::query()->where('store_id', $data['store_id'])->whereDate('work_date', $data['work_date'])->whereNull('after_data')->latest('id')->first();
         if ($openCorrection) {
@@ -593,6 +627,15 @@ class ProductionManagementController extends Controller
         $productionTotal = (int) $series->sum('production');
         $wasteTotal = (int) $series->sum('waste');
 
+        // 같은 길이의 직전 기간을 함께 계산해 현재 기간의 증감을 의미 있게 비교합니다.
+        $periodDays = Carbon::parse($data['from'])->diffInDays(Carbon::parse($data['to'])) + 1;
+        $previousTo = Carbon::parse($data['from'])->subDay()->toDateString();
+        $previousFrom = Carbon::parse($previousTo)->subDays($periodDays - 1)->toDateString();
+        $previousProduction = array_sum($this->sumByDate(ProductionBatch::query(), $storeId, 'work_date', $previousFrom, $previousTo));
+        $previousCarryover = array_sum($this->sumByDate(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $previousFrom, $previousTo));
+        $previousLoss = array_sum($this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $previousFrom, $previousTo));
+        $previousWaste = array_sum($this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $previousFrom, $previousTo));
+
         // 도넛과 제품 순위는 일별 화면을 반복 조립하지 않고 제품별 합계 쿼리로 한 번씩 계산합니다.
         $productNames = Product::withTrashed()
             ->where('store_id', $storeId)
@@ -629,6 +672,13 @@ class ProductionManagementController extends Controller
                 'waste' => $wasteTotal,
                 'waste_rate' => $productionTotal > 0 ? round($wasteTotal / $productionTotal * 100, 1) : null,
             ],
+            'previous_totals' => [
+                'production' => (int) $previousProduction,
+                'carryover' => (int) $previousCarryover,
+                'loss' => (int) $previousLoss,
+                'waste' => (int) $previousWaste,
+                'waste_rate' => $previousProduction > 0 ? round($previousWaste / $previousProduction * 100, 1) : null,
+            ],
         ]);
     }
 
@@ -660,7 +710,7 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
-    /** 제품별 최근 흐름을 검사해 확인이 필요한 항목과 설명 가능한 추천을 반환합니다. */
+    /** 선택 기간의 흐름과 제품별 현황을 반환하며 추천 계산은 최근 28일 이내 기록만 사용합니다. */
     public function analysis(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -668,62 +718,86 @@ class ProductionManagementController extends Controller
         $data = $request->validate([
             'store_id' => ['required', 'integer', 'exists:stores,id'],
             'date' => ['required', 'date_format:Y-m-d'],
+            'days' => ['nullable', 'integer', Rule::in([7, 30, 90, 365])],
         ]);
         $storeId = (int) $data['store_id'];
         $this->assertStoreReadable($user, $storeId);
 
         $target = Carbon::parse($data['date']);
+        $days = (int) ($data['days'] ?? 30);
+        $from = $target->copy()->subDays($days - 1)->toDateString();
+        $to = $target->toDateString();
         $products = Product::query()
             ->where('store_id', $storeId)
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        // 같은 날짜의 일일 계산을 제품마다 반복하지 않고 28일을 한 번씩만 계산합니다.
-        $historyByProduct = collect();
+        // 기간 흐름과 제품 합계는 집계 쿼리로 계산합니다. 1년 조회에서도 일일 화면을 365번
+        // 조립하지 않아 분석 탭의 응답 지연과 불필요한 DB 조회를 크게 줄입니다.
+        $dateMetrics = [
+            'production' => $this->sumByDate(ProductionBatch::query(), $storeId, 'work_date', $from, $to),
+            'carryover' => $this->sumByDate(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $from, $to),
+            'loss' => $this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $from, $to),
+            'waste' => $this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $from, $to),
+        ];
         $dailyFlow = collect();
-        for ($i = 28; $i >= 1; $i--) {
+        for ($cursor = Carbon::parse($from); $cursor->lte($target); $cursor->addDay()) {
+            $key = $cursor->toDateString();
+            $production = (int) ($dateMetrics['production'][$key] ?? 0);
+            $waste = (int) ($dateMetrics['waste'][$key] ?? 0);
+            $dailyFlow->push([
+                'date' => $key,
+                'production' => $production,
+                'carryover' => (int) ($dateMetrics['carryover'][$key] ?? 0),
+                'loss' => (int) ($dateMetrics['loss'][$key] ?? 0),
+                'waste' => $waste,
+                'waste_rate' => $production > 0 ? round($waste / $production * 100, 1) : null,
+            ]);
+        }
+
+        $productMetrics = [
+            'production' => $this->sumByProduct(ProductionBatch::query(), $storeId, 'work_date', $from, $to),
+            'carryover' => $this->sumByProduct(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $from, $to),
+            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'work_date', $from, $to),
+            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'attribution_date', $from, $to),
+        ];
+        $productTotals = $products->map(fn (Product $product) => [
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'production' => (int) ($productMetrics['production'][$product->id] ?? 0),
+            'carryover' => (int) ($productMetrics['carryover'][$product->id] ?? 0),
+            'loss' => (int) ($productMetrics['loss'][$product->id] ?? 0),
+            'waste' => (int) ($productMetrics['waste'][$product->id] ?? 0),
+        ])->values();
+
+        // 추천은 기존 의미를 보존하기 위해 최대 최근 28일의 확인된 생산 기록만 사용합니다.
+        $historyByProduct = collect();
+        $recommendationDays = min($days, 28);
+        for ($i = $recommendationDays - 1; $i >= 0; $i--) {
             $date = $target->copy()->subDays($i)->toDateString();
             $daily = $this->dailyService->build($storeId, $date);
             $specialDay = ! empty($this->eventsForDate($storeId, $date));
-            $dailyFlow->push(['date' => $date, ...$daily['totals']]);
-
             foreach ($daily['rows'] as $row) {
                 if (! $row['production_confirmed']) {
                     continue;
                 }
-
-                $historyByProduct->push([
-                    'product_id' => $row['id'],
-                    'date' => $date,
-                    ...$row,
-                    'special_day' => $specialDay,
-                ]);
+                $historyByProduct->push(['product_id' => $row['id'], 'date' => $date, ...$row, 'special_day' => $specialDay]);
             }
         }
         $historyByProduct = $historyByProduct->groupBy('product_id');
-
         $targetEvents = collect($this->eventsForDate($storeId, $data['date']));
         $items = $products->map(function (Product $product) use ($historyByProduct, $targetEvents, $target) {
             $history = collect($historyByProduct->get($product->id, []))->values();
             $productEvents = $targetEvents
                 ->filter(fn (array $event) => empty($event['products']) || collect($event['products'])->contains('id', $product->id))
-                ->values()
-                ->all();
+                ->values()->all();
             $recommendation = $this->recommendationService->recommend($history, $target, $productEvents);
             $recent = $history->take(-5);
             $flags = [];
-
-            if ($recent->where('waste', '>', 0)->count() >= 3) {
-                $flags[] = '최근 폐기가 반복되고 있습니다.';
-            }
-            if ($recent->where('carryover_out', '>', 0)->count() >= 3) {
-                $flags[] = '최근 이월이 반복되고 있습니다.';
-            }
-            if ($recommendation['warning']) {
-                $flags[] = $recommendation['warning'];
-            }
-
+            if ($recent->where('waste', '>', 0)->count() >= 3) $flags[] = '최근 폐기가 반복되고 있습니다.';
+            if ($recent->where('carryover_out', '>', 0)->count() >= 3) $flags[] = '최근 이월이 반복되고 있습니다.';
+            if ($recommendation['warning']) $flags[] = $recommendation['warning'];
             return [
                 'product_id' => $product->id,
                 'product_name' => $product->name,
@@ -732,23 +806,11 @@ class ProductionManagementController extends Controller
             ];
         })->values();
 
-        $productTotals = $products->map(function (Product $product) use ($historyByProduct) {
-            $history = collect($historyByProduct->get($product->id, []));
-
-            return [
-                'product_id' => $product->id,
-                'product_name' => $product->name,
-                'production' => (int) $history->sum('production'),
-                'carryover' => (int) $history->sum('carryover_in'),
-                'loss' => (int) $history->sum('loss'),
-                'waste' => (int) $history->sum('waste'),
-            ];
-        })->values();
-
         return response()->json([
             'items' => $items,
             'daily_flow' => $dailyFlow,
             'product_totals' => $productTotals,
+            'range' => ['from' => $from, 'to' => $to, 'days' => $days],
         ]);
     }
 

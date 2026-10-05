@@ -35,6 +35,7 @@
         <div class="flow-summary">
           <div><span>사용 가능</span><strong>{{ available }}개</strong></div>
           <div><span>다른 처리</span><strong>{{ otherAllocated }}개</strong></div>
+          <div class="remaining-after"><span>저장 후 남음</span><strong>{{ remainingAfterSave }}개</strong></div>
         </div>
 
         <div v-if="savedDetails.length" class="saved-flow-details">
@@ -227,6 +228,9 @@ const currentQuantity = computed(() => (
     ? Number(carryoverQuantity.value || 0)
     : sumRows(reasonRows.value)
 ));
+
+// 입력과 동시에 저장 후 남을 수량을 보여줘 초과 입력을 저장 전에 발견할 수 있게 합니다.
+const remainingAfterSave = computed(() => Math.max(0, remainingAvailable.value - currentQuantity.value));
 
 const confirmMessage = computed(() => {
   const message = `${dialogTitle.value} ${currentQuantity.value}개로 저장하시겠습니까?`;
@@ -422,7 +426,7 @@ async function save() {
 .flow-guide span { font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
 .flow-guide strong { margin-top:1px; font-size:1rem; font-weight:700; font-variant-numeric:tabular-nums; }
 .flow-guide p { margin:0; font-size:.68rem; line-height:1.45; color:rgba(var(--v-theme-on-surface),.62); text-align:right; }
-.flow-summary { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-bottom:14px; }
+.flow-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:14px; }
 .flow-summary>div { padding:7px 9px; border:1px solid rgba(var(--v-border-color),.5); border-radius:8px; }
 .flow-summary span,.flow-summary strong { display:block; }
 .flow-summary span { font-size:.63rem; color:rgba(var(--v-theme-on-surface),.52); }
