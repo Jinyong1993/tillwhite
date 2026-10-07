@@ -24,6 +24,6 @@ export function formatKoreanDate(value) {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
-    weekday: 'short',
+    weekday: 'long',
   }).format(new Date(year, month - 1, day));
 }

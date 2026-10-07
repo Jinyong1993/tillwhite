@@ -251,7 +251,7 @@ function openMetric(key) {
 function metricValue(row) {
     if (metricKey.value === 'waste_rate') {
         const production = Number(row.production || 0);
-        return production ? `${(Number(row.waste || 0) / production * 100).toFixed(1)}%` : '-';
+        return production ? `${(Number(row.attributed_waste || 0) / production * 100).toFixed(1)}%` : '-';
     }
 
     return `${Number(row[metricKey.value] || 0)}개`;
@@ -295,11 +295,12 @@ function groupSeries(rows, unit) {
                 carryover: 0,
                 loss: 0,
                 waste: 0,
+                attributed_waste: 0,
             });
         }
 
         const group = groups.get(key);
-        for (const metric of ['production', 'carryover', 'loss', 'waste']) {
+        for (const metric of ['production', 'carryover', 'loss', 'waste', 'attributed_waste']) {
             group[metric] += Number(row[metric] || 0);
         }
     }
@@ -309,7 +310,7 @@ function groupSeries(rows, unit) {
         return {
             ...group,
             waste_rate: production
-                ? Number((group.waste / production * 100).toFixed(1))
+                ? Number((group.attributed_waste / production * 100).toFixed(1))
                 : null,
         };
     });

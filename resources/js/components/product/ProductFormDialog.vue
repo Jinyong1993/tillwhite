@@ -6,11 +6,11 @@
     @update:model-value="handleDialogChange"
   >
     <v-card
-        class="product-form-dialog"
+        class="app-dialog-card product-form-dialog"
         rounded="lg"
     >
       <!-- 직원 등록 다이얼로그와 같은 구조의 고정 헤더입니다. -->
-      <div class="product-form-header">
+      <div class="app-dialog-header product-form-header">
         <div class="product-form-header-icon">
           <v-icon
             :icon="isEdit ? 'mdi-package-variant' : 'mdi-package-variant-plus'"
@@ -73,6 +73,7 @@
               prepend-inner-icon="mdi-store-outline"
               append-inner-icon="mdi-lock-outline"
               variant="outlined"
+              density="compact"
               readonly
               :disabled="loading"
             />
@@ -86,6 +87,7 @@
               label="점포 *"
               prepend-inner-icon="mdi-store-outline"
               variant="outlined"
+              density="compact"
               clearable
               :disabled="loading"
             />
@@ -98,6 +100,7 @@
               label="카테고리 *"
               prepend-inner-icon="mdi-shape-outline"
               variant="outlined"
+              density="compact"
               :disabled="!form.store_id || loading"
             />
 
@@ -107,6 +110,7 @@
               placeholder="제품명을 입력하세요"
               prepend-inner-icon="mdi-package-variant-closed"
               variant="outlined"
+              density="compact"
               maxlength="255"
               :rules="[requiredRule, nameLengthRule]"
               :disabled="loading"
@@ -117,6 +121,7 @@
               label="판매가 *"
               prepend-inner-icon="mdi-currency-krw"
               variant="outlined"
+              density="compact"
               :min="0"
               :step="100"
               :rules="[requiredRule, priceRule]"
@@ -144,6 +149,7 @@
               label="생산 부서 *"
               prepend-inner-icon="mdi-chef-hat"
               variant="outlined"
+              density="compact"
               :disabled="loading"
             />
 
@@ -157,6 +163,7 @@
               label="관리 부서 *"
               prepend-inner-icon="mdi-account-cog-outline"
               variant="outlined"
+              density="compact"
               :disabled="loading"
             />
           </div>
@@ -180,6 +187,7 @@
             label="판매 유형 *"
             prepend-inner-icon="mdi-tag-outline"
             variant="outlined"
+            density="compact"
             :disabled="loading"
           />
 
@@ -193,6 +201,7 @@
               type="date"
               prepend-inner-icon="mdi-calendar-start-outline"
               variant="outlined"
+              density="compact"
               :disabled="loading"
             />
 
@@ -202,6 +211,7 @@
               type="date"
               prepend-inner-icon="mdi-calendar-end-outline"
               variant="outlined"
+              density="compact"
               :min="form.sales_start_date || undefined"
               :disabled="loading"
             />
@@ -211,7 +221,7 @@
 
       <v-divider />
 
-      <div class="product-form-actions">
+      <div class="app-dialog-footer product-form-actions">
         <v-btn
           variant="text"
           prepend-icon="mdi-close"
@@ -785,4 +795,12 @@ function createPayload() {
     grid-column: 2;
   }
 }
+.product-form-dialog :deep(.v-field) {
+    font-size: 0.82rem;
+}
+
+.product-form-dialog :deep(.v-label) {
+    font-size: 0.78rem;
+}
+
 </style>

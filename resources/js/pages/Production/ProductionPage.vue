@@ -299,15 +299,34 @@ function replaceDaily(value) {
   if (!value) return;
 
   const key = cacheKey(workDate.value, storeId.value);
-  daily.value = value;
-  dailyCache.set(key, value);
+  const merged = { ...daily.value, ...value };
+  daily.value = merged;
+  dailyCache.set(key, merged);
 }
 
-// 저장 후 현재 날짜 캐시만 무효화하여 변경된 값을 서버에서 다시 확인합니다.
+/**
+ * 생산·이월·로스·폐기·마감은 앞뒤 날짜와 원 생산일의 집계에도 영향을 줄 수 있습니다.
+ * 저장 뒤에는 현재 점포의 날짜 캐시를 모두 비워 오래된 사전 조회값이 다시 노출되지 않게 합니다.
+ */
+function invalidateStoreCache(targetStoreId) {
+  const storeSuffix = `${targetStoreId}:`;
+
+  for (const key of dailyCache.keys()) {
+    if (key.startsWith(storeSuffix)) {
+      dailyCache.delete(key);
+    }
+  }
+
+  for (const key of optionsCache.keys()) {
+    if (key.startsWith(storeSuffix)) {
+      optionsCache.delete(key);
+    }
+  }
+}
+
+// 저장 성공 뒤 현재 날짜를 서버 기준으로 다시 받아 SPA의 모든 관련 상태를 즉시 동기화합니다.
 async function reloadCurrentDate() {
-  const key = cacheKey(workDate.value, storeId.value);
-  dailyCache.delete(key);
-  optionsCache.delete(key);
+  invalidateStoreCache(storeId.value);
   await loadPage({ force: true });
 }
 

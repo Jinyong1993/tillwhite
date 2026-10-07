@@ -6,14 +6,14 @@
     @update:model-value="handleMainDialogChange"
   >
     <v-card
-      class="category-dialog"
+      class="app-dialog-card category-dialog"
       rounded="lg"
     >
       <!--
         헤더와 관리 도구는 목록 스크롤과 분리합니다.
         목록이 길어져도 제목과 관리 영역은 항상 같은 위치를 유지합니다.
       -->
-      <div class="category-header">
+      <div class="app-dialog-header category-header">
         <div class="category-header-icon">
           <v-icon
             icon="mdi-shape-outline"
@@ -49,6 +49,7 @@
           label="점포 *"
           prepend-inner-icon="mdi-store-outline"
           variant="outlined"
+          density="compact"
           hide-details
           :disabled="loading"
         />
@@ -65,6 +66,7 @@
           append-inner-icon="mdi-lock-outline"
           readonly
           variant="outlined"
+          density="compact"
           hide-details
         />
 
@@ -77,6 +79,7 @@
             maxlength="100"
             prepend-inner-icon="mdi-shape-plus-outline"
             variant="outlined"
+            density="compact"
             hide-details
             :disabled="loading"
             @keyup.enter="add"
@@ -101,7 +104,7 @@
             prepend-inner-icon="mdi-magnify"
             clearable
             variant="outlined"
-            density="comfortable"
+            density="compact"
             hide-details
           />
 
@@ -111,7 +114,7 @@
             label="상태"
             prepend-inner-icon="mdi-list-status"
             variant="outlined"
-            density="comfortable"
+            density="compact"
             hide-details
           />
         </div>
@@ -223,7 +226,7 @@
           v-model="currentPage"
           :length="totalPages"
           :total-visible="4"
-          density="comfortable"
+          density="compact"
           rounded="circle"
         />
 
@@ -234,7 +237,7 @@
 
       <v-divider />
 
-      <div class="category-actions">
+      <div class="app-dialog-footer category-actions">
         <v-btn
           variant="text"
           prepend-icon="mdi-close"
@@ -264,6 +267,7 @@
           label="카테고리명 *"
           maxlength="100"
           variant="outlined"
+          density="compact"
           :disabled="loading"
           autofocus
           @keyup.enter="submitRename"
@@ -981,4 +985,12 @@ function submitRename() {
     justify-content: center;
   }
 }
+.category-dialog :deep(.v-field) {
+    font-size: 0.82rem;
+}
+
+.category-dialog :deep(.v-label) {
+    font-size: 0.78rem;
+}
+
 </style>

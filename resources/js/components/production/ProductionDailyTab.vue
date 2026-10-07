@@ -110,6 +110,14 @@
             min-width="280"
         >
           <v-list-item
+              :disabled="!hasMissingItems"
+              @click="askBulkZero('all')"
+          >
+            <v-list-item-title>전체 미확인 항목을 0으로 확인</v-list-item-title>
+            <v-list-item-subtitle>생산·이월·로스·폐기 중 미확인 항목만 없음(0)으로 확인합니다.</v-list-item-subtitle>
+          </v-list-item>
+          <v-divider />
+          <v-list-item
             v-for="item in missingItems"
             :key="item.key"
             :disabled="item.count === 0"
@@ -172,11 +180,6 @@
         <div
           v-show="!collapsed.has(group.name)"
           class="product-table-wrap"
-          @pointerdown="startTableDrag"
-          @pointermove="moveTableDrag"
-          @pointerup="endTableDrag"
-          @pointercancel="endTableDrag"
-          @pointerleave="endTableDrag"
         >
           <table class="product-table">
             <colgroup>
@@ -194,19 +197,58 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in group.rows" :key="row.id" :class="{ 'row-inactive': !row.is_active, 'row-needs-check': !row.complete && row.is_active }">
-                <td>
-                  <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
-                </td>
-                <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
-                <td><button type="button" class="table-value" :class="{ pending: !row.disposition_confirmed }" @click="openFlow(row, 'carryover')">{{ row.disposition_confirmed ? row.carryover_in : '-' }}</button></td>
-                <td><button type="button" class="table-value" :class="{ pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
-                <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
-                <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</button></td>
-              </tr>
+              <template v-for="row in group.rows" :key="row.id">
+                <tr :class="{ 'row-inactive': !row.is_active, 'row-needs-check': !row.complete && row.is_active }">
+                  <td>
+                    <div class="product-name-cell">
+                      <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
+                      <button
+                          type="button"
+                          class="row-detail-toggle"
+                          :aria-label="`${row.name} 상세 ${isRowExpanded(row.id) ? '닫기' : '보기'}`"
+                          @click="toggleRowDetail(row.id)"
+                      >
+                        <v-icon :icon="isRowExpanded(row.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="16" />
+                      </button>
+                    </div>
+                  </td>
+                  <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
+                  <td>
+                    <button type="button" class="table-value carryover-value" :class="{ pending: !row.disposition_confirmed }" @click="openFlow(row, 'carryover')">
+                      <template v-if="row.disposition_confirmed">
+                        <span v-if="row.carryover_in">재고 {{ row.carryover_in }}</span>
+                        <span v-if="row.carryover_out">예정 {{ row.carryover_out }}</span>
+                        <span v-if="!row.carryover_in && !row.carryover_out">0</span>
+                      </template>
+                      <template v-else>-</template>
+                    </button>
+                  </td>
+                  <td><button type="button" class="table-value" :class="{ pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
+                  <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
+                  <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }} <span aria-hidden="true">›</span></button></td>
+                </tr>
+                <tr v-if="isRowExpanded(row.id)" class="product-detail-row">
+                  <td colspan="6">
+                    <div class="product-row-detail">
+                      <div><span>이월 재고</span><strong>{{ row.carryover_in }}개</strong></div>
+                      <div><span>이월 예정</span><strong>{{ row.carryover_out }}개</strong></div>
+                      <div><span>오늘 폐기</span><strong>{{ row.operational_waste }}개</strong></div>
+                      <div><span>귀속 폐기</span><strong>{{ row.attributed_waste }}개</strong></div>
+                      <div class="product-row-flow">
+                        <span>재고 흐름</span>
+                        <strong>{{ stockFlowText(row) }}</strong>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
               <tr class="subtotal-row">
                 <td>소계</td>
-                <td>{{ sum(group.rows, 'production') }}</td><td>{{ sum(group.rows, 'carryover_in') }}</td><td>{{ sum(group.rows, 'loss') }}</td><td>{{ sum(group.rows, 'waste') }}</td><td>{{ groupWasteRate(group.rows) }}</td>
+                <td>{{ sum(group.rows, 'production') }}</td>
+                <td>{{ sum(group.rows, 'carryover_in') }}</td>
+                <td>{{ sum(group.rows, 'loss') }}</td>
+                <td>{{ sum(group.rows, 'waste') }}</td>
+                <td>{{ groupWasteRate(group.rows) }}</td>
               </tr>
             </tbody>
           </table>
@@ -367,8 +409,8 @@
       <v-card-text class="app-dialog-body history-body">
         <div class="history-context">{{ formatKoreanDate(workDate) }}의 생산·이월·로스·폐기 변경 기록입니다.</div>
         <v-divider class="app-section-divider" />
-        <div v-if="historyLogs.length" class="history-list">
-          <article v-for="log in historyLogs" :key="log.id" class="history-item">
+        <div v-if="historyLogs.length" ref="historyListRef" class="history-list">
+          <article v-for="log in pagedHistoryLogs" :key="log.id" class="history-item">
             <div class="history-item-head">
               <strong>{{ log.description || '업무 기록 변경' }}</strong>
               <span class="history-action">{{ historyActionLabel(log.action) }}</span>
@@ -381,6 +423,16 @@
             title="변경 이력이 없습니다."
             icon="mdi-history"
         />
+        <v-pagination
+            v-if="historyPageCount > 1"
+            v-model="historyPage"
+            :length="historyPageCount"
+            :total-visible="5"
+            density="compact"
+            class="history-pagination"
+            @update:model-value="scrollHistoryTop"
+        />
+        <div v-if="historyLogs.length" class="history-page-count">{{ historyPage }} / {{ historyPageCount }} 페이지 · 페이지당 10개</div>
       </v-card-text>
       <v-card-actions class="app-dialog-footer history-footer">
         <v-btn variant="text" @click="historyOpen=false">닫기</v-btn>
@@ -412,12 +464,18 @@
             density="compact"
             class="app-supporting-alert"
         >
-          아직 확인할 제품이 {{ closePreview.incomplete?.length || 0 }}개 있습니다. 아래에서 필요한 항목을 바로 입력할 수 있습니다.
+          <template v-if="closePreview.stock_issues?.length">
+            <strong>재고 흐름을 확인해 주세요.</strong>
+            <div v-for="issue in closePreview.stock_issues" :key="issue">{{ issue }}</div>
+          </template>
+          <template v-else>
+            아직 확인할 제품이 {{ closePreview.incomplete?.length || 0 }}개 있습니다. 아래에서 필요한 항목을 바로 입력할 수 있습니다.
+          </template>
         </v-alert>
         <div class="close-progress-copy">
           확인 {{ closeCompleteCount }} / {{ closeRows.length }} · 확인 필요 {{ closeIncompleteCount }}개
         </div>
-        <div v-if="closeRows.length" class="close-check-list mt-3">
+        <div v-if="closeRows.length" ref="closeListRef" class="close-check-list mt-3">
           <article v-for="row in pagedCloseRows" :key="row.id" class="close-check-item">
             <div class="close-check-copy">
               <strong>{{ row.name }}</strong>
@@ -428,7 +486,7 @@
                 <span>생산</span><strong>{{ row.production_confirmed ? `${row.production}개` : '-' }}</strong>
               </button>
               <button type="button" @click="openFlow(row, 'carryover')">
-                <span>이월</span><strong>{{ row.disposition_confirmed ? `${row.carryover_in}개` : '-' }}</strong>
+                <span>이월</span><strong v-if="row.disposition_confirmed">재고 {{ row.carryover_in }} · 예정 {{ row.carryover_out }}</strong><strong v-else>-</strong>
               </button>
               <button type="button" @click="openFlow(row, 'loss')">
                 <span>로스</span><strong>{{ row.loss_confirmed ? `${row.loss}개` : '-' }}</strong>
@@ -449,6 +507,7 @@
             :total-visible="5"
             density="compact"
             class="close-pagination"
+            @update:model-value="scrollCloseTop"
         />
         <div v-if="closePreview?.can_close" class="close-ready mt-3">모든 제품 확인이 완료되었습니다. 입력 수량을 마지막으로 확인한 뒤 마감해 주세요.</div>
       </v-card-text>
@@ -525,16 +584,28 @@ import {
 import { productionReasonLabel } from '../../utils/productionReasons';
 const props = defineProps({
   daily: {
-    type: Object, default: () => ({
-      rows: [], totals: {
-      }
-    })
-  }, options: {
-    type: Object, default: () => ({
-    })
-  }, storeId: Number, workDate: String, canMutate: Boolean, canCorrect: Boolean
+    type: Object,
+    default: () => ({
+      rows: [],
+      totals: {},
+    }),
+  },
+  options: {
+    type: Object,
+    default: () => ({}),
+  },
+  storeId: Number,
+  workDate: String,
+  canMutate: Boolean,
+  canCorrect: Boolean,
 });
-const emit = defineEmits(['update:workDate','reload','replaceDaily','error','success']);
+const emit = defineEmits([
+  'update:workDate',
+  'reload',
+  'replaceDaily',
+  'error',
+  'success',
+]);
 const today = toLocalDateString();
 const dateMenu = ref(false);
 const filter = ref('all');
@@ -548,7 +619,6 @@ const productDetailLoading = ref(false);
 const batchOpen = ref(false);
 const flowOpen = ref(false);
 const flowType = ref('carryover');
-const tableDrag = { active: false, startX: 0, startScrollLeft: 0, element: null };
 const detailOpen = ref(false);
 const wasteGuideOpen = ref(false);
 const detailTitle = ref('');
@@ -556,6 +626,9 @@ const detailMetricKey = ref('production');
 const detailSelectedRow = ref(null);
 const historyOpen = ref(false);
 const historyLogs = ref([]);
+const historyPage = ref(1);
+const historyListRef = ref(null);
+const expandedRows = ref(new Set());
 const correctionOpen = ref(false);
 const correctionConfirmOpen = ref(false);
 const correctionReason = ref('');
@@ -567,6 +640,7 @@ const bulkZeroLoading = ref(false);
 const closePreview = ref(null);
 const closing = ref(false);
 const closePage = ref(1);
+const closeListRef = ref(null);
 const closePageSize = 10;
 
 const activeRows = computed(() => (props.daily.rows || []).filter((row) => row.is_active));
@@ -584,13 +658,21 @@ const pagedCloseRows = computed(() => {
   const start = (closePage.value - 1) * closePageSize;
   return closeRows.value.slice(start, start + closePageSize);
 });
+const historyPageSize = 10;
+const historyPageCount = computed(() => Math.max(1, Math.ceil(historyLogs.value.length / historyPageSize)));
+const pagedHistoryLogs = computed(() => {
+  const start = (historyPage.value - 1) * historyPageSize;
+  return historyLogs.value.slice(start, start + historyPageSize);
+});
 const missingLossCount = computed(() => activeRows.value.filter((row) => !row.loss_confirmed).length);
 const missingWasteCount = computed(() => activeRows.value.filter((row) => !row.waste_confirmed).length);
 const missingProductionCount = computed(() => activeRows.value.filter((row) => !row.production_confirmed).length);
 const missingDispositionCount = computed(() => activeRows.value.filter((row) => !row.disposition_confirmed).length);
 const bulkZeroItem = computed(() => missingItems.value.find((item) => item.key === bulkZeroType.value));
-const bulkZeroLabel = computed(() => bulkZeroItem.value?.label || '기록');
-const bulkZeroCount = computed(() => bulkZeroItem.value?.count || 0);
+const bulkZeroLabel = computed(() => bulkZeroType.value === 'all' ? '전체 미확인 항목' : (bulkZeroItem.value?.label || '기록'));
+const bulkZeroCount = computed(() => bulkZeroType.value === 'all'
+  ? missingItems.value.reduce((sum, item) => sum + item.count, 0)
+  : (bulkZeroItem.value?.count || 0));
 const progressPercent = computed(() => {
   const required = Number(props.daily.required_count || 0);
   return required ? Math.round((Number(props.daily.complete_count || 0) / required) * 100) : 100;
@@ -612,12 +694,12 @@ const detailMetricValue = computed(() => metrics.value.find((metric) => metric.k
 const detailRows = computed(() => {
   const key = detailMetricKey.value === 'carryover' ? 'carryover_in' : detailMetricKey.value;
   const total = detailMetricKey.value === 'waste_rate'
-    ? activeRows.value.reduce((sum, row) => sum + Number(row.waste || 0), 0)
+    ? activeRows.value.reduce((sum, row) => sum + Number(row.attributed_waste || 0), 0)
     : activeRows.value.reduce((sum, row) => sum + Number(row[key] || 0), 0);
 
   return activeRows.value.map((row) => {
     const rawValue = detailMetricKey.value === 'waste_rate' ? Number(row.waste_rate || 0) : Number(row[key] || 0);
-    const shareBase = detailMetricKey.value === 'waste_rate' ? Number(row.waste || 0) : rawValue;
+    const shareBase = detailMetricKey.value === 'waste_rate' ? Number(row.attributed_waste || 0) : rawValue;
     return {
       id: row.id,
       name: row.name,
@@ -658,7 +740,7 @@ const detailEmptyText = computed(() => detailConfirmedCount.value === activeRows
 const metrics = computed(() => [ {
   key:'production', title:'생산', value: props.daily.totals?.production || 0
 }, {
-  key:'carryover', title:'이월', value: props.daily.totals?.carryover || 0
+  key:'carryover', title:'이월', value: `재고 ${props.daily.totals?.carryover || 0} · 예정 ${props.daily.totals?.carryover_out || 0}`
 }, {
   key:'loss', title:'로스', value: props.daily.totals?.loss || 0
 }, {
@@ -672,7 +754,7 @@ const closeMetrics = computed(() => {
   const source = closePreview.value?.daily?.totals || props.daily.totals || {};
   return [
     { key: 'production', title: '생산', value: source.production || 0 },
-    { key: 'carryover', title: '이월', value: source.carryover || 0 },
+    { key: 'carryover', title: '이월', value: `재고 ${source.carryover || 0} · 예정 ${source.carryover_out || 0}` },
     { key: 'loss', title: '로스', value: source.loss || 0 },
     { key: 'waste', title: '폐기', value: source.waste || 0 },
     { key: 'waste_rate', title: '폐기율', value: source.waste_rate == null ? '-' : `${source.waste_rate}%` },
@@ -751,9 +833,11 @@ const selectedProductMetrics = computed(() => {
   if (!row) return [];
   return [
     { label: '생산', value: row.production },
-    { label: '이월', value: row.carryover_in },
+    { label: '이월 재고', value: row.carryover_in },
+    { label: '이월 예정', value: row.carryover_out },
     { label: '로스', value: row.loss },
-    { label: '폐기', value: row.waste },
+    { label: '오늘 폐기', value: row.waste },
+    { label: '귀속 폐기', value: row.attributed_waste },
     { label: '폐기율', value: row.waste_rate == null ? '-' : `${row.waste_rate}%` },
   ];
 });
@@ -762,13 +846,44 @@ const selectedProductAnalysis = computed(() => {
   const row = selectedProduct.value;
   if (!row) return '-';
   if (!row.complete) return `확인이 필요한 항목이 있습니다. ${missingReasonText(row)}`;
-  if (row.waste > 0) return `해당 날짜 생산분 기준 폐기 ${row.waste}개가 반영되어 있으며 폐기율은 ${row.waste_rate ?? 0}%입니다.${row.loss > 0 ? ` 로스 ${row.loss}개도 기록되어 있습니다.` : ''}`;
+  if (row.attributed_waste > 0) return `이 날짜 생산분에 귀속된 폐기 ${row.attributed_waste}개가 반영되어 폐기율은 ${row.waste_rate ?? 0}%입니다.${row.waste > row.attributed_waste ? ` 오늘 실제 폐기는 ${row.waste}개이며 이월 재고 폐기가 포함되어 있습니다.` : ''}`;
   if (row.loss > 0) return `로스 ${row.loss}개가 기록되어 있습니다. 사유와 수량을 확인해 주세요.`;
   if (row.carryover_in > 0) return `이월 재고 ${row.carryover_in}개가 있습니다. 원 생산일별 재고를 확인할 수 있습니다.`;
   return '특이사항 없이 필수 기록이 모두 확인되었습니다.';
 });
 
 
+
+// 제품 행의 상세 영역을 열고 닫되 다른 입력 기능과는 독립적으로 유지합니다.
+function toggleRowDetail(productId) {
+  const next = new Set(expandedRows.value);
+  next.has(productId) ? next.delete(productId) : next.add(productId);
+  expandedRows.value = next;
+}
+
+function isRowExpanded(productId) {
+  return expandedRows.value.has(productId);
+}
+
+// 핵심 재고 흐름만 한 문장으로 조립해 표를 넓히지 않고 상세에서 설명합니다.
+function stockFlowText(row) {
+  const parts = [`오늘 생산 ${Number(row.production || 0)}개`];
+  if (row.carryover_in) parts.push(`이월 재고 ${row.carryover_in}개`);
+  if (row.operational_loss) parts.push(`로스 ${row.operational_loss}개`);
+  if (row.operational_waste) parts.push(`폐기 ${row.operational_waste}개`);
+  if (row.carryover_out) parts.push(`다음날 이월 ${row.carryover_out}개`);
+  return parts.join(' → ');
+}
+
+
+// 마감 최종확인 페이지를 바꾸면 제품 카드 목록의 시작점으로 이동합니다.
+function scrollCloseTop() {
+  closeListRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+// 변경 이력 페이지를 바꾸면 목록 시작점으로 돌아가 첫 항목부터 바로 읽을 수 있게 합니다.
+function scrollHistoryTop() {
+  historyListRef.value?.scrollTo({ top: 0, behavior: 'smooth' });
+}
 // 사유별 기록을 상세 목록에서 짧게 읽을 수 있도록 요약합니다.
 function reasonSummary(details, label) {
   if (!Array.isArray(details) || !details.length) return '';
@@ -823,7 +938,7 @@ function categoryProgressText(rows) {
 function groupWasteRate(rows) {
   const production = sum(rows, 'production');
   if (!production) return '-';
-  return `${(sum(rows, 'waste') / production * 100).toFixed(1)}%`;
+  return `${(sum(rows, 'attributed_waste') / production * 100).toFixed(1)}%`;
 }
 
 // 날짜 화살표로 하루씩 이동합니다.
@@ -865,30 +980,6 @@ function ensureMutable() {
 
   return true;
 }
-// 데스크톱에서 표의 빈 영역을 잡아 좌우로 빠르게 이동할 수 있게 합니다.
-function startTableDrag(event) {
-  if (event.pointerType === 'touch' || event.target.closest('button, .v-chip, a, input')) return;
-
-  tableDrag.active = true;
-  tableDrag.startX = event.clientX;
-  tableDrag.startScrollLeft = event.currentTarget.scrollLeft;
-  tableDrag.element = event.currentTarget;
-  event.currentTarget.setPointerCapture?.(event.pointerId);
-}
-
-// 드래그한 거리만큼 제품 표의 가로 스크롤 위치를 갱신합니다.
-function moveTableDrag(event) {
-  if (!tableDrag.active || !tableDrag.element) return;
-
-  tableDrag.element.scrollLeft = tableDrag.startScrollLeft - (event.clientX - tableDrag.startX);
-}
-
-// 포인터가 끝나면 표 드래그 상태를 정리합니다.
-function endTableDrag() {
-  tableDrag.active = false;
-  tableDrag.element = null;
-}
-
 // 가장 먼저 남아 있는 미확인 항목을 열어 마감 전 연속 확인 동선을 줄입니다.
 function openNextMissing() {
   const row = nextMissingRow.value;
@@ -1010,6 +1101,7 @@ async function openHistory() {
       }
     });
     historyLogs.value = data.logs || [];
+    historyPage.value = 1;
     historyOpen.value = true;
   } catch (error) {
     emit('error', error.response?.data?.message || '변경 이력을 불러오지 못했습니다.');
@@ -1071,13 +1163,15 @@ async function previewClose() {
 async function closeDay() {
   closing.value=true;
   try {
-    await window.axios.post('/tillwhite/api/production-management/close',{
+    const { data } = await window.axios.post('/tillwhite/api/production-management/close',{
       store_id: props.storeId, work_date: props.workDate
     });
-    confirmCloseOpen.value=false;
-    closeOpen.value=false;
-    emit('success','하루 업무를 마감했습니다.');
+    confirmCloseOpen.value = false;
+    closeOpen.value = false;
+    if (data.daily) emit('replaceDaily', data.daily);
+    emit('success', data.message || '하루 업무를 마감했습니다.');
     emit('reload');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (error) {
     emit('error',error.response?.data?.message||'마감하지 못했습니다.');
   } finally {
@@ -1286,12 +1380,7 @@ async function closeDay() {
     transition:width .2s ease;
 }
 .product-table-wrap {
-    overflow-x:auto;
-    cursor:grab;
-    overscroll-behavior-x:contain;
-}
-.product-table-wrap:active {
-    cursor:grabbing;
+    overflow-x:hidden;
 }
 .product-table {
     width:100%;
@@ -1903,4 +1992,93 @@ async function closeDay() {
       grid-template-columns:repeat(2,1fr);
   }
 }
+.product-name-cell {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 2px;
+}
+
+.product-name-cell .product-name {
+    min-width: 0;
+    flex: 1;
+}
+
+.row-detail-toggle {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(var(--v-theme-on-surface), 0.55);
+    cursor: pointer;
+}
+
+.carryover-value span {
+    display: block;
+    line-height: 1.15;
+}
+
+.product-detail-row td {
+    position: static !important;
+    height: auto !important;
+    padding: 0 !important;
+    white-space: normal !important;
+    background: rgba(var(--v-theme-on-surface), 0.025) !important;
+}
+
+.product-row-detail {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+.product-row-detail > div {
+    min-width: 0;
+}
+
+.product-row-detail span,
+.product-row-detail strong {
+    display: block;
+}
+
+.product-row-detail span {
+    font-size: 0.62rem;
+    color: rgba(var(--v-theme-on-surface), 0.52);
+}
+
+.product-row-detail strong {
+    margin-top: 2px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: normal;
+}
+
+.product-row-flow {
+    grid-column: 1 / -1;
+    padding-top: 6px;
+    border-top: 1px solid rgba(var(--v-border-color), 0.45);
+}
+
+.history-pagination {
+    margin-top: 12px;
+}
+
+.history-page-count {
+    margin-top: 2px;
+    color: rgba(var(--v-theme-on-surface), 0.52);
+    font-size: 0.66rem;
+    text-align: center;
+}
+
+@media (max-width: 520px) {
+    .product-row-detail {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
 </style>

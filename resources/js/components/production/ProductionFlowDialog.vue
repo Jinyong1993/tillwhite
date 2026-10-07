@@ -36,8 +36,16 @@
 
         <div class="flow-summary">
           <div><span>사용 가능</span><strong>{{ available }}개</strong></div>
-          <div><span>다른 처리</span><strong>{{ otherAllocated }}개</strong></div>
+          <div><span>이미 처리된 수량</span><strong>{{ otherAllocated }}개</strong></div>
           <div class="remaining-after"><span>저장 후 남음</span><strong>{{ remainingAfterSave }}개</strong></div>
+        </div>
+
+        <div v-if="otherAllocationDetails.length" class="allocation-details">
+          <div class="flow-input-heading">이미 처리된 내역</div>
+          <div v-for="item in otherAllocationDetails" :key="item.label" class="allocation-detail-row">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.quantity }}개</strong>
+          </div>
         </div>
 
         <div v-if="savedDetails.length" class="saved-flow-details">
@@ -251,17 +259,38 @@ const reasonOptions = computed(() => ({
   other_outflow: otherReasons,
 }[props.type] || []));
 
-const otherAllocated = computed(() => {
+const otherAllocationDetails = computed(() => {
   const row = props.product || {};
-  const allocations = {
-    carryover: Number(row.operational_loss ?? row.loss ?? 0) + Number(row.operational_waste ?? row.waste ?? 0) + Number(row.other_outflow || 0),
-    loss: Number(row.operational_waste ?? row.waste ?? 0) + Number(row.other_outflow || 0) + Number(row.carryover_out || 0),
-    waste: Number(row.operational_loss ?? row.loss ?? 0) + Number(row.other_outflow || 0) + Number(row.carryover_out || 0),
-    other_outflow: Number(row.operational_loss ?? row.loss ?? 0) + Number(row.operational_waste ?? row.waste ?? 0) + Number(row.carryover_out || 0),
+  const values = {
+    carryover: [
+      ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
+      ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
+      ['기타 출고', Number(row.other_outflow || 0)],
+    ],
+    loss: [
+      ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
+      ['이월 예정', Number(row.carryover_out || 0)],
+      ['기타 출고', Number(row.other_outflow || 0)],
+    ],
+    waste: [
+      ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
+      ['이월 예정', Number(row.carryover_out || 0)],
+      ['기타 출고', Number(row.other_outflow || 0)],
+    ],
+    other_outflow: [
+      ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
+      ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
+      ['이월 예정', Number(row.carryover_out || 0)],
+    ],
   };
 
-  return allocations[props.type] || 0;
+  return (values[props.type] || [])
+    .filter(([, quantity]) => quantity > 0)
+    .map(([label, quantity]) => ({ label, quantity }));
 });
+
+const otherAllocated = computed(() => otherAllocationDetails.value
+  .reduce((sum, item) => sum + item.quantity, 0));
 
 const remainingAvailable = computed(() => Math.max(0, available.value - otherAllocated.value));
 const currentQuantity = computed(() => (
@@ -443,6 +472,27 @@ async function save() {
 </script>
 
 <style scoped>
+
+.allocation-details {
+    margin: -4px 0 14px;
+    padding: 8px 10px;
+    border: 1px solid rgba(var(--v-border-color), 0.5);
+    border-radius: 8px;
+}
+
+.allocation-detail-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 28px;
+    font-size: 0.7rem;
+}
+
+.allocation-detail-row span {
+    color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
 .saved-flow-details {
     margin: 12px 0;
 }

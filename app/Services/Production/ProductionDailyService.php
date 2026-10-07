@@ -169,10 +169,14 @@ class ProductionDailyService
                     'stock_lot_id' => $wasteRow->stock_lot_id,
                 ]))->values(),
                 'carryover_in' => $carryIn,
-                'loss' => $loss,
+                // 목록과 당일 요약은 실제 처리일 기준 수량을 사용합니다.
+                'loss' => $operationalLoss,
                 'operational_loss' => $operationalLoss,
-                'waste' => $waste,
+                'attributed_loss' => $loss,
+                'waste' => $operationalWaste,
                 'operational_waste' => $operationalWaste,
+                // 폐기율과 생산 성과는 원 생산일에 귀속된 폐기만 사용합니다.
+                'attributed_waste' => $waste,
                 'other_outflow' => $other,
                 'carryover_out' => $carryOut,
                 'stock_sources' => $stockSources,
@@ -203,12 +207,15 @@ class ProductionDailyService
         $totals = [
             'production' => $activeRows->sum('production'),
             'carryover' => $activeRows->sum('carryover_in'),
-            'loss' => $activeRows->sum('loss'),
-            'waste' => $activeRows->sum('waste'),
+            'carryover_out' => $activeRows->sum('carryover_out'),
+            'loss' => $activeRows->sum('operational_loss'),
+            'waste' => $activeRows->sum('operational_waste'),
+            'attributed_loss' => $activeRows->sum('attributed_loss'),
+            'attributed_waste' => $activeRows->sum('attributed_waste'),
             'other_outflow' => $activeRows->sum('other_outflow'),
         ];
         $totals['waste_rate'] = $this->wasteRate(
-            (int) $totals['waste'],
+            (int) $totals['attributed_waste'],
             (int) $totals['production'],
         );
 

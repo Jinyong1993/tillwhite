@@ -43,7 +43,7 @@ class RolePermissionSeeder extends Seeder
          * 직원 개인정보 보호를 위해
          * 직원 조회 권한(employee.view)은 부여하지 않는다.
          */
-        $this->syncPermissions('staff', ['production.view', 'production.create', 'production.update', 'production.delete', 'schedule.view', 'attendance.view', 'leave.view', 'product.view', 'recipe.view', 'sales.view', 'position.view', 'audit.view']);
+        $this->syncPermissions('staff', ['production.view', 'production.create', 'production.update', 'production.delete', 'production.correct', 'schedule.view', 'attendance.view', 'leave.view', 'product.view', 'recipe.view', 'sales.view', 'position.view', 'audit.view']);
         /**
          * 주방 헤드 셰프(kitchen_head)
          *
