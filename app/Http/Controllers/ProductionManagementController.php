@@ -28,6 +28,7 @@ use App\Services\Production\ProductionRecommendationService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
@@ -322,6 +323,8 @@ class ProductionManagementController extends Controller
             'reasons.*.reason_code' => ['required_unless:type,carryover', 'string', 'max:60'],
             'reasons.*.reason_text' => ['nullable', 'string', 'max:120'],
             'reasons.*.quantity' => ['required_unless:type,carryover', 'integer', 'min:1'],
+            'reasons.*.stock_source' => ['nullable', Rule::in(['today', 'carryover'])],
+            'reasons.*.stock_lot_id' => ['nullable', 'integer', 'exists:product_stock_lots,id'],
             'quantity' => ['required_if:type,carryover', 'nullable', 'integer', 'min:0'],
             'carryover_source' => ['nullable', Rule::in(['today', 'incoming'])],
             'note' => ['nullable', 'string', 'max:1000'],
@@ -337,22 +340,33 @@ class ProductionManagementController extends Controller
         ));
         abort_if($missingDirectReason, 422, '직접입력 사유를 입력해주세요.');
 
-        // 화면 검증을 우회한 요청도 당일 생산 + 들어온 이월 범위를 넘지 못하게 서버에서 다시 확인합니다.
+        // 화면 검증을 우회한 요청도 당일 생산 + 이월 재고 범위를 넘지 못하게 서버에서 다시 확인합니다.
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
         $row = collect($daily['rows'])->firstWhere('id', (int) $data['product_id']);
         abort_unless($row, 422, '선택한 제품의 생산 현황을 확인할 수 없습니다.');
 
         $available = (int) $row['production'] + (int) $row['carryover_in'];
         $otherAllocated = match ($data['type']) {
-            'carryover' => (int) $row['loss'] + (int) $row['operational_waste'] + (int) $row['other_outflow'],
+            'carryover' => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['other_outflow'],
             'loss' => (int) $row['operational_waste'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
-            'waste' => (int) $row['loss'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
-            default => (int) $row['loss'] + (int) $row['operational_waste'] + (int) $row['carryover_out'],
+            'waste' => (int) $row['operational_loss'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
+            default => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['carryover_out'],
         };
         $requestedQuantity = $data['type'] === 'carryover'
             ? (int) ($data['quantity'] ?? 0)
             : (int) $reasons->sum('quantity');
         abort_if($requestedQuantity > max(0, $available - $otherAllocated), 422, '입력한 수량이 현재 사용 가능한 수량보다 많습니다.');
+
+        if (in_array($data['type'], ['loss', 'waste'], true)) {
+            $this->validateReasonStockSources(
+                (int) $data['store_id'],
+                (int) $data['product_id'],
+                $data['work_date'],
+                $data['type'],
+                $reasons,
+                $row['stock_sources'] ?? [],
+            );
+        }
 
         DB::transaction(function () use ($data, $user) {
             $storeId = (int) $data['store_id'];
@@ -414,6 +428,11 @@ class ProductionManagementController extends Controller
         $freshDaily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
         $freshRow = collect($freshDaily['rows'])->firstWhere('id', (int) $data['product_id']);
 
+        $auditDescription = $this->flowAuditDescription(
+            $label,
+            $data['work_date'],
+            $data['reasons'] ?? [],
+        );
         $this->auditService->log(
             $user,
             'production',
@@ -422,7 +441,7 @@ class ProductionManagementController extends Controller
             (int) $data['product_id'],
             null,
             $data,
-            "{$label} 처리 저장",
+            $auditDescription,
         );
 
         return response()->json([
@@ -430,6 +449,29 @@ class ProductionManagementController extends Controller
             'row' => $freshRow,
             'daily' => $freshDaily,
         ]);
+    }
+
+    /**
+     * 변경 이력에서 이월 재고의 원 생산일을 바로 알아볼 수 있도록 설명을 구성합니다.
+     * 여러 생산일을 한 번에 처리한 경우 중복 날짜는 제거해 짧게 표시합니다.
+     */
+    private function flowAuditDescription(string $label, string $workDate, array $reasons): string
+    {
+        $originDates = collect($reasons)
+            ->pluck('stock_lot_id')
+            ->filter()
+            ->unique()
+            ->map(fn ($lotId) => ProductStockLot::query()->find($lotId)?->origin_production_date?->toDateString())
+            ->filter()
+            ->reject(fn ($originDate) => $originDate === $workDate)
+            ->map(fn ($originDate) => Carbon::parse($originDate)->format('m/d'))
+            ->values();
+
+        if ($originDates->isEmpty()) {
+            return "{$label} 처리 저장";
+        }
+
+        return "{$label} 처리 저장 · {$originDates->join(' · ')} 생산 이월 재고";
     }
 
     // 선택한 수량 처리 항목의 확인 상태만 갱신합니다.
@@ -630,8 +672,8 @@ class ProductionManagementController extends Controller
         $endDate = $end->toDateString();
 
         $production = $this->monthlyQuantities(ProductionBatch::query(), $storeId, 'work_date', $startDate, $endDate);
-        $losses = $this->monthlyQuantities(ProductionLoss::query(), $storeId, 'work_date', $startDate, $endDate);
-        $wastes = $this->monthlyQuantities(ProductionWaste::query(), $storeId, 'work_date', $startDate, $endDate);
+        $losses = $this->monthlyQuantities(ProductionLoss::query(), $storeId, 'attribution_date', $startDate, $endDate);
+        $wastes = $this->monthlyQuantities(ProductionWaste::query(), $storeId, 'attribution_date', $startDate, $endDate);
         $carryIn = $this->monthlyMovementQuantities($storeId, $startDate, $endDate, 'carryover_in');
 
         $closures = ProductionDailyClosure::query()
@@ -679,7 +721,7 @@ class ProductionManagementController extends Controller
                     'carryover' => $carriedIn,
                     'loss' => $loss,
                     'waste' => $waste,
-                    'waste_rate' => $this->wasteRate($waste, $produced, $carriedIn),
+                    'waste_rate' => $this->wasteRate($waste, $produced),
                 ],
                 'status' => $status,
                 'events' => $dayEvents,
@@ -771,8 +813,8 @@ class ProductionManagementController extends Controller
             $data['from'],
             $data['to'],
         );
-        $loss = $this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $data['from'], $data['to']);
-        $waste = $this->sumByDate(ProductionWaste::query(), $storeId, 'work_date', $data['from'], $data['to']);
+        $loss = $this->sumByDate(ProductionLoss::query(), $storeId, 'attribution_date', $data['from'], $data['to']);
+        $waste = $this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $data['from'], $data['to']);
 
         $series = collect();
         for ($date = Carbon::parse($data['from']); $date->lte(Carbon::parse($data['to'])); $date->addDay()) {
@@ -785,7 +827,7 @@ class ProductionManagementController extends Controller
                 'carryover' => (int) ($carryover[$key] ?? 0),
                 'loss' => (int) ($loss[$key] ?? 0),
                 'waste' => $wasteValue,
-                'waste_rate' => $this->wasteRate($wasteValue, $productionValue, (int) ($carryover[$key] ?? 0)),
+                'waste_rate' => $this->wasteRate($wasteValue, $productionValue),
             ]);
         }
 
@@ -798,8 +840,8 @@ class ProductionManagementController extends Controller
         $previousFrom = Carbon::parse($previousTo)->subDays($periodDays - 1)->toDateString();
         $previousProduction = array_sum($this->sumByDate(ProductionBatch::query(), $storeId, 'work_date', $previousFrom, $previousTo));
         $previousCarryover = array_sum($this->sumByDate(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $previousFrom, $previousTo));
-        $previousLoss = array_sum($this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $previousFrom, $previousTo));
-        $previousWaste = array_sum($this->sumByDate(ProductionWaste::query(), $storeId, 'work_date', $previousFrom, $previousTo));
+        $previousLoss = array_sum($this->sumByDate(ProductionLoss::query(), $storeId, 'attribution_date', $previousFrom, $previousTo));
+        $previousWaste = array_sum($this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $previousFrom, $previousTo));
 
         // 도넛과 제품 순위는 일별 화면을 반복 조립하지 않고 제품별 합계 쿼리로 한 번씩 계산합니다.
         $productNames = Product::withTrashed()
@@ -814,8 +856,8 @@ class ProductionManagementController extends Controller
                 $data['from'],
                 $data['to'],
             ),
-            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'work_date', $data['from'], $data['to']),
-            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'work_date', $data['from'], $data['to']),
+            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'attribution_date', $data['from'], $data['to']),
+            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'attribution_date', $data['from'], $data['to']),
         ];
         $productIds = collect($productMetrics)->flatMap(fn (array $values) => array_keys($values))->unique()->values();
         $productTotals = $productIds->map(fn ($productId) => [
@@ -835,14 +877,14 @@ class ProductionManagementController extends Controller
                 'carryover' => (int) $series->sum('carryover'),
                 'loss' => (int) $series->sum('loss'),
                 'waste' => $wasteTotal,
-                'waste_rate' => $this->wasteRate($wasteTotal, $productionTotal, (int) $series->sum('carryover')),
+                'waste_rate' => $this->wasteRate($wasteTotal, $productionTotal),
             ],
             'previous_totals' => [
                 'production' => (int) $previousProduction,
                 'carryover' => (int) $previousCarryover,
                 'loss' => (int) $previousLoss,
                 'waste' => (int) $previousWaste,
-                'waste_rate' => $this->wasteRate((int) $previousWaste, (int) $previousProduction, (int) $previousCarryover),
+                'waste_rate' => $this->wasteRate((int) $previousWaste, (int) $previousProduction),
             ],
         ]);
     }
@@ -903,8 +945,8 @@ class ProductionManagementController extends Controller
         $dateMetrics = [
             'production' => $this->sumByDate(ProductionBatch::query(), $storeId, 'work_date', $from, $to),
             'carryover' => $this->sumByDate(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $from, $to),
-            'loss' => $this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $from, $to),
-            'waste' => $this->sumByDate(ProductionWaste::query(), $storeId, 'work_date', $from, $to),
+            'loss' => $this->sumByDate(ProductionLoss::query(), $storeId, 'attribution_date', $from, $to),
+            'waste' => $this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $from, $to),
         ];
         $dailyFlow = collect();
         for ($cursor = Carbon::parse($from); $cursor->lte($target); $cursor->addDay()) {
@@ -917,15 +959,15 @@ class ProductionManagementController extends Controller
                 'carryover' => (int) ($dateMetrics['carryover'][$key] ?? 0),
                 'loss' => (int) ($dateMetrics['loss'][$key] ?? 0),
                 'waste' => $waste,
-                'waste_rate' => $this->wasteRate($waste, $production, (int) ($dateMetrics['carryover'][$key] ?? 0)),
+                'waste_rate' => $this->wasteRate($waste, $production),
             ]);
         }
 
         $productMetrics = [
             'production' => $this->sumByProduct(ProductionBatch::query(), $storeId, 'work_date', $from, $to),
             'carryover' => $this->sumByProduct(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $from, $to),
-            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'work_date', $from, $to),
-            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'work_date', $from, $to),
+            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'attribution_date', $from, $to),
+            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'attribution_date', $from, $to),
         ];
         $productTotals = $products->map(fn (Product $product) => [
             'product_id' => $product->id,
@@ -986,9 +1028,30 @@ class ProductionManagementController extends Controller
         $this->accessService->requirePermission($user, 'production.view');
         $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d']]);
         $this->assertStoreReadable($user, (int) $data['store_id']);
-        $logs = \App\Models\AuditLog::query()->with('user:id,name')->where('domain', 'production')->where(function ($query) use ($data) {
-            $query->where('new_values->work_date', $data['work_date'])->orWhere('new_values->target_date', $data['work_date'])->orWhereDate('created_at', $data['work_date']);
-        })->latest('id')->limit(100)->get(['id', 'user_id', 'action', 'target_type', 'target_id', 'description', 'old_values', 'new_values', 'created_at']);
+        $logs = \App\Models\AuditLog::query()
+            ->with('user:id,name')
+            ->where('domain', 'production')
+            ->where(function ($query) use ($data) {
+                $query->where('new_values->work_date', $data['work_date'])
+                    ->orWhere('new_values->target_date', $data['work_date']);
+            })
+            ->where(function ($query) use ($data) {
+                $query->where('new_values->store_id', (int) $data['store_id'])
+                    ->orWhereNull('new_values->store_id');
+            })
+            ->latest('id')
+            ->limit(100)
+            ->get([
+                'id',
+                'user_id',
+                'action',
+                'target_type',
+                'target_id',
+                'description',
+                'old_values',
+                'new_values',
+                'created_at',
+            ]);
         return response()->json(['logs' => $logs]);
     }
 
@@ -1197,42 +1260,145 @@ class ProductionManagementController extends Controller
         return null;
     }
 
-    // 로스 기록과 사유 배분을 현재 입력값으로 교체합니다.
+    /**
+     * 로스 기록을 재고 출처별로 저장합니다.
+     * 실제 처리일은 work_date, 생산 실적 귀속일은 stock lot의 원 생산일로 분리합니다.
+     */
     private function replaceLosses(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
-        $old = ProductionLoss::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->get();
+        $old = ProductionLoss::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', $date)
+            ->get();
+
         foreach ($old as $record) {
             ProductionLossReason::query()->where('production_loss_id', $record->id)->delete();
             $record->delete();
         }
-        $total = collect($reasons)->sum('quantity');
-        if ($total === 0) {
-            return;
-        }
-        $loss = ProductionLoss::create(['store_id' => $storeId, 'product_id' => $productId, 'work_date' => $date, 'quantity' => $total, 'note' => $note, 'created_by' => $userId]);
+
         foreach ($reasons as $reason) {
-            ProductionLossReason::create(['production_loss_id' => $loss->id, ...$reason]);
+            $quantity = (int) ($reason['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $lot = $this->resolveReasonLot($storeId, $productId, $date, $reason);
+            $attributionDate = $lot?->origin_production_date?->toDateString() ?? $date;
+            $loss = ProductionLoss::create([
+                'store_id' => $storeId,
+                'product_id' => $productId,
+                'production_batch_id' => $lot?->production_batch_id,
+                'stock_lot_id' => $lot?->id,
+                'work_date' => $date,
+                'attribution_date' => $attributionDate,
+                'quantity' => $quantity,
+                'note' => $note,
+                'created_by' => $userId,
+            ]);
+            ProductionLossReason::create([
+                'production_loss_id' => $loss->id,
+                'reason_code' => $reason['reason_code'],
+                'reason_text' => $reason['reason_text'] ?? null,
+                'quantity' => $quantity,
+            ]);
         }
     }
 
-    // 폐기 기록과 사유 배분을 현재 입력값으로 교체합니다.
+    /**
+     * 폐기 기록을 재고 출처별로 저장합니다.
+     * 이월 재고 폐기는 처리한 날짜가 아니라 최초 생산일의 폐기 실적에 귀속합니다.
+     */
     private function replaceWastes(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
-        $old = ProductionWaste::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->get();
+        $old = ProductionWaste::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', $date)
+            ->get();
+
         foreach ($old as $record) {
             ProductionWasteReason::query()->where('production_waste_id', $record->id)->delete();
             $record->delete();
         }
-        $total = collect($reasons)->sum('quantity');
-        if ($total === 0) {
-            return;
-        }
-        $hasCarryoverWaste = collect($reasons)->contains(fn(array $reason) => $reason['reason_code'] === 'carryover_waste');
-        $lot = $hasCarryoverWaste ? $this->incomingLotForDate($storeId, $productId, $date) ?? $this->lotForProductDate($storeId, $productId, $date) : $this->lotForProductDate($storeId, $productId, $date);
-        $waste = ProductionWaste::create(['store_id' => $storeId, 'product_id' => $productId, 'stock_lot_id' => $lot?->id, 'work_date' => $date, 'attribution_date' => $date, 'quantity' => $total, 'note' => $note, 'created_by' => $userId]);
+
         foreach ($reasons as $reason) {
-            ProductionWasteReason::create(['production_waste_id' => $waste->id, ...$reason]);
+            $quantity = (int) ($reason['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $lot = $this->resolveReasonLot($storeId, $productId, $date, $reason);
+            $attributionDate = $lot?->origin_production_date?->toDateString() ?? $date;
+            $waste = ProductionWaste::create([
+                'store_id' => $storeId,
+                'product_id' => $productId,
+                'stock_lot_id' => $lot?->id,
+                'work_date' => $date,
+                'attribution_date' => $attributionDate,
+                'quantity' => $quantity,
+                'note' => $note,
+                'created_by' => $userId,
+            ]);
+            ProductionWasteReason::create([
+                'production_waste_id' => $waste->id,
+                'reason_code' => $reason['reason_code'],
+                'reason_text' => $reason['reason_text'] ?? null,
+                'quantity' => $quantity,
+            ]);
         }
+    }
+
+    /**
+     * 사유 행이 선택한 재고 lot를 현재 점포·제품·업무일에서 실제 사용할 수 있는지 확인합니다.
+     * 같은 lot를 여러 사유에서 선택한 경우 합산 수량까지 검증해 중복 차감을 막습니다.
+     */
+    private function validateReasonStockSources(
+        int $storeId,
+        int $productId,
+        string $date,
+        string $type,
+        Collection $reasons,
+        array $stockSources,
+    ): void {
+        $sourceMap = collect($stockSources)->keyBy('stock_lot_id');
+        $requestedByLot = $reasons
+            ->filter(fn (array $reason) => ! empty($reason['stock_lot_id']))
+            ->groupBy('stock_lot_id')
+            ->map(fn (Collection $rows) => (int) $rows->sum('quantity'));
+
+        foreach ($requestedByLot as $lotId => $requested) {
+            $source = $sourceMap->get((int) $lotId);
+            abort_unless($source, 422, '선택한 재고의 생산일을 다시 확인해주세요.');
+
+            $existingCurrentType = $type === 'loss'
+                ? (int) ProductionLoss::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity')
+                : (int) ProductionWaste::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity');
+            $available = (int) ($source['remaining_quantity'] ?? 0) + $existingCurrentType;
+            $originDate = Carbon::parse($source['origin_production_date'])->format('m/d');
+
+            abort_if(
+                $requested > $available,
+                422,
+                "{$originDate} 생산 재고는 {$available}개까지 입력할 수 있습니다.",
+            );
+        }
+    }
+
+    // 사유 행의 재고 출처를 실제 stock lot로 변환합니다. 이전 화면 요청은 당일 재고를 기본값으로 유지합니다.
+    private function resolveReasonLot(int $storeId, int $productId, string $date, array $reason): ?ProductStockLot
+    {
+        if (! empty($reason['stock_lot_id'])) {
+            return ProductStockLot::query()
+                ->whereKey((int) $reason['stock_lot_id'])
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->first();
+        }
+
+        return ($reason['stock_source'] ?? 'today') === 'carryover'
+            ? $this->incomingLotForDate($storeId, $productId, $date)
+            : $this->lotForProductDate($storeId, $productId, $date);
     }
 
     // 시식·서비스·직원사용 등 기타 출고를 현재 입력값으로 교체합니다.
@@ -1245,33 +1411,86 @@ class ProductionManagementController extends Controller
         }
     }
 
-    // 다음 날 이월을 동일 재고 lot의 이동으로 기록하여 수량이 새로 생기지 않게 합니다.
+    /**
+     * 다음 날 이월 수량을 원 생산일별 stock lot에 나눠 기록합니다.
+     * 한 제품에 당일 생산과 여러 날짜의 이월 재고가 섞여 있어도 원 생산일 연결을 유지합니다.
+     */
     private function replaceCarryover(int $storeId, int $productId, string $date, int $quantity, string $source, int $userId): void
     {
-        $existing = ProductStockMovement::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->where('movement_type', 'carryover_out')->get();
+        $existing = ProductStockMovement::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', $date)
+            ->where('movement_type', 'carryover_out')
+            ->get();
+
         foreach ($existing as $movement) {
-            ProductStockMovement::query()->where('stock_lot_id', $movement->stock_lot_id)->whereDate('work_date', Carbon::parse($date)->addDay())->where('movement_type', 'carryover_in')->delete();
+            ProductStockMovement::query()
+                ->where('stock_lot_id', $movement->stock_lot_id)
+                ->whereDate('work_date', Carbon::parse($date)->addDay())
+                ->where('movement_type', 'carryover_in')
+                ->delete();
             $movement->delete();
         }
+
         if ($quantity === 0) {
-            ProductStockLot::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('origin_production_date', $date)->update(['remaining_quantity' => 0, 'status' => 'exhausted']);
             return;
         }
-        $lot = $source === 'incoming' ? $this->incomingLotForDate($storeId, $productId, $date) : $this->lotForProductDate($storeId, $productId, $date);
-        abort_unless($lot, 422, '이월할 수 있는 생산 또는 이월 재고가 없습니다.');
-        ProductStockMovement::create(['stock_lot_id' => $lot->id, 'store_id' => $storeId, 'product_id' => $productId, 'work_date' => $date, 'movement_type' => 'carryover_out', 'quantity' => $quantity, 'created_by' => $userId]);
-        ProductStockMovement::create(['stock_lot_id' => $lot->id, 'store_id' => $storeId, 'product_id' => $productId, 'work_date' => Carbon::parse($date)->addDay()->toDateString(), 'movement_type' => 'carryover_in', 'quantity' => $quantity, 'created_by' => $userId]);
-        $lot->update(['remaining_quantity' => $quantity, 'status' => 'active']);
+
+        $daily = $this->dailyService->build($storeId, $date);
+        $row = collect($daily['rows'])->firstWhere('id', $productId);
+        $stockSources = collect($row['stock_sources'] ?? [])
+            ->filter(fn (array $item) => (int) ($item['remaining_quantity'] ?? 0) > 0)
+            ->sortBy(function (array $item) use ($source) {
+                $preferred = $source === 'incoming' ? 'carryover' : 'today';
+                return sprintf(
+                    '%d|%s',
+                    $item['source'] === $preferred ? 0 : 1,
+                    $item['origin_production_date'],
+                );
+            })
+            ->values();
+
+        $available = (int) $stockSources->sum('remaining_quantity');
+        abort_if($quantity > $available, 422, "이월할 수 있는 재고는 {$available}개입니다.");
+
+        $remaining = $quantity;
+        foreach ($stockSources as $stockSource) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $allocated = min($remaining, (int) $stockSource['remaining_quantity']);
+            $movementData = [
+                'stock_lot_id' => (int) $stockSource['stock_lot_id'],
+                'store_id' => $storeId,
+                'product_id' => $productId,
+                'quantity' => $allocated,
+                'created_by' => $userId,
+            ];
+
+            ProductStockMovement::create([
+                ...$movementData,
+                'work_date' => $date,
+                'movement_type' => 'carryover_out',
+            ]);
+            ProductStockMovement::create([
+                ...$movementData,
+                'work_date' => Carbon::parse($date)->addDay()->toDateString(),
+                'movement_type' => 'carryover_in',
+            ]);
+            $remaining -= $allocated;
+        }
     }
 
-    // 해당 날짜에 들어온 이월과 연결된 원산지 재고 lot를 찾습니다.
+    // 해당 날짜에 이월 재고과 연결된 원산지 재고 lot를 찾습니다.
     private function incomingLotForDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
         $movement = ProductStockMovement::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->latest('id')->first();
         return $movement ? ProductStockLot::query()->find($movement->stock_lot_id) : null;
     }
 
-    // 해당 날짜의 당일 생산 또는 들어온 이월과 연결된 재고 lot를 찾습니다.
+    // 해당 날짜의 당일 생산 또는 이월 재고과 연결된 재고 lot를 찾습니다.
     private function lotForProductDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
         $batchLot = ProductStockLot::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('origin_production_date', $date)->latest('id')->first();
@@ -1282,11 +1501,10 @@ class ProductionManagementController extends Controller
         return $movement ? ProductStockLot::query()->find($movement->stock_lot_id) : null;
     }
 
-    // 폐기율은 당일 생산과 들어온 이월을 합친 실제 사용 가능 수량을 기준으로 계산합니다.
-    private function wasteRate(int $waste, int $production, int $carryover): ?float
+    // 폐기율은 원 생산일에 귀속된 폐기와 해당 생산일의 생산 수량만으로 계산합니다.
+    private function wasteRate(int $waste, int $production): ?float
     {
-        $available = $production + $carryover;
-        return $available > 0 ? round($waste / $available * 100, 1) : null;
+        return $production > 0 ? round($waste / $production * 100, 1) : null;
     }
 
     // 로그인 사용자·점포·날짜별로 격리된 생산 임시저장 Session 키를 만듭니다.

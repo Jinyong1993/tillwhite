@@ -247,11 +247,11 @@ function openMetric(key) {
     metricOpen.value = true;
 }
 
-// 폐기율은 생산과 들어온 이월을 합친 당일 사용 가능 수량을 분모로 계산합니다.
+// 폐기율은 원 생산일에 귀속된 폐기와 해당 생산일의 생산 수량만으로 계산합니다.
 function metricValue(row) {
     if (metricKey.value === 'waste_rate') {
-        const available = Number(row.production || 0) + Number(row.carryover || 0);
-        return available ? `${(Number(row.waste || 0) / available * 100).toFixed(1)}%` : '-';
+        const production = Number(row.production || 0);
+        return production ? `${(Number(row.waste || 0) / production * 100).toFixed(1)}%` : '-';
     }
 
     return `${Number(row[metricKey.value] || 0)}개`;
@@ -262,7 +262,7 @@ function mixColor(index) {
     return palette[index % palette.length];
 }
 
-// 서버의 일별 흐름을 선택 단위로 다시 묶고 같은 가용재고 기준으로 폐기율을 계산합니다.
+// 서버의 일별 흐름을 선택 단위로 다시 묶고 원 생산일 기준으로 폐기율을 계산합니다.
 function groupSeries(rows, unit) {
     const groups = new Map();
 
@@ -305,11 +305,11 @@ function groupSeries(rows, unit) {
     }
 
     return [...groups.values()].map((group) => {
-        const available = group.production + group.carryover;
+        const production = group.production;
         return {
             ...group,
-            waste_rate: available
-                ? Number((group.waste / available * 100).toFixed(1))
+            waste_rate: production
+                ? Number((group.waste / production * 100).toFixed(1))
                 : null,
         };
     });

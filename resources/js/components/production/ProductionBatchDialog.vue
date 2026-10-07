@@ -29,7 +29,7 @@
               v-for="batch in product.batches"
               :key="batch.id"
               :title="`${batch.quantity}개`"
-              :subtitle="new Date(batch.created_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})"
+              :subtitle="new Date(batch.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })"
           >
             <template #append>
               <v-btn

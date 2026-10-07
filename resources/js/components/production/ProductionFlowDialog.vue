@@ -25,7 +25,7 @@
 
         <div class="production-dialog-overview">
           <div><span>현재 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
-          <div><span>들어온 이월</span><strong>{{ Number(product?.carryover_in || 0) }}개</strong></div>
+          <div><span>이월 재고</span><strong>{{ Number(product?.carryover_in || 0) }}개</strong></div>
           <div><span>확인 상태</span><strong>{{ flowConfirmed ? '완료' : '미확인' }}</strong></div>
         </div>
 
@@ -43,7 +43,7 @@
         <div v-if="savedDetails.length" class="saved-flow-details">
           <div class="flow-input-heading">현재 기록</div>
           <div v-for="(item, index) in savedDetails" :key="`${item.reason_code || 'reason'}-${index}`" class="saved-flow-row">
-            <span>{{ reasonLabel(item) }}</span><strong>{{ item.quantity }}개</strong>
+            <span>{{ savedReasonLabel(item) }}</span><strong>{{ item.quantity }}개</strong>
           </div>
         </div>
 
@@ -53,6 +53,9 @@
               v-model="reasonRows"
               :reason-options="reasonOptions"
               :max-quantity="remainingAvailable"
+              :stock-sources="editableStockSources"
+              :work-date="workDate"
+              :show-stock-source="type === 'loss' || type === 'waste'"
           />
           <div class="production-dialog-actions">
             <v-btn
@@ -178,6 +181,7 @@ const reasonRows = ref([]);
 const carryoverQuantity = ref(0);
 const carryoverSource = ref('today');
 const note = ref('');
+const initialReasonSnapshot = ref('[]');
 
 const carryoverSources = [
   { value: 'today', title: '오늘 생산분' },
@@ -205,10 +209,22 @@ const flowConfirmed = computed(() => ({
   other_outflow: props.product?.disposition_confirmed,
 }[props.type] ?? false));
 const savedDetails = computed(() => {
-  if (props.type === 'loss') return props.product?.loss_details || [];
-  if (props.type === 'waste') return props.product?.waste_details || [];
+  if (props.type === 'loss') return props.product?.operational_loss_details || props.product?.loss_details || [];
+  if (props.type === 'waste') return props.product?.operational_waste_details || props.product?.waste_details || [];
   return [];
 });
+
+// 수정 중인 업무가 이미 사용한 수량은 다시 입력할 수 있도록 해당 재고의 편집 가능 수량에 되돌려 줍니다.
+const editableStockSources = computed(() => (props.product?.stock_sources || []).map((source) => {
+  const currentSaved = savedDetails.value
+    .filter((item) => Number(item.stock_lot_id) === Number(source.stock_lot_id))
+    .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+
+  return {
+    ...source,
+    remaining_quantity: Number(source.remaining_quantity || 0) + currentSaved,
+  };
+}));
 
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
 
@@ -238,10 +254,10 @@ const reasonOptions = computed(() => ({
 const otherAllocated = computed(() => {
   const row = props.product || {};
   const allocations = {
-    carryover: Number(row.loss || 0) + Number(row.operational_waste ?? row.waste ?? 0) + Number(row.other_outflow || 0),
+    carryover: Number(row.operational_loss ?? row.loss ?? 0) + Number(row.operational_waste ?? row.waste ?? 0) + Number(row.other_outflow || 0),
     loss: Number(row.operational_waste ?? row.waste ?? 0) + Number(row.other_outflow || 0) + Number(row.carryover_out || 0),
-    waste: Number(row.loss || 0) + Number(row.other_outflow || 0) + Number(row.carryover_out || 0),
-    other_outflow: Number(row.loss || 0) + Number(row.operational_waste ?? row.waste ?? 0) + Number(row.carryover_out || 0),
+    waste: Number(row.operational_loss ?? row.loss ?? 0) + Number(row.other_outflow || 0) + Number(row.carryover_out || 0),
+    other_outflow: Number(row.operational_loss ?? row.loss ?? 0) + Number(row.operational_waste ?? row.waste ?? 0) + Number(row.carryover_out || 0),
   };
 
   return allocations[props.type] || 0;
@@ -267,9 +283,44 @@ const confirmMessage = computed(() => {
   return message;
 });
 
+// 저장된 이월 재고 기록은 원 생산일까지 함께 보여줘 어느 재고를 처리했는지 바로 확인합니다.
+function savedReasonLabel(item) {
+  const reason = productionReasonLabel(item, reasonOptions.value);
+  if (!item.origin_production_date || item.origin_production_date === props.workDate) {
+    return `오늘 생산 · ${reason}`;
+  }
+
+  const [, month, day] = String(item.origin_production_date).split('-');
+  return `${Number(month)}/${Number(day)} 생산 이월 재고 · ${reason}`;
+}
+
 // 현재 업무의 선택 목록을 함께 넘겨 과거 사유 코드도 같은 한글 명칭으로 표시합니다.
 function reasonLabel(item) {
     return productionReasonLabel(item, reasonOptions.value);
+}
+
+// 당일 생산 재고가 있으면 우선 사용하고, 없으면 이월 재고를 기본 선택합니다.
+const defaultStockSource = computed(() => (
+  editableStockSources.value.some((source) => source.source === 'today' && source.remaining_quantity > 0)
+    ? 'today'
+    : 'carryover'
+));
+const defaultStockLotId = computed(() => (
+  editableStockSources.value.find((source) => (
+    source.source === defaultStockSource.value && source.remaining_quantity > 0
+  ))?.stock_lot_id ?? null
+));
+
+// 기존 기록을 다시 열면 저장된 재고 출처와 수량을 그대로 편집할 수 있게 복원합니다.
+function savedReasonRow(item) {
+  const source = editableStockSources.value.find((stock) => Number(stock.stock_lot_id) === Number(item.stock_lot_id));
+  return {
+    reason_code: item.reason_code || '',
+    reason_text: item.reason_text || null,
+    quantity: Number(item.quantity || 0),
+    stock_source: source?.source || (item.origin_production_date === props.workDate ? 'today' : 'carryover'),
+    stock_lot_id: item.stock_lot_id || source?.stock_lot_id || null,
+  };
 }
 
 // 사유 행의 기본값을 생성합니다.
@@ -277,7 +328,9 @@ function emptyReason() {
   return {
     reason_code: '',
     reason_text: null,
-    quantity: 1,
+    quantity: 0,
+    stock_source: defaultStockSource.value,
+    stock_lot_id: defaultStockLotId.value,
   };
 }
 
@@ -290,10 +343,13 @@ function sumRows(rows) {
 watch(() => props.modelValue, (value) => {
   if (!value) return;
 
-  reasonRows.value = isReasonMode.value ? [emptyReason()] : [];
+  reasonRows.value = isReasonMode.value
+    ? (savedDetails.value.length ? savedDetails.value.map(savedReasonRow) : [emptyReason()])
+    : [];
   carryoverQuantity.value = Number(props.product?.carryover_out || 0);
   carryoverSource.value = props.product?.carryover_in > 0 ? 'incoming' : 'today';
   note.value = '';
+  initialReasonSnapshot.value = JSON.stringify(reasonRows.value);
 });
 
 // 로스·폐기가 없을 때 0개 확인을 한 번의 행동으로 입력합니다.
@@ -308,7 +364,7 @@ function isDirty() {
     return carryoverQuantity.value !== Number(props.product?.carryover_out || 0) || Boolean(note.value);
   }
 
-  return reasonRows.value.length !== 1 || reasonRows.value.some((row) => row.reason_code || Number(row.quantity || 0) !== 1) || Boolean(note.value);
+  return JSON.stringify(reasonRows.value) !== initialReasonSnapshot.value || Boolean(note.value);
 }
 
 // 작성 중인 값이 있으면 확인창을 거친 뒤 닫습니다.
@@ -331,8 +387,13 @@ function forceClose() {
 
 // 사유 필수값과 수량 범위를 확인한 뒤 저장 확인창을 엽니다.
 function askSave() {
-  if (isReasonMode.value && reasonRows.value.length > 0 && reasonRows.value.some((row) => !row.reason_code || !row.quantity)) {
-    emit('error', '추가한 사유와 수량을 모두 입력해주세요.');
+  if (isReasonMode.value && reasonRows.value.length > 0 && reasonRows.value.some((row) => !row.reason_code || Number(row.quantity || 0) <= 0)) {
+    emit('error', '추가한 사유와 수량을 모두 입력해 주세요.');
+    return;
+  }
+
+  if ((props.type === 'loss' || props.type === 'waste') && reasonRows.value.some((row) => !row.stock_lot_id)) {
+    emit('error', '처리할 재고의 생산일을 선택해 주세요.');
     return;
   }
 

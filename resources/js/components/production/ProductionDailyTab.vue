@@ -17,7 +17,7 @@
           <template #activator="{ props: menuProps }">
             <button v-bind="menuProps" type="button" class="app-date-main">
               <span>{{ formatKoreanDate(workDate) }}</span>
-              <small>{{ workDate === today ? '오늘 업무' : '선택 날짜 업무' }}</small>
+              <small>날짜 선택</small>
             </button>
           </template>
           <v-date-picker
@@ -145,7 +145,7 @@
       >
         <v-btn value="all">전체</v-btn>
         <v-btn value="missing">기록 미완료</v-btn>
-        <v-btn value="occurred">기록 발생</v-btn>
+        <v-btn value="occurred">로스·폐기 발생</v-btn>
       </v-btn-toggle>
       <span class="app-supporting-text text-medium-emphasis">{{ filterResultLabel }}</span>
     </div>
@@ -185,7 +185,12 @@
             </colgroup>
             <thead>
               <tr>
-                <th>제품명</th><th>생산</th><th>이월</th><th>로스</th><th>폐기</th><th>폐기율</th>
+                <th>제품명</th>
+                <th>생산</th>
+                <th>이월</th>
+                <th>로스</th>
+                <th>폐기</th>
+                <th>폐기율 <button type="button" class="waste-rate-help" aria-label="폐기율 계산 기준 보기" @click.stop="wasteGuideOpen = true">ⓘ</button></th>
               </tr>
             </thead>
             <tbody>
@@ -195,7 +200,7 @@
                 </td>
                 <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
                 <td><button type="button" class="table-value" :class="{ pending: !row.disposition_confirmed }" @click="openFlow(row, 'carryover')">{{ row.disposition_confirmed ? row.carryover_in : '-' }}</button></td>
-                <td><button type="button" class="table-value" :class="{ attention: row.loss > 0, pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
+                <td><button type="button" class="table-value" :class="{ pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
                 <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
                 <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</button></td>
               </tr>
@@ -254,6 +259,7 @@
     <template #extra-detail>
       <section class="production-product-section">
         <div class="production-product-title">선택 날짜 생산 현황</div>
+        <div class="production-product-date">{{ formatWorkDateWithWeekday(workDate) }}</div>
         <div class="product-detail-metrics">
           <div v-for="metric in selectedProductMetrics" :key="metric.label">
             <span>{{ metric.label }}</span>
@@ -263,7 +269,7 @@
       </section>
       <v-divider />
       <section class="production-product-section">
-        <div class="production-product-title">간단 분석</div>
+        <div class="production-product-title">제품 현황</div>
         <p class="product-analysis-copy">{{ selectedProductAnalysis }}</p>
       </section>
       <template v-if="!productDetail?.recipes?.length">
@@ -302,8 +308,10 @@
           <div><span>기준 날짜</span><strong>{{ shortDateLabel(workDate) }}</strong></div>
         </div>
         <div v-if="detailMetricKey === 'waste_rate'" class="waste-analysis-note">
-          <strong>폐기율 확인 기준</strong>
-          <span>제품별 오늘 생산량과 들어온 이월을 합친 사용 가능 수량을 기준으로 계산합니다. 폐기 미확인 제품은 0%로 단정하지 않습니다.</span>
+          <strong>폐기율 안내 · 당일 생산 기준</strong>
+          <span>폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다. 이월된 제품을 폐기하면 처음 생산한 날짜의 폐기로 반영됩니다.</span>
+          <span><b>계산식</b> · 해당 생산일의 폐기 수량 ÷ 해당 생산일의 생산 수량 × 100</span>
+          <span><b>예시</b> · 10/3에 10개 생산한 제품 중 이월 재고 2개를 10/5에 폐기하면 10/3 폐기율은 2 ÷ 10 × 100 = 20%입니다.</span>
         </div>
         <v-divider class="dialog-full-divider" />
 
@@ -326,6 +334,23 @@
       </v-card-text>
       <v-card-actions class="app-dialog-footer">
         <v-btn variant="text" @click="detailOpen=false">닫기</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+  <v-dialog
+      v-model="wasteGuideOpen"
+      max-width="560"
+      persistent
+  >
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header">폐기율 안내</v-card-title>
+      <v-card-text class="app-dialog-body waste-guide-dialog">
+        <p>폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다. 이월된 제품을 폐기하면 처음 생산한 날짜의 폐기로 반영됩니다.</p>
+        <div><strong>계산식</strong><span>해당 생산일의 폐기 수량 ÷ 해당 생산일의 생산 수량 × 100</span></div>
+        <div><strong>예시</strong><span>10/3에 10개 생산한 제품 중 이월 재고 2개를 10/5에 폐기하면 10/3 폐기율은 2 ÷ 10 × 100 = 20%입니다.</span></div>
+      </v-card-text>
+      <v-card-actions class="app-dialog-footer">
+        <v-btn variant="text" @click="wasteGuideOpen = false">닫기</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -389,22 +414,43 @@
         >
           아직 확인할 제품이 {{ closePreview.incomplete?.length || 0 }}개 있습니다. 아래에서 필요한 항목을 바로 입력할 수 있습니다.
         </v-alert>
-        <div v-if="closePreview?.incomplete?.length" class="close-check-list mt-3">
-          <div v-for="row in closePreview.incomplete" :key="row.id" class="close-check-item">
+        <div class="close-progress-copy">
+          확인 {{ closeCompleteCount }} / {{ closeRows.length }} · 확인 필요 {{ closeIncompleteCount }}개
+        </div>
+        <div v-if="closeRows.length" class="close-check-list mt-3">
+          <article v-for="row in pagedCloseRows" :key="row.id" class="close-check-item">
             <div class="close-check-copy">
               <strong>{{ row.name }}</strong>
-              <span>{{ missingReasonText(row) }}</span>
+              <span>{{ row.complete ? '확인 완료' : missingReasonText(row) }}</span>
+            </div>
+            <div class="close-product-values">
+              <button class="production" type="button" @click="openProduction(row)">
+                <span>생산</span><strong>{{ row.production_confirmed ? `${row.production}개` : '-' }}</strong>
+              </button>
+              <button type="button" @click="openFlow(row, 'carryover')">
+                <span>이월</span><strong>{{ row.disposition_confirmed ? `${row.carryover_in}개` : '-' }}</strong>
+              </button>
+              <button type="button" @click="openFlow(row, 'loss')">
+                <span>로스</span><strong>{{ row.loss_confirmed ? `${row.loss}개` : '-' }}</strong>
+              </button>
+              <button class="waste" type="button" @click="openFlow(row, 'waste')">
+                <span>폐기</span><strong>{{ row.waste_confirmed ? `${row.waste}개` : '-' }}</strong>
+              </button>
             </div>
             <div class="close-check-actions">
-              <v-btn v-if="!row.production_confirmed" size="small" variant="outlined" @click="openProduction(row)">생산 확인</v-btn>
-              <v-btn v-if="!row.loss_confirmed" size="small" variant="outlined" @click="openFlow(row, 'loss')">로스 확인</v-btn>
-              <v-btn v-if="!row.waste_confirmed" size="small" variant="outlined" @click="openFlow(row, 'waste')">폐기 확인</v-btn>
-              <v-btn v-if="!row.disposition_confirmed" size="small" variant="outlined" @click="openFlow(row, 'carryover')">이월 확인</v-btn>
               <v-btn size="small" variant="text" @click="openProduct(row)">제품 정보</v-btn>
             </div>
-          </div>
+          </article>
         </div>
-        <div v-else-if="closePreview?.can_close" class="close-ready mt-3">모든 제품 확인이 완료되었습니다.</div>
+        <v-pagination
+            v-if="closePageCount > 1"
+            v-model="closePage"
+            :length="closePageCount"
+            :total-visible="5"
+            density="compact"
+            class="close-pagination"
+        />
+        <div v-if="closePreview?.can_close" class="close-ready mt-3">모든 제품 확인이 완료되었습니다. 입력 수량을 마지막으로 확인한 뒤 마감해 주세요.</div>
       </v-card-text>
       <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn variant="text" @click="closeOpen=false">취소</v-btn>
@@ -504,6 +550,7 @@ const flowOpen = ref(false);
 const flowType = ref('carryover');
 const tableDrag = { active: false, startX: 0, startScrollLeft: 0, element: null };
 const detailOpen = ref(false);
+const wasteGuideOpen = ref(false);
 const detailTitle = ref('');
 const detailMetricKey = ref('production');
 const detailSelectedRow = ref(null);
@@ -519,8 +566,24 @@ const bulkZeroType = ref('loss');
 const bulkZeroLoading = ref(false);
 const closePreview = ref(null);
 const closing = ref(false);
+const closePage = ref(1);
+const closePageSize = 10;
 
 const activeRows = computed(() => (props.daily.rows || []).filter((row) => row.is_active));
+// 마감 최종확인은 미확인 제품을 먼저 보여주고 페이지당 10개로 고정합니다.
+const closeRows = computed(() => {
+  const rows = closePreview.value?.daily?.rows || [];
+  return rows
+    .filter((row) => row.is_active)
+    .sort((a, b) => Number(a.complete) - Number(b.complete));
+});
+const closeIncompleteCount = computed(() => closeRows.value.filter((row) => !row.complete).length);
+const closeCompleteCount = computed(() => closeRows.value.length - closeIncompleteCount.value);
+const closePageCount = computed(() => Math.max(1, Math.ceil(closeRows.value.length / closePageSize)));
+const pagedCloseRows = computed(() => {
+  const start = (closePage.value - 1) * closePageSize;
+  return closeRows.value.slice(start, start + closePageSize);
+});
 const missingLossCount = computed(() => activeRows.value.filter((row) => !row.loss_confirmed).length);
 const missingWasteCount = computed(() => activeRows.value.filter((row) => !row.waste_confirmed).length);
 const missingProductionCount = computed(() => activeRows.value.filter((row) => !row.production_confirmed).length);
@@ -698,9 +761,11 @@ const selectedProductMetrics = computed(() => {
 const selectedProductAnalysis = computed(() => {
   const row = selectedProduct.value;
   if (!row) return '-';
-  if (!row.complete) return missingReasonText(row);
-  if (row.waste > 0 || row.loss > 0) return `로스 ${row.loss}, 폐기 ${row.waste}가 기록되어 있습니다. 필요하면 원인과 수량을 다시 확인해 주세요.`;
-  return '선택 날짜의 필수 확인이 모두 완료되었고 수량 흐름도 정상입니다.';
+  if (!row.complete) return `확인이 필요한 항목이 있습니다. ${missingReasonText(row)}`;
+  if (row.waste > 0) return `해당 날짜 생산분 기준 폐기 ${row.waste}개가 반영되어 있으며 폐기율은 ${row.waste_rate ?? 0}%입니다.${row.loss > 0 ? ` 로스 ${row.loss}개도 기록되어 있습니다.` : ''}`;
+  if (row.loss > 0) return `로스 ${row.loss}개가 기록되어 있습니다. 사유와 수량을 확인해 주세요.`;
+  if (row.carryover_in > 0) return `이월 재고 ${row.carryover_in}개가 있습니다. 원 생산일별 재고를 확인할 수 있습니다.`;
+  return '특이사항 없이 필수 기록이 모두 확인되었습니다.';
 });
 
 
@@ -727,6 +792,13 @@ function toggleMissingType(type) {
   if (missingType.value) filter.value = 'missing';
 }
 
+// 제품 정보에서는 선택 날짜를 요일까지 함께 보여줘 조회 기준을 분명하게 합니다.
+function formatWorkDateWithWeekday(date) {
+  const parsed = new Date(`${date}T00:00:00`);
+  const weekday = new Intl.DateTimeFormat('ko-KR', { weekday: 'long' }).format(parsed);
+  return `${String(date).replaceAll('-', '.')} ${weekday}`;
+}
+
 // 경고 버튼에서 연도 없이 월/일만 간결하게 표시합니다.
 function shortDateLabel(date) {
   const [, month, day] = String(date).split('-');
@@ -749,9 +821,9 @@ function categoryProgressText(rows) {
 }
 
 function groupWasteRate(rows) {
-  const available = sum(rows, 'production') + sum(rows, 'carryover_in');
-  if (!available) return '-';
-  return `${(sum(rows, 'waste') / available * 100).toFixed(1)}%`;
+  const production = sum(rows, 'production');
+  if (!production) return '-';
+  return `${(sum(rows, 'waste') / production * 100).toFixed(1)}%`;
 }
 
 // 날짜 화살표로 하루씩 이동합니다.
@@ -988,8 +1060,9 @@ async function previewClose() {
         store_id: props.storeId, work_date: props.workDate
       }
     });
-    closePreview.value=data;
-    closeOpen.value=true;
+    closePreview.value = data;
+    closePage.value = 1;
+    closeOpen.value = true;
   } catch (error) {
     emit('error',error.response?.data?.message||'마감 내용을 확인하지 못했습니다.');
   }
@@ -1310,10 +1383,6 @@ async function closeDay() {
     color:rgba(var(--v-theme-on-surface),.66);
     cursor:help;
 }
-.table-value.attention {
-    font-weight:650;
-    color:rgb(var(--v-theme-error));
-}
 .rate-value {
     color:rgba(var(--v-theme-on-surface),.66);
 }
@@ -1470,9 +1539,15 @@ async function closeDay() {
     padding:20px 24px;
 }
 .production-product-title {
-    margin-bottom:12px;
-    font-size:.88rem;
-    font-weight:650;
+    margin-bottom: 12px;
+    font-size: .88rem;
+    font-weight: 650;
+}
+.production-product-date {
+    margin-top: -8px;
+    margin-bottom: 12px;
+    font-size: .68rem;
+    color: rgba(var(--v-theme-on-surface), .55);
 }
 .product-detail-metrics {
     display:grid;
@@ -1568,6 +1643,74 @@ async function closeDay() {
     flex-wrap:wrap;
     gap:6px;
     margin-top:9px;
+}
+.close-progress-copy {
+    margin-top: 10px;
+    font-size: .72rem;
+    color: rgba(var(--v-theme-on-surface), .62);
+}
+.close-product-values {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 9px;
+}
+.close-product-values button {
+    padding: 7px 5px;
+    border: 1px solid rgba(var(--v-border-color), .55);
+    border-radius: 8px;
+    background: rgba(var(--v-theme-on-surface), .025);
+    text-align: center;
+    cursor: pointer;
+}
+.close-product-values span,
+.close-product-values strong {
+    display: block;
+}
+.close-product-values span {
+    font-size: .62rem;
+    color: rgba(var(--v-theme-on-surface), .55);
+}
+.close-product-values strong {
+    margin-top: 2px;
+    font-size: .76rem;
+    font-weight: 650;
+}
+.close-product-values .production {
+    background: rgba(76, 175, 80, .12);
+}
+.close-product-values .waste {
+    background: rgba(239, 83, 80, .11);
+}
+.close-pagination {
+    margin-top: 12px;
+}
+.waste-rate-help {
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: rgba(var(--v-theme-on-surface), .55);
+    font: inherit;
+    cursor: pointer;
+}
+.waste-guide-dialog p {
+    margin: 0 0 14px;
+    font-size: .76rem;
+    line-height: 1.6;
+}
+.waste-guide-dialog > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 10px;
+}
+.waste-guide-dialog strong {
+    font-size: .72rem;
+}
+.waste-guide-dialog span {
+    font-size: .72rem;
+    line-height: 1.55;
+    color: rgba(var(--v-theme-on-surface), .68);
 }
 .close-ready {
     padding:12px;
