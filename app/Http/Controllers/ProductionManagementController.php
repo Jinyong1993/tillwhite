@@ -262,8 +262,10 @@ class ProductionManagementController extends Controller
             'carryover' => 'disposition_confirmed',
         ][$data['type']];
 
-        // 0개 확인은 별도 수량 행이 생기지 않으므로 확인 플래그가 실제 DB에 저장됐는지
-        // 서버에서 다시 검증한 뒤에만 성공 응답을 보냅니다. 성공 알림과 실제 상태가 어긋나는 것을 막습니다.
+        /**
+         * 0개 확인은 별도 수량 행이 생기지 않으므로 확인 플래그가 실제 DB에 저장됐는지
+         * 서버에서 다시 검증한 뒤에만 성공 응답을 보내 화면과 실제 상태가 어긋나지 않게 합니다.
+         */
         $confirmed = ProductionConfirmation::query()
             ->where('store_id', $data['store_id'])
             ->where('product_id', $data['product_id'])
@@ -293,7 +295,7 @@ class ProductionManagementController extends Controller
         ]);
     }
 
-    /** 선택한 수량 처리 항목의 확인 상태만 갱신합니다. */
+    // 선택한 수량 처리 항목의 확인 상태만 갱신합니다.
     private function confirmFlowField(
         int $storeId,
         int $productId,
@@ -301,17 +303,39 @@ class ProductionManagementController extends Controller
         string $field,
         int $userId,
     ): void {
-        ProductionConfirmation::updateOrCreate(
-            [
-                'store_id' => $storeId,
-                'product_id' => $productId,
-                'work_date' => $date,
-            ],
-            [
+        /**
+         * 과거 저장 과정에서 같은 업무 날짜가 `Y-m-d`와 `Y-m-d 00:00:00` 두 형식으로
+         * 남을 수 있으므로 문자열 일치가 아닌 날짜 기준으로 기존 확인 행을 모두 찾습니다.
+         */
+        $confirmationQuery = DB::table('production_confirmations')
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', $date);
+
+        /**
+         * 같은 날짜의 확인 행이 여러 개 남아 있어도 모두 같은 확인 상태로 맞춥니다.
+         * 그래야 일일 현황이 어느 행을 읽더라도 0개 확인이 다시 미확인으로 돌아가지 않습니다.
+         */
+        if ($confirmationQuery->exists()) {
+            $confirmationQuery->update([
                 $field => true,
                 'confirmed_by' => $userId,
-            ],
-        );
+                'updated_at' => now(),
+            ]);
+
+            return;
+        }
+
+        // 기존 확인 행이 없는 제품만 새 확인 행을 생성합니다.
+        DB::table('production_confirmations')->insert([
+            'store_id' => $storeId,
+            'product_id' => $productId,
+            'work_date' => $date,
+            $field => true,
+            'confirmed_by' => $userId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /** 미확인 생산·이월·로스·폐기를 0개 상태로 확인하며 기존 실제 기록은 건드리지 않습니다. */
@@ -322,71 +346,59 @@ class ProductionManagementController extends Controller
         $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'type' => ['required', Rule::in(['production', 'carryover', 'loss', 'waste'])]]);
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
-        // 선택 날짜의 실제 활성 제품을 기준으로 확인합니다. 현재 제품 마스터 상태만 보면
-        // 과거 날짜에 활성 상태였던 제품이 일괄 확인에서 빠져 완료 판정이 남을 수 있습니다.
-        $dailyBefore = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
-        $products = collect($dailyBefore['rows'])
-            ->where('is_active', true)
-            ->pluck('id');
+
         $field = [
             'production' => 'production_confirmed',
             'carryover' => 'disposition_confirmed',
             'loss' => 'loss_confirmed',
             'waste' => 'waste_confirmed',
         ][$data['type']];
-        $confirmedCount = 0;
-
-        try {
-            DB::transaction(function () use ($products, $data, $user, $field, &$confirmedCount) {
-                foreach ($products as $productId) {
-                    $existing = ProductionConfirmation::query()
-                        ->where('store_id', $data['store_id'])
-                        ->where('product_id', $productId)
-                        ->whereDate('work_date', $data['work_date'])
-                        ->first();
-
-                    if ($existing?->{$field}) {
-                        continue;
-                    }
-
-                    if ($existing) {
-                        $existing->update([
-                            $field => true,
-                            'confirmed_by' => $user->id,
-                        ]);
-                    } else {
-                        ProductionConfirmation::create([
-                            'store_id' => $data['store_id'],
-                            'product_id' => $productId,
-                            'work_date' => $data['work_date'],
-                            $field => true,
-                            'confirmed_by' => $user->id,
-                        ]);
-                    }
-
-                    $confirmedCount++;
-                }
-            });
-        } catch (\Throwable $error) {
-            report($error);
-            abort(500, '일괄 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
-        }
         $label = [
             'production' => '생산',
             'carryover' => '이월',
             'loss' => '로스',
             'waste' => '폐기',
         ][$data['type']];
-        $this->auditService->log($user, 'production', 'confirm', ProductionConfirmation::class, null, null, $data, "미입력 {$label} 전체 0 확인");
 
-        // 저장 직후 서버가 다시 계산한 현황을 함께 내려 화면과 완료/마감 판정이
-        // 같은 데이터 기준을 사용하도록 합니다.
+        /**
+         * 화면의 완료 판정과 동일한 일일 현황에서 실제 미확인 제품만 골라 처리합니다.
+         * 수량이 이미 0인지가 아니라 확인 플래그가 false인지가 기준입니다.
+         */
+        $dailyBefore = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
+        $productIds = collect($dailyBefore['rows'])
+            ->filter(fn (array $row) => $row['is_active'] && ! $row[$field])
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values();
+
+        DB::transaction(function () use ($productIds, $data, $user, $field) {
+            foreach ($productIds as $productId) {
+                $this->confirmFlowField(
+                    (int) $data['store_id'],
+                    $productId,
+                    $data['work_date'],
+                    $field,
+                    $user->id,
+                );
+            }
+        });
+
+        /**
+         * 저장 직후 동일한 일일 계산을 다시 실행합니다. 대상이 하나라도 미확인으로
+         * 남으면 성공 응답을 보내지 않아 화면과 실제 저장 상태가 어긋나지 않게 합니다.
+         */
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
+        $remaining = collect($daily['rows'])
+            ->whereIn('id', $productIds)
+            ->filter(fn (array $row) => ! $row[$field]);
+        abort_if($remaining->isNotEmpty(), 500, "{$label} 확인 상태를 저장하지 못했습니다. 다시 시도해주세요.");
+
+        $this->auditService->log($user, 'production', 'confirm', ProductionConfirmation::class, null, null, $data, "미입력 {$label} 전체 0 확인");
 
         return response()->json([
             'message' => "미입력 {$label}를 전체 0개로 확인했습니다.",
             'daily' => $daily,
-            'confirmed_count' => $confirmedCount,
+            'confirmed_count' => $productIds->count(),
         ]);
     }
 

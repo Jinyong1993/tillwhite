@@ -123,9 +123,9 @@ import {
   defineComponent,
   h,
   ref,
-  resolveComponent,
   watch,
 } from 'vue';
+import { VBtn, VNumberInput, VSelect } from 'vuetify/components';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 
 const props = defineProps({
@@ -270,10 +270,6 @@ const ReasonRows = defineComponent({
     const remove = (index) => {
       innerEmit('update:modelValue', innerProps.modelValue.filter((_, rowIndex) => rowIndex !== index));
     };
-
-    const VSelect = resolveComponent('v-select');
-    const VNumberInput = resolveComponent('v-number-input');
-    const VBtn = resolveComponent('v-btn');
 
     return () => h('div', innerProps.modelValue.map((row, index) => h('div', {
       class: 'reason-row',
