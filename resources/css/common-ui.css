@@ -76,3 +76,101 @@
         --app-section-gutter: 16px;
     }
 }
+
+/*
+ * 목록·캘린더에서 공통으로 사용하는 날짜 이동 영역입니다.
+ * 가운데 날짜는 항상 화면 중앙에 고정하고 오늘 버튼은 별도 슬롯에 두어
+ * 버튼 표시 여부가 바뀌어도 날짜가 밀리거나 화살표와 겹치지 않게 합니다.
+ */
+.app-date-toolbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 54px;
+    padding-inline: 64px;
+}
+
+.app-date-navigation {
+    display: grid;
+    grid-template-columns: 34px minmax(160px, 210px) 34px;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+
+.app-date-navigation > .v-btn {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+}
+
+.app-date-main {
+    min-width: 160px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    text-align: center;
+}
+
+button.app-date-main { 
+    cursor: pointer; 
+}
+
+.app-date-main span, .app-date-main small { 
+    display: block; 
+}
+
+.app-date-main span, .app-date-main strong { 
+    font-size: .92rem; 
+    font-weight: 700; 
+    letter-spacing: -.02em; 
+}
+
+.app-date-main small { 
+    margin-top: 2px; 
+    font-size: .65rem; 
+    color: rgba(var(--v-theme-on-surface), .52); 
+}
+
+.app-date-today-slot {
+    position: absolute;
+    right: 0;
+    width: 58px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.app-date-today { min-width: 48px; }
+
+@media (max-width: 600px) {
+    .app-date-toolbar { 
+        padding-inline: 52px; 
+    }
+    
+    .app-date-navigation { 
+        grid-template-columns: 32px minmax(136px, 1fr) 32px; 
+    }
+
+    .app-date-navigation > .v-btn { 
+        width: 32px;
+        min-width: 32px; 
+        height: 32px; 
+    }
+
+    .app-date-main { 
+        min-width: 136px; 
+        padding-inline: 6px; 
+    }
+
+    .app-date-today-slot { 
+        width: 50px; 
+    }
+
+    .app-date-today { 
+        min-width: 44px; 
+        padding-inline: 8px; 
+    }
+}

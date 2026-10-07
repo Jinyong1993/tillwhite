@@ -2,7 +2,10 @@
   <AppShell ref="appShellRef" :title="pageTitle">
     <template #default="{ can, setError }">
       <section class="store-context mb-3">
-        <span class="store-context-label">조회 중인 점포</span>
+        <div class="store-context-copy">
+          <span class="store-context-label">조회 중인 점포</span>
+          <small>현재 보고 있는 생산·폐기 현황</small>
+        </div>
         <v-select
           v-if="options.stores?.length > 1"
           :model-value="storeId"
@@ -48,6 +51,7 @@
               :can-correct="can('production.correct')"
               @update:work-date="changeDate"
               @reload="reloadCurrentDate"
+              @replace-daily="replaceDaily"
               @error="setError"
               @success="showSuccess"
             />
@@ -269,6 +273,15 @@ async function changeDate(value) {
   return loadPage({ date: value });
 }
 
+/** 저장 응답에 포함된 서버 재계산 결과를 즉시 반영한 뒤 캐시도 같은 값으로 맞춥니다. */
+function replaceDaily(value) {
+  if (!value) return;
+
+  const key = cacheKey(workDate.value, storeId.value);
+  daily.value = value;
+  dailyCache.set(key, value);
+}
+
 /** 저장 후 현재 날짜 캐시만 무효화하여 변경된 값을 서버에서 다시 확인합니다. */
 async function reloadCurrentDate() {
   const key = cacheKey(workDate.value, storeId.value);
@@ -317,14 +330,19 @@ onBeforeUnmount(disposePage);
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:14px;
-  min-height:44px;
-  padding:6px 2px;
+  gap:16px;
+  min-height:52px;
+  padding:8px 12px;
+  border:1px solid rgba(var(--v-border-color),.58);
+  border-radius:10px;
+  background:rgba(var(--v-theme-on-surface),.018);
 }
-.store-context-label { flex:none; font-size:.72rem; color:rgba(var(--v-theme-on-surface),.56); }
-.store-name { margin-left:auto; font-size:.86rem; font-weight:650; }
+.store-context-copy { min-width:0; display:flex; flex-direction:column; gap:1px; }
+.store-context-label { flex:none; font-size:.68rem; font-weight:600; color:rgba(var(--v-theme-on-surface),.56); }
+.store-context-copy small { font-size:.62rem; color:rgba(var(--v-theme-on-surface),.42); }
+.store-name { margin-left:auto; font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
 .store-select { flex:0 1 190px; max-width:190px; }
-.store-select :deep(.v-field__input) { justify-content:flex-end; min-height:34px; padding-inline:4px; font-size:.86rem; font-weight:650; text-align:right; }
+.store-select :deep(.v-field__input) { justify-content:flex-end; min-height:34px; padding-inline:4px; font-size:.92rem; font-weight:700; text-align:right; }
 .store-read-only { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); text-align:right; }
 .production-divider { width:calc(100% + 32px); margin-inline:-16px; }
 .production-tabs { min-height:42px; }
@@ -332,7 +350,8 @@ onBeforeUnmount(disposePage);
 .production-tabs :deep(.v-tab--selected) { font-weight:700; }
 .production-tabs :deep(.v-tab__slider) { height:2px; }
 @media(max-width:600px) {
-  .store-context { min-height:40px; }
+  .store-context { min-height:48px; padding:7px 10px; }
+  .store-context-copy small { display:none; }
   .store-select { flex-basis:150px; max-width:150px; }
 }
 </style>

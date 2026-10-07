@@ -289,6 +289,7 @@ class ProductionManagementController extends Controller
         return response()->json([
             'message' => "{$label} 처리를 저장했습니다.",
             'row' => $freshRow,
+            'daily' => $freshDaily,
         ]);
     }
 
@@ -321,7 +322,12 @@ class ProductionManagementController extends Controller
         $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'type' => ['required', Rule::in(['production', 'carryover', 'loss', 'waste'])]]);
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
-        $products = Product::query()->where('store_id', $data['store_id'])->where('is_active', true)->whereNull('deleted_at')->pluck('id');
+        // 선택 날짜의 실제 활성 제품을 기준으로 확인합니다. 현재 제품 마스터 상태만 보면
+        // 과거 날짜에 활성 상태였던 제품이 일괄 확인에서 빠져 완료 판정이 남을 수 있습니다.
+        $dailyBefore = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
+        $products = collect($dailyBefore['rows'])
+            ->where('is_active', true)
+            ->pluck('id');
         $field = [
             'production' => 'production_confirmed',
             'carryover' => 'disposition_confirmed',
@@ -372,7 +378,16 @@ class ProductionManagementController extends Controller
             'waste' => '폐기',
         ][$data['type']];
         $this->auditService->log($user, 'production', 'confirm', ProductionConfirmation::class, null, null, $data, "미입력 {$label} 전체 0 확인");
-        return response()->json(['message' => "미입력 {$label}를 전체 0개로 확인했습니다."]);
+
+        // 저장 직후 서버가 다시 계산한 현황을 함께 내려 화면과 완료/마감 판정이
+        // 같은 데이터 기준을 사용하도록 합니다.
+        $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
+
+        return response()->json([
+            'message' => "미입력 {$label}를 전체 0개로 확인했습니다.",
+            'daily' => $daily,
+            'confirmed_count' => $confirmedCount,
+        ]);
     }
 
     /** 관리자 권한으로 마감된 날짜를 수정 상태로 열고 필수 수정 사유를 기록합니다. */

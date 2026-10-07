@@ -1,14 +1,39 @@
 <template>
 <div class="calendar-page">
-  <section class="calendar-toolbar">
-    <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 달" @click="moveMonth(-1)" />
-    <div class="calendar-month-copy">
-      <strong>{{ monthLabel }}</strong>
-      <span>날짜별 생산·폐기와 마감 상태를 확인합니다.</span>
+  <section class="app-date-toolbar calendar-toolbar">
+    <div class="app-date-navigation">
+      <v-btn 
+        icon="mdi-chevron-left" 
+        variant="text" 
+        size="small" 
+        aria-label="이전 달" 
+        @click="moveMonth(-1)" 
+      />
+      <div class="calendar-month-copy app-date-main">
+        <strong>
+          {{ monthLabel }}
+        </strong>
+        <span>
+          날짜별 생산·폐기와 마감 상태를 확인합니다.
+        </span>
+      </div>
+      <v-btn 
+        icon="mdi-chevron-right" 
+        variant="text" 
+        size="small" 
+        aria-label="다음 달" 
+        @click="moveMonth(1)" 
+      />
     </div>
-    <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 달" @click="moveMonth(1)" />
-    <div class="calendar-today-slot">
-      <v-btn v-show="month !== today.slice(0, 7)" size="small" variant="outlined" @click="goToday">오늘</v-btn>
+    <div class="app-date-today-slot">
+      <v-btn 
+        v-show="month !== today.slice(0, 7)" 
+        size="small" 
+        variant="outlined" 
+        class="app-date-today" 
+        @click="goToday">
+        오늘
+      </v-btn>
     </div>
   </section>
 
@@ -465,8 +490,7 @@ async function saveEvent() {
 </script>
 <style scoped>
 .calendar-page { min-height:420px; }
-.calendar-toolbar { display:grid; grid-template-columns:40px minmax(180px,240px) 40px 56px; align-items:center; justify-content:center; gap:6px; padding:4px 0 16px; }
-.calendar-today-slot { width:56px; display:flex; justify-content:flex-end; }
+.calendar-toolbar { padding:4px 0 16px; }
 .calendar-month-copy { min-width:180px; text-align:center; }
 .calendar-month-copy strong,.calendar-month-copy span { display:block; }
 .calendar-month-copy strong { font-size:1rem; font-weight:650; }

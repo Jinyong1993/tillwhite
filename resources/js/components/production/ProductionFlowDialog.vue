@@ -402,7 +402,7 @@ async function save() {
     const { data } = await window.axios.put('/tillwhite/api/production-management/flow', payload);
     confirmSave.value = false;
     open.value = false;
-    emit('saved', data.message || `${dialogTitle.value}을 저장했습니다.`);
+    emit('saved', data.message || `${dialogTitle.value}을 저장했습니다.`, data.daily || null);
   } catch (error) {
     emit('error', error.response?.data?.message || `${dialogTitle.value}을 저장하지 못했습니다.`);
   } finally {

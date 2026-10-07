@@ -1,21 +1,23 @@
 <template>
 <div class="daily-page">
   <section class="daily-section date-section">
-    <div class="date-panel">
-      <div class="date-navigation">
-      <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 날짜" @click="moveDate(-1)" />
-      <v-menu v-model="dateMenu" :close-on-content-click="false">
-        <template #activator="{ props: menuProps }">
-          <button v-bind="menuProps" type="button" class="date-main-button">
-            <span>{{ formatKoreanDate(workDate) }}</span>
-            <small>{{ workDate === today ? '오늘 업무' : '선택 날짜 업무' }}</small>
-          </button>
-        </template>
-        <v-date-picker :model-value="workDate" @update:model-value="selectPickerDate" />
-      </v-menu>
-      <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 날짜" @click="moveDate(1)" />
+    <div class="app-date-toolbar">
+      <div class="app-date-navigation">
+        <v-btn icon="mdi-chevron-left" variant="text" size="small" aria-label="이전 날짜" @click="moveDate(-1)" />
+        <v-menu v-model="dateMenu" :close-on-content-click="false">
+          <template #activator="{ props: menuProps }">
+            <button v-bind="menuProps" type="button" class="app-date-main">
+              <span>{{ formatKoreanDate(workDate) }}</span>
+              <small>{{ workDate === today ? '오늘 업무' : '선택 날짜 업무' }}</small>
+            </button>
+          </template>
+          <v-date-picker :model-value="workDate" @update:model-value="selectPickerDate" />
+        </v-menu>
+        <v-btn icon="mdi-chevron-right" variant="text" size="small" aria-label="다음 날짜" @click="moveDate(1)" />
       </div>
-      <v-btn v-if="workDate !== today" size="small" variant="outlined" class="today-button" @click="emit('update:workDate', today)">오늘</v-btn>
+      <div class="app-date-today-slot">
+        <v-btn v-show="workDate !== today" size="small" variant="outlined" class="app-date-today" @click="emit('update:workDate', today)">오늘</v-btn>
+      </div>
     </div>
   </section>
 
@@ -62,16 +64,17 @@
             :class="['missing-type-button', { active: missingType === item.key, complete: item.count === 0 }]"
             @click="toggleMissingType(item.key)"
           >
-            <span>{{ item.label }}</span>
+            <span>{{ item.label }} 미확인</span>
             <strong>{{ item.count ? `${item.count}개` : '완료' }}</strong>
           </button>
         </div>
       </div>
       <div v-if="canMutate" class="product-heading-actions">
-        <v-btn v-if="nextMissingRow" size="small" variant="text" prepend-icon="mdi-skip-next" @click="openNextMissing">다음 미확인</v-btn>
+        <v-btn v-if="nextMissingRow" size="small" variant="outlined" class="missing-action-button" prepend-icon="mdi-skip-next" @click="openNextMissing">다음 미확인 제품</v-btn>
+        <div v-else class="missing-complete-state">모든 제품 확인 완료</div>
       <v-menu location="bottom end">
         <template #activator="{ props: menuProps }">
-          <v-btn v-bind="menuProps" size="small" variant="outlined" prepend-icon="mdi-check-all">미확인 일괄 확인</v-btn>
+          <v-btn v-bind="menuProps" size="small" variant="outlined" class="missing-action-button" prepend-icon="mdi-check-all" :disabled="!hasMissingItems">미확인 일괄 확인</v-btn>
         </template>
         <v-list class="bulk-menu" min-width="280">
           <v-list-item
@@ -268,7 +271,7 @@
         </div>
         <v-empty-state v-else title="변경 이력이 없습니다." icon="mdi-history"/>
       </v-card-text>
-      <v-card-actions class="app-dialog-footer">
+      <v-card-actions class="app-dialog-footer history-footer">
         <v-btn variant="text" @click="historyOpen=false">닫기</v-btn>
       </v-card-actions>
     </v-card>
@@ -353,7 +356,7 @@ const props = defineProps({
     })
   }, storeId: Number, workDate: String, canMutate: Boolean, canCorrect: Boolean
 });
-const emit = defineEmits(['update:workDate','reload','error','success']);
+const emit = defineEmits(['update:workDate','reload','replaceDaily','error','success']);
 const today = toLocalDateString();
 const dateMenu = ref(false);
 const filter = ref('all');
@@ -403,6 +406,7 @@ const missingItems = computed(() => [
   { key: 'loss', label: '로스', count: missingLossCount.value },
   { key: 'waste', label: '폐기', count: missingWasteCount.value },
 ]);
+const hasMissingItems = computed(() => missingItems.value.some((item) => item.count > 0));
 const missingSummaryText = computed(() => (
   missingItems.value.some((item) => item.count > 0)
     ? '확인이 필요한 기록을 선택하면 해당 제품만 빠르게 확인할 수 있습니다.'
@@ -513,7 +517,7 @@ const filterResultLabel = computed(() => {
   if (search.value?.trim()) return `검색 결과 ${filteredRows.value.length}개`;
   if (missingType.value) {
     const label = missingItems.value.find((item) => item.key === missingType.value)?.label || '기록';
-    return `${label} 확인 필요 · ${filteredRows.value.length}개`;
+    return `${label} 미확인 · ${filteredRows.value.length}개`;
   }
   if (filter.value === 'missing') return `확인이 필요한 제품 ${filteredRows.value.length}개`;
   if (filter.value === 'occurred') return `로스·폐기가 발생한 제품 ${filteredRows.value.length}개`;
@@ -759,6 +763,7 @@ async function bulkZero() {
       store_id: props.storeId, work_date: props.workDate, type
     });
     bulkZeroConfirmOpen.value = false;
+    if (data.daily) emit('replaceDaily', data.daily);
     emit('success', data.message);
     emit('reload');
   } catch (error) {
@@ -768,7 +773,8 @@ async function bulkZero() {
   }
 }
 /** 하위 다이얼로그 저장 성공 후 최신 일일 데이터를 다시 조회합니다. */
-function handleSaved(message) {
+function handleSaved(message, freshDaily = null) {
+  if (freshDaily) emit('replaceDaily', freshDaily);
   emit('success', message);
   emit('reload');
 
@@ -878,9 +884,6 @@ async function closeDay() {
 <style scoped>
 .daily-page { display:flex; flex-direction:column; gap:0; }
 .daily-section { padding:18px 0; }
-.date-section { padding-top:0; padding-bottom:12px; }
-.production-date-nav { display:flex; align-items:center; justify-content:center; gap:4px; min-height:42px; }
-.date-button { font-weight:600; letter-spacing:-.02em; }
 .section-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:14px; }
 .section-heading h3 { margin:0; font-size:.98rem; font-weight:650; letter-spacing:-.02em; }
 .section-heading p { margin:4px 0 0; font-size:.76rem; color:rgba(var(--v-theme-on-surface),.58); }
@@ -897,7 +900,9 @@ async function closeDay() {
 .metric-item span { font-size:.7rem; font-weight:500; color:rgba(var(--v-theme-on-surface),.58); }
 .metric-item strong { margin-top:3px; font-size:1.08rem; font-weight:650; font-variant-numeric:tabular-nums; }
 .product-search { max-width:360px; }
-.product-heading-actions { display:flex; align-items:center; gap:4px; }
+.product-heading-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; }
+.missing-action-button { min-height:34px; font-weight:650; }
+.missing-complete-state { min-height:34px; display:flex; align-items:center; padding:0 10px; font-size:.72rem; font-weight:650; color:rgba(var(--v-theme-on-surface),.62); }
 .product-filter-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .status-filter { border-bottom:1px solid rgba(var(--v-border-color),.65); border-radius:0; }
 .status-filter :deep(.v-btn) { min-width:auto; padding-inline:12px; font-size:.76rem; font-weight:500; }
@@ -982,15 +987,6 @@ async function closeDay() {
 .close-check-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
 .close-ready { padding:12px; border-radius:10px; background:rgba(var(--v-theme-success),.08); font-size:.78rem; font-weight:600; }
 
-.date-section { padding: 4px 0 10px; }
-.date-panel { position:relative; display:flex; align-items:center; justify-content:center; min-height:54px; }
-.date-navigation { display:grid; grid-template-columns:40px minmax(170px,220px) 40px; align-items:center; justify-content:center; gap:4px; }
-.date-main-button { min-width:170px; padding:6px 12px; border:0; border-radius:10px; background:transparent; color:inherit; text-align:center; cursor:pointer; }
-.date-main-button span,.date-main-button small { display:block; }
-.date-main-button span { font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
-.date-main-button small { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.52); }
-.today-button { position:absolute; right:0; }
-.today-button { min-width:48px; }
 .previous-close-alert { margin:2px 0 8px; }
 .previous-close-copy { display:flex; flex-direction:column; gap:2px; }
 .previous-close-copy strong { font-size:.78rem; }
@@ -1005,6 +1001,7 @@ async function closeDay() {
 .missing-type-button strong { font-size:.7rem; font-weight:700; font-variant-numeric:tabular-nums; }
 .missing-type-button.active { border-color:rgba(var(--v-theme-primary),.55); background:rgba(var(--v-theme-primary),.07); }
 .missing-type-button.complete { opacity:.58; }
+.history-footer { justify-content:flex-start; }
 .status-filter { width:100%; display:grid; grid-template-columns:repeat(3,1fr); border-bottom:1px solid rgba(var(--v-border-color),.65); }
 .status-filter :deep(.v-btn) { border-radius:0; }
 .status-filter :deep(.v-btn--active) { border-bottom:2px solid rgb(var(--v-theme-primary)); }
