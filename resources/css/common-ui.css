@@ -115,24 +115,26 @@
     text-align: center;
 }
 
-button.app-date-main { 
-    cursor: pointer; 
+button.app-date-main {
+    cursor: pointer;
 }
 
-.app-date-main span, .app-date-main small { 
-    display: block; 
+.app-date-main span,
+.app-date-main small {
+    display: block;
 }
 
-.app-date-main span, .app-date-main strong { 
-    font-size: .92rem; 
-    font-weight: 700; 
-    letter-spacing: -.02em; 
+.app-date-main span,
+.app-date-main strong {
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
 }
 
-.app-date-main small { 
-    margin-top: 2px; 
-    font-size: .65rem; 
-    color: rgba(var(--v-theme-on-surface), .52); 
+.app-date-main small {
+    margin-top: 2px;
+    font-size: 0.65rem;
+    color: rgba(var(--v-theme-on-surface), 0.52);
 }
 
 .app-date-today-slot {
@@ -148,31 +150,31 @@ button.app-date-main {
 }
 
 @media (max-width: 600px) {
-    .app-date-toolbar { 
-        padding-inline: 52px; 
-    }
-    
-    .app-date-navigation { 
-        grid-template-columns: 32px minmax(136px, 1fr) 32px; 
+    .app-date-toolbar {
+        padding-inline: 52px;
     }
 
-    .app-date-navigation > .v-btn { 
+    .app-date-navigation {
+        grid-template-columns: 32px minmax(136px, 1fr) 32px;
+    }
+
+    .app-date-navigation > .v-btn {
         width: 32px;
-        min-width: 32px; 
-        height: 32px; 
+        min-width: 32px;
+        height: 32px;
     }
 
-    .app-date-main { 
-        min-width: 136px; 
-        padding-inline: 6px; 
+    .app-date-main {
+        min-width: 136px;
+        padding-inline: 6px;
     }
 
-    .app-date-today-slot { 
-        width: 50px; 
+    .app-date-today-slot {
+        width: 50px;
     }
 
-    .app-date-today { 
-        min-width: 44px; 
-        padding-inline: 8px; 
+    .app-date-today {
+        min-width: 44px;
+        padding-inline: 8px;
     }
 }

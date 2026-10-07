@@ -381,7 +381,7 @@ const selectedDayInsight = computed(() => {
     return { title: '수량 기록이 없는 날짜입니다.', text: day.status === 'closed' ? '0개 기록으로 마감된 날짜입니다.' : '아직 입력된 수량이 없습니다.' };
   }
   if (waste > 0) {
-    return { title: `폐기 ${waste}개가 기록되었습니다.`, text: day.totals.waste_rate == null ? '생산량이 없어 폐기율을 계산하지 않습니다.' : `생산 대비 폐기율은 ${day.totals.waste_rate}%입니다.` };
+    return { title: `폐기 ${waste}개가 기록되었습니다.`, text: day.totals.waste_rate == null ? '사용 가능 수량이 없어 폐기율을 계산하지 않습니다.' : `사용 가능 수량 대비 폐기율은 ${day.totals.waste_rate}%입니다.` };
   }
   if (loss > 0) return { title: `로스 ${loss}개가 기록되었습니다.`, text: `생산 ${production}개와 함께 원인 기록을 목록에서 확인할 수 있습니다.` };
   return { title: `생산 ${production}개가 기록되었습니다.`, text: '폐기·로스 수량은 현재 0개입니다.' };

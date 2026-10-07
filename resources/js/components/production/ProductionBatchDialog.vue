@@ -6,23 +6,20 @@
 >
   <v-card
       rounded="lg"
-      class="app-dialog-card"
+      class="app-dialog-card production-dialog-card"
   >
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
-      <div>
-        <div>생산</div>
-        <div class="app-supporting-text text-medium-emphasis mt-1">{{ product?.name || '-' }}</div>
-      </div>
+      <div>생산 - {{ product?.name || '-' }}</div>
     </v-card-title>
     <v-card-text class="app-dialog-body">
-      <div class="dialog-overview">
+      <div class="production-dialog-overview">
         <div><span>현재 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
         <div><span>생산 기록</span><strong>{{ product?.batches?.length || 0 }}건</strong></div>
         <div><span>확인 상태</span><strong>{{ product?.production_confirmed ? '완료' : '미확인' }}</strong></div>
       </div>
-      <div class="dialog-guide overview-guide">생산 기록을 확인하고 새 생산량을 추가하거나 기존 기록을 수정할 수 있습니다.</div>
+      <div class="production-dialog-guide overview-guide">생산 기록을 확인하고 새 생산량을 추가하거나 기존 기록을 수정할 수 있습니다.</div>
       <div v-if="product?.batches?.length" class="mb-4">
-        <div class="text-subtitle-2 mb-2">오늘 생산 기록</div>
+        <div class="production-dialog-section-title">오늘 생산 기록</div>
         <v-list
             density="compact"
             border
@@ -51,8 +48,8 @@
           </v-list-item>
         </v-list>
       </div>
-      <div class="text-subtitle-2 mb-2">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
-      <div class="dialog-guide">오늘 생산한 수량을 입력해 주세요.</div>
+      <div class="production-dialog-section-title">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
+      <div class="production-dialog-guide">오늘 생산한 수량을 입력해 주세요.</div>
       <v-number-input
           v-model="form.quantity"
           label="생산 수량"
@@ -85,32 +82,62 @@
           variant="outlined"
           rows="2"
       />
-      <v-checkbox v-model="form.recommendationReferenced" label="추천 생산량 참고" density="compact" hide-details/><div v-if="form.recommendationReferenced" class="field-help">추천 생산량을 확인하고 생산 수량을 결정한 경우입니다.</div>
+      <v-checkbox
+          v-model="form.recommendationReferenced"
+          label="추천 생산량 참고"
+          density="compact"
+          hide-details
+      />
+      <div v-if="form.recommendationReferenced" class="production-dialog-field-help">
+        추천 생산량을 확인하고 생산 수량을 결정한 경우입니다.
+      </div>
       <v-text-field
           v-if="form.recommendationReferenced"
           v-model="form.recommendationDeviationReason"
           label="추천 범위와 다르게 생산한 이유 · 선택"
           variant="outlined"
       />
+      <div class="production-dialog-guide">
+        생산 중 특이사항, 작업 변경 내용 외에 다음 근무자가 참고할 내용을 적어 주세요.
+      </div>
       <v-textarea
           v-model="form.note"
-          label="메모"
+          label="메모 · 선택"
           variant="outlined"
+          density="compact"
           rows="2"
       />
       <div v-if="!product?.recipe" class="recipe-empty"><v-icon icon="mdi-book-open-variant-outline" size="18"/><div><strong>등록된 레시피가 없습니다.</strong><span>레시피가 필요한 경우 제품 관리에서 등록해 주세요.</span></div></div>
       <v-divider class="my-3" />
-      <div class="text-subtitle-2 mb-2">오늘 생산하지 않은 경우</div>
+      <div class="production-dialog-section-title">오늘 생산하지 않은 경우</div>
+      <div class="production-dialog-guide">
+        실제 생산이 없었던 날은 사유를 선택해 0개로 확인합니다. 목록에 맞는 사유가 없으면 직접입력을 선택해 주세요.
+      </div>
       <v-select
           v-model="zeroReason"
-          :items="zeroReasons"
+          :items="displayZeroReasons"
           item-title="title"
           item-value="value"
           label="생산 0개 사유"
           variant="outlined"
+          density="compact"
           clearable
       />
-      <v-btn variant="outlined" block :disabled="!zeroReason || saving" @click="confirmZeroOpen = true">생산 0개 확인</v-btn>
+      <v-text-field
+          v-if="zeroReason === 'other'"
+          v-model="zeroReasonText"
+          label="사유 직접입력"
+          variant="outlined"
+          density="compact"
+      />
+      <v-btn
+          variant="outlined"
+          block
+          :disabled="!canConfirmZero || saving"
+          @click="confirmZeroOpen = true"
+      >
+        생산 0개 확인
+      </v-btn>
     </v-card-text>
     <v-card-actions class="app-dialog-footer px-4 pb-4">
       <v-btn variant="text" :disabled="saving" @click="requestClose">닫기</v-btn>
@@ -151,11 +178,18 @@ import {
 } from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 const props = defineProps({
-  modelValue: Boolean, product: Object, storeId: Number, workDate: String, workers: {
-    type: Array, default: () => []
-  }, zeroReasons: {
-    type: Array, default: () => []
-  }
+    modelValue: Boolean,
+    product: Object,
+    storeId: Number,
+    workDate: String,
+    workers: {
+        type: Array,
+        default: () => [],
+    },
+    zeroReasons: {
+        type: Array,
+        default: () => [],
+    },
 });
 const emit = defineEmits(['update:modelValue', 'saved', 'error']);
 const saving = ref(false);
@@ -165,12 +199,31 @@ const deleteConfirmOpen = ref(false);
 const editingBatch = ref(null);
 const deletingBatch = ref(null);
 const zeroReason = ref(null);
+const zeroReasonText = ref('');
 const form = reactive({
-  quantity: 1, workerIds: [], recipeDeviated: false, recipeDeviationNote: '', recommendationReferenced: false, recommendationDeviationReason: '', note: ''
+    quantity: 1,
+    workerIds: [],
+    recipeDeviated: false,
+    recipeDeviationNote: '',
+    recommendationReferenced: false,
+    recommendationDeviationReason: '',
+    note: '',
 });
 const open = computed({
-  get: () => props.modelValue, set: (value) => emit('update:modelValue', value)
+    get: () => props.modelValue,
+    set: (value) => emit('update:modelValue', value),
 });
+
+// 기존 other 코드는 호환성을 위해 유지하고 화면에서는 직접입력으로 안내합니다.
+const displayZeroReasons = computed(() => props.zeroReasons.map((reason) => ({
+    ...reason,
+    title: reason.value === 'other' ? '직접입력' : reason.title,
+})));
+
+const canConfirmZero = computed(() => (
+    Boolean(zeroReason.value)
+    && (zeroReason.value !== 'other' || Boolean(zeroReasonText.value.trim()))
+));
 // 다이얼로그가 열릴 때 이전 제품의 입력값이 남지 않도록 초기화합니다.
 watch(() => props.modelValue, (value) => {
   if (value) reset();
@@ -180,6 +233,7 @@ function reset() {
   editingBatch.value = null;
   deletingBatch.value = null;
   zeroReason.value = null;
+  zeroReasonText.value = '';
   form.quantity = 1;
   form.workerIds = [];
   form.recipeDeviated = false;
@@ -190,7 +244,15 @@ function reset() {
 }
 // 사용자가 입력한 내용이 있는지 확인해 실수로 닫히는 것을 방지합니다.
 function isDirty() {
-  return form.quantity !== 1 || form.workerIds.length > 0 || form.recipeDeviated || !!form.recipeDeviationNote || form.recommendationReferenced || !!form.recommendationDeviationReason || !!form.note;
+  return form.quantity !== 1
+      || form.workerIds.length > 0
+      || form.recipeDeviated
+      || Boolean(form.recipeDeviationNote)
+      || form.recommendationReferenced
+      || Boolean(form.recommendationDeviationReason)
+      || Boolean(form.note)
+      || Boolean(zeroReason.value)
+      || Boolean(zeroReasonText.value);
 }
 // 작성 내용이 있으면 확인창을 거친 뒤 닫습니다.
 function requestClose() {
@@ -248,7 +310,12 @@ async function saveZero() {
   saving.value = true;
   try {
     await window.axios.post('/tillwhite/api/production-management/zero-production', {
-      store_id: props.storeId, product_id: props.product.id, work_date: props.workDate, reason: zeroReason.value,
+      store_id: props.storeId,
+      product_id: props.product.id,
+      work_date: props.workDate,
+      reason: zeroReason.value,
+      reason_text: zeroReason.value === 'other' ? zeroReasonText.value.trim() : null,
+      note: form.note || null,
     });
     confirmZeroOpen.value = false;
     open.value = false;
@@ -303,71 +370,39 @@ async function save() {
 </script>
 
 <style scoped>
-.dialog-overview {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:7px;
-    margin-bottom:8px;
-}
-.dialog-overview>div {
-    padding:9px 7px;
-    border-radius:9px;
-    background:rgba(var(--v-theme-on-surface),.04);
-    text-align:center;
-}
-.dialog-overview span,.dialog-overview strong {
-    display:block;
-}
-.dialog-overview span {
-    font-size:.63rem;
-    color:rgba(var(--v-theme-on-surface),.55);
-}
-.dialog-overview strong {
-    margin-top:2px;
-    font-size:.82rem;
-    font-weight:650;
-}
 .overview-guide {
-    margin-bottom:14px !important;
+    margin-bottom: 14px;
 }
-.dialog-guide {
-    margin-bottom:9px;
-    font-size:.7rem;
-    line-height:1.45;
-    color:rgba(var(--v-theme-on-surface),.6);
-}
+
 .primary-quantity-input :deep(input) {
-    font-size:.9rem;
-    font-weight:650;
-    font-variant-numeric:tabular-nums;
+    font-size: 0.9rem;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
 }
-.field-help {
-    margin:-7px 0 9px 32px;
-    font-size:.66rem;
-    color:rgba(var(--v-theme-on-surface),.56);
-}
+
 .recipe-empty {
-    display:flex;
-    gap:8px;
-    align-items:flex-start;
-    margin:4px 0 10px;
-    padding:9px 10px;
-    border-radius:9px;
-    background:rgba(var(--v-theme-on-surface),.04);
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin: 4px 0 10px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    background: rgba(var(--v-theme-on-surface), 0.04);
 }
-.recipe-empty strong,.recipe-empty span {
-    display:block;
-}
-.recipe-empty strong {
-    font-size:.72rem;
-    font-weight:600;
-}
+
+.recipe-empty strong,
 .recipe-empty span {
-    margin-top:2px;
-    font-size:.65rem;
-    color:rgba(var(--v-theme-on-surface),.58);
+    display: block;
 }
-:deep(.v-field) {
-    font-size:.78rem;
+
+.recipe-empty strong {
+    font-size: 0.72rem;
+    font-weight: 600;
+}
+
+.recipe-empty span {
+    margin-top: 2px;
+    font-size: 0.65rem;
+    color: rgba(var(--v-theme-on-surface), 0.58);
 }
 </style>

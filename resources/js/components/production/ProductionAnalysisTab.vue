@@ -89,41 +89,514 @@ import {
     ref,
     watch,
 } from 'vue';
-const props = defineProps({ storeId:Number, workDate:String });
+
+const props = defineProps({
+    storeId: Number,
+    workDate: String,
+});
 const emit = defineEmits(['error']);
-const items=ref([]), dailyFlow=ref([]), productTotals=ref([]), mixType=ref('production'), loading=ref(false), search=ref(''), page=ref(1), periodDays=ref(30);
-const pageSize=10;
-const periodLabel=computed(()=>({7:'최근 1주',30:'최근 1개월',90:'최근 3개월',365:'최근 1년'}[periodDays.value]));
-const totalsMap=computed(()=>new Map(productTotals.value.map(row=>[row.product_id,row])));
-const sortedItems=computed(()=>[...items.value].sort((a,b)=>b.flags.length-a.flags.length||a.product_name.localeCompare(b.product_name,'ko')));
-const filteredItems=computed(()=>{const q=search.value.trim().toLocaleLowerCase('ko-KR'); return q?sortedItems.value.filter(i=>i.product_name.toLocaleLowerCase('ko-KR').includes(q)):sortedItems.value;});
-const pageCount=computed(()=>Math.max(1,Math.ceil(filteredItems.value.length/pageSize)));
-const pagedItems=computed(()=>filteredItems.value.slice((page.value-1)*pageSize,page.value*pageSize));
-const hasAnyData=computed(()=>dailyFlow.value.some(row=>Number(row.production||0)+Number(row.carryover||0)+Number(row.loss||0)+Number(row.waste||0)>0));
-const mixLabel=computed(()=>({production:'생산',waste:'폐기',loss:'로스',carryover:'이월'}[mixType.value]));
-const mixTotal=computed(()=>productTotals.value.reduce((sum,row)=>sum+Number(row[mixType.value]||0),0));
-const mixRows=computed(()=>productTotals.value.filter(row=>Number(row[mixType.value]||0)>0).sort((a,b)=>b[mixType.value]-a[mixType.value]).slice(0,7));
-const flowWithScale=computed(()=>{const max=Math.max(1,...dailyFlow.value.flatMap(row=>[Number(row.production||0),Number(row.waste||0)]));return dailyFlow.value.map(row=>({...row,productionHeight:Number(row.production||0)/max*100,wasteHeight:Number(row.waste||0)/max*100}));});
-const sampledFlow=computed(()=>{const step=periodDays.value<=30?1:periodDays.value<=90?7:30;return flowWithScale.value.filter((_,i)=>i%step===0||i===flowWithScale.value.length-1);});
-const palette=['#5C6BC0','#26A69A','#7E57C2','#42A5F5','#AB47BC','#78909C','#66BB6A'];
-const donutBackground=computed(()=>{if(!mixRows.value.length)return 'rgba(var(--v-theme-on-surface),.06)';let pos=0;const parts=mixRows.value.map((row,i)=>{const start=pos;pos+=Number(row[mixType.value]||0)/mixTotal.value*100;return `${mixColor(i)} ${start}% ${pos}%`;});if(pos<100)parts.push(`rgba(var(--v-theme-on-surface),.08) ${pos}% 100%`);return `conic-gradient(${parts.join(',')})`;});
-watch([()=>props.storeId,()=>props.workDate,periodDays],load,{immediate:true});
-watch(search,()=>{page.value=1;});
-watch(periodDays,()=>{page.value=1;});
-async function load(){if(!props.storeId||loading.value)return;loading.value=true;try{const {data}=await window.axios.get('/tillwhite/api/production-management/analysis',{params:{store_id:props.storeId,date:props.workDate,days:periodDays.value}});items.value=data.items||[];dailyFlow.value=data.daily_flow||[];productTotals.value=data.product_totals||[];}catch(error){emit('error',error.response?.data?.message||'분석 데이터를 불러오지 못했습니다.');}finally{loading.value=false;}}
-function totalsFor(item){return totalsMap.value.get(item.product_id)||{production:0,carryover:0,loss:0,waste:0};}
-function recommendationText(r){return r?.min==null?'데이터 부족':`${r.min}~${r.max}`;}
-function confidenceText(v){return {insufficient:'데이터 부족',low:'참고',normal:'보통',high:'높음'}[v]||'-';}
-function percent(v) {
-    return mixTotal.value?(Number(v||0)/mixTotal.value*100).toFixed(1):'0.0';
+
+// 분석 응답과 화면 필터 상태를 역할별로 분리해 관리합니다.
+const items = ref([]);
+const dailyFlow = ref([]);
+const productTotals = ref([]);
+const mixType = ref('production');
+const loading = ref(false);
+const search = ref('');
+const page = ref(1);
+const periodDays = ref(30);
+const pageSize = 10;
+const palette = ['#5C6BC0', '#26A69A', '#7E57C2', '#42A5F5', '#AB47BC', '#78909C', '#66BB6A'];
+
+const periodLabel = computed(() => ({
+    7: '최근 1주',
+    30: '최근 1개월',
+    90: '최근 3개월',
+    365: '최근 1년',
+}[periodDays.value]));
+const totalsMap = computed(() => new Map(productTotals.value.map((row) => [row.product_id, row])));
+const sortedItems = computed(() => [...items.value].sort((a, b) => (
+    b.flags.length - a.flags.length || a.product_name.localeCompare(b.product_name, 'ko')
+)));
+const filteredItems = computed(() => {
+    const query = search.value.trim().toLocaleLowerCase('ko-KR');
+    return query
+        ? sortedItems.value.filter((item) => item.product_name.toLocaleLowerCase('ko-KR').includes(query))
+        : sortedItems.value;
+});
+const pageCount = computed(() => Math.max(1, Math.ceil(filteredItems.value.length / pageSize)));
+const pagedItems = computed(() => filteredItems.value.slice(
+    (page.value - 1) * pageSize,
+    page.value * pageSize,
+));
+const hasAnyData = computed(() => dailyFlow.value.some((row) => (
+    Number(row.production || 0)
+    + Number(row.carryover || 0)
+    + Number(row.loss || 0)
+    + Number(row.waste || 0) > 0
+)));
+const mixLabel = computed(() => ({
+    production: '생산',
+    waste: '폐기',
+    loss: '로스',
+    carryover: '이월',
+}[mixType.value]));
+const mixTotal = computed(() => productTotals.value.reduce(
+    (sum, row) => sum + Number(row[mixType.value] || 0),
+    0,
+));
+const mixRows = computed(() => productTotals.value
+    .filter((row) => Number(row[mixType.value] || 0) > 0)
+    .sort((a, b) => b[mixType.value] - a[mixType.value])
+    .slice(0, 7));
+const flowWithScale = computed(() => {
+    const max = Math.max(
+        1,
+        ...dailyFlow.value.flatMap((row) => [Number(row.production || 0), Number(row.waste || 0)]),
+    );
+
+    return dailyFlow.value.map((row) => ({
+        ...row,
+        productionHeight: Number(row.production || 0) / max * 100,
+        wasteHeight: Number(row.waste || 0) / max * 100,
+    }));
+});
+const sampledFlow = computed(() => {
+    const step = periodDays.value <= 30 ? 1 : periodDays.value <= 90 ? 7 : 30;
+    return flowWithScale.value.filter((_, index) => (
+        index % step === 0 || index === flowWithScale.value.length - 1
+    ));
+});
+const donutBackground = computed(() => {
+    if (!mixRows.value.length) {
+        return 'rgba(var(--v-theme-on-surface),.06)';
+    }
+
+    let position = 0;
+    const parts = mixRows.value.map((row, index) => {
+        const start = position;
+        position += Number(row[mixType.value] || 0) / mixTotal.value * 100;
+        return `${mixColor(index)} ${start}% ${position}%`;
+    });
+
+    if (position < 100) {
+        parts.push(`rgba(var(--v-theme-on-surface),.08) ${position}% 100%`);
+    }
+
+    return `conic-gradient(${parts.join(',')})`;
+});
+
+watch([() => props.storeId, () => props.workDate, periodDays], load, { immediate: true });
+watch(search, () => {
+    page.value = 1;
+});
+watch(periodDays, () => {
+    page.value = 1;
+});
+
+// 선택한 기간의 분석 자료를 한 번에 다시 불러옵니다.
+async function load() {
+    if (!props.storeId || loading.value) return;
+
+    loading.value = true;
+    try {
+        const { data } = await window.axios.get('/tillwhite/api/production-management/analysis', {
+            params: {
+                store_id: props.storeId,
+                date: props.workDate,
+                days: periodDays.value,
+            },
+        });
+        items.value = data.items || [];
+        dailyFlow.value = data.daily_flow || [];
+        productTotals.value = data.product_totals || [];
+    } catch (error) {
+        emit('error', error.response?.data?.message || '분석 데이터를 불러오지 못했습니다.');
+    } finally {
+        loading.value = false;
+    }
 }
-function shortDay(date){const [,m,d]=String(date).split('-');return `${Number(m)}/${Number(d)}`;}
+
+// 제품별 합계가 없는 경우에도 화면 계산이 깨지지 않도록 0값을 보완합니다.
+function totalsFor(item) {
+    return totalsMap.value.get(item.product_id) || {
+        production: 0,
+        carryover: 0,
+        loss: 0,
+        waste: 0,
+    };
+}
+
+// 추천 범위가 계산되지 않은 제품은 숫자 대신 데이터 부족으로 안내합니다.
+function recommendationText(recommendation) {
+    return recommendation?.min == null
+        ? '데이터 부족'
+        : `${recommendation.min}~${recommendation.max}`;
+}
+
+// 내부 신뢰도 코드를 현장 화면용 문구로 변환합니다.
+function confidenceText(value) {
+    return {
+        insufficient: '데이터 부족',
+        low: '참고',
+        normal: '보통',
+        high: '높음',
+    }[value] || '-';
+}
+
+// 선택 지표 전체에서 각 제품이 차지하는 비율을 표시합니다.
+function percent(value) {
+    return mixTotal.value
+        ? (Number(value || 0) / mixTotal.value * 100).toFixed(1)
+        : '0.0';
+}
+
+// 차트 축에는 월/일만 간결하게 표시합니다.
+function shortDay(date) {
+    const [, month, day] = String(date).split('-');
+    return `${Number(month)}/${Number(day)}`;
+}
+
+// 도넛 순위별 표시 색상을 안정적으로 순환합니다.
 function mixColor(index) {
     return palette[index % palette.length];
 }
 </script>
 
 <style scoped>
-.analysis-page{display:flex;flex-direction:column}.tab-heading{padding:2px 0 10px}.tab-heading h3,.section-title-row h4{margin:0;font-size:.92rem;font-weight:650}.tab-heading p,.section-title-row p{margin:3px 0 0;font-size:.68rem;line-height:1.45;color:rgba(var(--v-theme-on-surface),.56)}.period-tabs{display:grid;grid-template-columns:repeat(4,1fr);width:100%;margin-bottom:6px}.period-tabs :deep(.v-btn){min-width:0;padding-inline:4px;font-size:.68rem}.section-title-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.section-title-row>span{font-size:.66rem;color:rgba(var(--v-theme-on-surface),.52)}.analysis-section{padding:16px 0;border-top:1px solid rgba(var(--v-border-color),.55)}.flow-chart{display:flex;align-items:flex-end;height:145px;margin-top:14px;padding:8px 4px 0;border-bottom:1px solid rgba(var(--v-border-color),.55);overflow:hidden}.flow-column{flex:1;min-width:5px;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center}.flow-bars{height:112px;width:90%;display:flex;align-items:flex-end;justify-content:center;gap:1px}.flow-bars i{width:42%;min-height:1px;border-radius:3px 3px 0 0}.production-bar{background:rgba(76,175,80,.62)}.waste-bar{background:rgba(239,83,80,.58)}.flow-column>span{height:18px;margin-top:4px;font-size:.53rem;color:rgba(var(--v-theme-on-surface),.48);white-space:nowrap}.chart-legend{display:flex;justify-content:flex-end;gap:12px;margin-top:7px;font-size:.64rem;color:rgba(var(--v-theme-on-surface),.58)}.chart-legend span{display:flex;align-items:center;gap:4px}.chart-legend i,.legend-dot{width:7px;height:7px;border-radius:50%;flex:none}.production-dot{background:rgba(76,175,80,.62)}.waste-dot{background:rgba(239,83,80,.58)}.mix-tabs{width:100%;display:grid;grid-template-columns:repeat(4,1fr);margin-top:10px;border-bottom:1px solid rgba(var(--v-border-color),.6);border-radius:0}.mix-tabs :deep(.v-btn){border-radius:0;font-size:.7rem}.mix-layout{display:grid;grid-template-columns:150px 1fr;gap:20px;align-items:center;padding-top:16px}.donut{width:138px;height:138px;border-radius:50%;display:grid;place-items:center}.donut>div{width:82px;height:82px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgb(var(--v-theme-surface))}.donut strong{font-size:1.05rem}.donut span{font-size:.62rem;color:rgba(var(--v-theme-on-surface),.55)}.mix-ranking{display:flex;flex-direction:column;gap:7px}.mix-ranking div{display:grid;grid-template-columns:10px minmax(0,1fr) auto;align-items:center;gap:7px;padding-bottom:6px;border-bottom:1px solid rgba(var(--v-border-color),.42);font-size:.68rem}.mix-ranking span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.analysis-search{margin-top:12px}.analysis-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}.analysis-item{border:1px solid rgba(var(--v-border-color),.5);border-radius:10px;overflow:hidden}.analysis-item-head{display:flex;justify-content:space-between;gap:8px;padding:10px}.analysis-item-head strong,.analysis-item-head span{display:block}.analysis-item-head strong{font-size:.78rem}.analysis-item-head div span,.confidence-chip{margin-top:2px;font-size:.64rem;color:rgba(var(--v-theme-on-surface),.55)}.product-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;padding:0 10px 8px;font-size:.64rem;color:rgba(var(--v-theme-on-surface),.6)}.product-metrics span{text-align:center}.product-metrics b{display:block;margin-top:2px;color:rgb(var(--v-theme-on-surface));font-size:.73rem}.flag-list{padding:0 10px 8px}.flag-list div{padding:6px 8px;border-radius:7px;background:rgba(var(--v-theme-warning),.08);font-size:.66rem}.recommendation-row{display:flex;justify-content:space-between;padding:8px 10px;border-top:1px solid rgba(var(--v-border-color),.45);font-size:.68rem}.pagination-row{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px;font-size:.68rem}.empty-analysis{display:flex;align-items:flex-start;gap:9px;margin-top:12px;padding:12px;border-radius:10px;background:rgba(var(--v-theme-on-surface),.04)}.empty-analysis strong,.empty-analysis span{display:block}.empty-analysis strong{font-size:.73rem}.empty-analysis span{margin-top:2px;font-size:.65rem;color:rgba(var(--v-theme-on-surface),.56)}
-@media(max-width:520px){.mix-layout{grid-template-columns:112px 1fr;gap:12px}.donut{width:108px;height:108px}.donut>div{width:64px;height:64px}.period-tabs :deep(.v-btn){font-size:.62rem}.product-metrics{padding-inline:6px}}
+.analysis-page {
+    display:flex;
+    flex-direction:column
+}
+
+.tab-heading {
+    padding:2px 0 10px
+}
+
+.tab-heading h3,.section-title-row h4 {
+    margin:0;
+    font-size:.92rem;
+    font-weight:650
+}
+
+.tab-heading p,.section-title-row p {
+    margin:3px 0 0;
+    font-size:.68rem;
+    line-height:1.45;
+    color:rgba(var(--v-theme-on-surface),.56)
+}
+
+.period-tabs {
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    width:100%;
+    margin-bottom:6px
+}
+
+.period-tabs :deep(.v-btn) {
+    min-width:0;
+    padding-inline:4px;
+    font-size:.68rem
+}
+
+.section-title-row {
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px
+}
+
+.section-title-row>span {
+    font-size:.66rem;
+    color:rgba(var(--v-theme-on-surface),.52)
+}
+
+.analysis-section {
+    padding:16px 0;
+    border-top:1px solid rgba(var(--v-border-color),.55)
+}
+
+.flow-chart {
+    display:flex;
+    align-items:flex-end;
+    height:145px;
+    margin-top:14px;
+    padding:8px 4px 0;
+    border-bottom:1px solid rgba(var(--v-border-color),.55);
+    overflow:hidden
+}
+
+.flow-column {
+    flex:1;
+    min-width:5px;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-end;
+    align-items:center
+}
+
+.flow-bars {
+    height:112px;
+    width:90%;
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+    gap:1px
+}
+
+.flow-bars i {
+    width:42%;
+    min-height:1px;
+    border-radius:3px 3px 0 0
+}
+
+.production-bar {
+    background:rgba(76,175,80,.62)
+}
+
+.waste-bar {
+    background:rgba(239,83,80,.58)
+}
+
+.flow-column>span {
+    height:18px;
+    margin-top:4px;
+    font-size:.53rem;
+    color:rgba(var(--v-theme-on-surface),.48);
+    white-space:nowrap
+}
+
+.chart-legend {
+    display:flex;
+    justify-content:flex-end;
+    gap:12px;
+    margin-top:7px;
+    font-size:.64rem;
+    color:rgba(var(--v-theme-on-surface),.58)
+}
+
+.chart-legend span {
+    display:flex;
+    align-items:center;
+    gap:4px
+}
+
+.chart-legend i,.legend-dot {
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    flex:none
+}
+
+.production-dot {
+    background:rgba(76,175,80,.62)
+}
+
+.waste-dot {
+    background:rgba(239,83,80,.58)
+}
+
+.mix-tabs {
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    margin-top:10px;
+    border-bottom:1px solid rgba(var(--v-border-color),.6);
+    border-radius:0
+}
+
+.mix-tabs :deep(.v-btn) {
+    border-radius:0;
+    font-size:.7rem
+}
+
+.mix-layout {
+    display:grid;
+    grid-template-columns:150px 1fr;
+    gap:20px;
+    align-items:center;
+    padding-top:16px
+}
+
+.donut {
+    width:138px;
+    height:138px;
+    border-radius:50%;
+    display:grid;
+    place-items:center
+}
+
+.donut>div {
+    width:82px;
+    height:82px;
+    border-radius:50%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:rgb(var(--v-theme-surface))
+}
+
+.donut strong {
+    font-size:1.05rem
+}
+
+.donut span {
+    font-size:.62rem;
+    color:rgba(var(--v-theme-on-surface),.55)
+}
+
+.mix-ranking {
+    display:flex;
+    flex-direction:column;
+    gap:7px
+}
+
+.mix-ranking div {
+    display:grid;
+    grid-template-columns:10px minmax(0,1fr) auto;
+    align-items:center;
+    gap:7px;
+    padding-bottom:6px;
+    border-bottom:1px solid rgba(var(--v-border-color),.42);
+    font-size:.68rem
+}
+
+.mix-ranking span {
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap
+}
+
+.analysis-search {
+    margin-top:12px
+}
+
+.analysis-list {
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-top:10px
+}
+
+.analysis-item {
+    border:1px solid rgba(var(--v-border-color),.5);
+    border-radius:10px;
+    overflow:hidden
+}
+
+.analysis-item-head {
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+    padding:10px
+}
+
+.analysis-item-head strong,.analysis-item-head span {
+    display:block
+}
+
+.analysis-item-head strong {
+    font-size:.78rem
+}
+
+.analysis-item-head div span,.confidence-chip {
+    margin-top:2px;
+    font-size:.64rem;
+    color:rgba(var(--v-theme-on-surface),.55)
+}
+
+.product-metrics {
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:1px;
+    padding:0 10px 8px;
+    font-size:.64rem;
+    color:rgba(var(--v-theme-on-surface),.6)
+}
+
+.product-metrics span {
+    text-align:center
+}
+
+.product-metrics b {
+    display:block;
+    margin-top:2px;
+    color:rgb(var(--v-theme-on-surface));
+    font-size:.73rem
+}
+
+.flag-list {
+    padding:0 10px 8px
+}
+
+.flag-list div {
+    padding:6px 8px;
+    border-radius:7px;
+    background:rgba(var(--v-theme-warning),.08);
+    font-size:.66rem
+}
+
+.recommendation-row {
+    display:flex;
+    justify-content:space-between;
+    padding:8px 10px;
+    border-top:1px solid rgba(var(--v-border-color),.45);
+    font-size:.68rem
+}
+
+.pagination-row {
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    margin-top:12px;
+    font-size:.68rem
+}
+
+.empty-analysis {
+    display:flex;
+    align-items:flex-start;
+    gap:9px;
+    margin-top:12px;
+    padding:12px;
+    border-radius:10px;
+    background:rgba(var(--v-theme-on-surface),.04)
+}
+
+.empty-analysis strong,.empty-analysis span {
+    display:block
+}
+
+.empty-analysis strong {
+    font-size:.73rem
+}
+
+.empty-analysis span {
+    margin-top:2px;
+    font-size:.65rem;
+    color:rgba(var(--v-theme-on-surface),.56)
+}
+
+@media(max-width:520px) {
+    .mix-layout {
+        grid-template-columns:112px 1fr;
+        gap:12px
+    }
+    .donut {
+        width:108px;
+        height:108px
+    }
+    .donut>div {
+        width:64px;
+        height:64px
+    }
+    .period-tabs :deep(.v-btn) {
+        font-size:.62rem
+    }
+    .product-metrics {
+        padding-inline:6px
+    }
+}
 </style>

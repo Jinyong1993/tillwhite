@@ -303,7 +303,7 @@
         </div>
         <div v-if="detailMetricKey === 'waste_rate'" class="waste-analysis-note">
           <strong>폐기율 확인 기준</strong>
-          <span>제품별 생산량과 폐기량을 기준으로 계산합니다. 폐기 미확인 제품은 0%로 단정하지 않습니다.</span>
+          <span>제품별 오늘 생산량과 들어온 이월을 합친 사용 가능 수량을 기준으로 계산합니다. 폐기 미확인 제품은 0%로 단정하지 않습니다.</span>
         </div>
         <v-divider class="dialog-full-divider" />
 
@@ -476,6 +476,7 @@ import {
     formatKoreanDate,
     toLocalDateString,
 } from '../../utils/localDate';
+import { productionReasonLabel } from '../../utils/productionReasons';
 const props = defineProps({
   daily: {
     type: Object, default: () => ({
@@ -706,7 +707,7 @@ const selectedProductAnalysis = computed(() => {
 // 사유별 기록을 상세 목록에서 짧게 읽을 수 있도록 요약합니다.
 function reasonSummary(details, label) {
   if (!Array.isArray(details) || !details.length) return '';
-  const names = details.slice(0, 2).map((item) => item.reason_text || item.reason_code || '기타');
+  const names = details.slice(0, 2).map((item) => productionReasonLabel(item));
   return `${label}: ${names.join(' · ')}${details.length > 2 ? ` 외 ${details.length - 2}건` : ''}`;
 }
 
@@ -748,9 +749,9 @@ function categoryProgressText(rows) {
 }
 
 function groupWasteRate(rows) {
-  const production = sum(rows, 'production');
-  if (!production) return '-';
-  return `${(sum(rows, 'waste') / production * 100).toFixed(1)}%`;
+  const available = sum(rows, 'production') + sum(rows, 'carryover_in');
+  if (!available) return '-';
+  return `${(sum(rows, 'waste') / available * 100).toFixed(1)}%`;
 }
 
 // 날짜 화살표로 하루씩 이동합니다.
@@ -867,7 +868,7 @@ function openMetric(key) {
 function openWasteRate(row) {
   detailSelectedRow.value = row;
   detailMetricKey.value = 'waste_rate';
-  detailTitle.value = `${row.name} 폐기 분석`;
+  detailTitle.value = `폐기율 - ${row.name}`;
   detailOpen.value = true;
 }
 // 요약 상세의 제품을 누르면 기존 제품 상세를 재사용해 더 깊은 기록을 확인합니다.
@@ -1019,7 +1020,19 @@ async function closeDay() {
     gap:0;
 }
 .daily-section {
-    padding:18px 0;
+    padding: 18px 0;
+}
+
+.date-section {
+    padding: 8px 0;
+}
+
+.date-section .app-date-toolbar {
+    min-height: 46px;
+}
+
+.date-section .app-date-main {
+    padding-block: 4px;
 }
 .section-heading {
     display:flex;
@@ -1689,9 +1702,13 @@ async function closeDay() {
 .rate-value {
     font-weight:650;
 }
-@media(max-width:760px) {
+@media (max-width: 760px) {
   .daily-section {
-      padding:14px 0;
+      padding: 14px 0;
+  }
+
+  .date-section {
+      padding: 6px 0;
   }
   .daily-metrics {
       grid-template-columns:repeat(6,1fr);

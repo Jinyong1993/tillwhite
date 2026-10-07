@@ -6,15 +6,10 @@
   >
     <v-card
         rounded="lg"
-        class="app-dialog-card"
+        class="app-dialog-card production-dialog-card"
     >
       <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
-        <div>
-          <div>{{ dialogTitle }}</div>
-          <div class="app-supporting-text text-medium-emphasis mt-1">
-            {{ product?.name || '-' }}
-          </div>
-        </div>
+        <div>{{ dialogHeaderTitle }}</div>
       </v-card-title>
 
       <v-card-text class="app-dialog-body">
@@ -28,7 +23,7 @@
           입력한 수량이 남은 수량보다 많습니다.
         </v-alert>
 
-        <div class="flow-overview">
+        <div class="production-dialog-overview">
           <div><span>현재 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
           <div><span>들어온 이월</span><strong>{{ Number(product?.carryover_in || 0) }}개</strong></div>
           <div><span>확인 상태</span><strong>{{ flowConfirmed ? '완료' : '미확인' }}</strong></div>
@@ -48,25 +43,33 @@
         <div v-if="savedDetails.length" class="saved-flow-details">
           <div class="flow-input-heading">현재 기록</div>
           <div v-for="(item, index) in savedDetails" :key="`${item.reason_code || 'reason'}-${index}`" class="saved-flow-row">
-            <span>{{ item.reason_text || item.reason_code || '기타' }}</span><strong>{{ item.quantity }}개</strong>
+            <span>{{ reasonLabel(item) }}</span><strong>{{ item.quantity }}개</strong>
           </div>
         </div>
 
         <template v-if="isReasonMode">
-          <div class="flow-input-heading">{{ dialogTitle }} 수량과 사유</div>
-          <ReasonRows
+          <div class="production-dialog-section-title">{{ dialogTitle }} 수량과 사유</div>
+          <ProductionReasonRows
               v-model="reasonRows"
               :reason-options="reasonOptions"
               :max-quantity="remainingAvailable"
           />
-          <div class="reason-actions">
-            <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="reasonRows.push(emptyReason())">사유 추가</v-btn>
+          <div class="production-dialog-actions">
+            <v-btn
+                size="small"
+                variant="text"
+                prepend-icon="mdi-plus"
+                class="production-dialog-add-button"
+                @click="reasonRows.push(emptyReason())"
+            >
+              사유 추가
+            </v-btn>
             <v-btn size="small" variant="outlined" @click="setZero">{{ dialogTitle }} 없음</v-btn>
           </div>
         </template>
 
         <template v-else>
-          <div class="flow-input-heading">다음 영업일로 넘길 수량</div>
+          <div class="production-dialog-section-title">다음 영업일로 넘길 수량</div>
           <v-number-input
             v-model="carryoverQuantity"
             label="이월 수량"
@@ -95,12 +98,15 @@
           </v-alert>
         </template>
 
+        <div class="production-dialog-guide mt-3">
+          특이사항, 처리 과정에서 확인한 내용처럼 다음 근무자가 참고할 내용을 적어 주세요.
+        </div>
         <v-textarea
             v-model="note"
-            label="메모"
+            label="메모 · 선택"
             variant="outlined"
+            density="compact"
             rows="2"
-            class="mt-3"
         />
       </v-card-text>
 
@@ -136,18 +142,13 @@
 
 <script setup>
 import {
-  computed,
-  defineComponent,
-  h,
-  ref,
-  watch,
+    computed,
+    ref,
+    watch,
 } from 'vue';
-import {
-    VBtn,
-    VNumberInput,
-    VSelect,
-} from 'vuetify/components';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
+import ProductionReasonRows from './ProductionReasonRows.vue';
+import { productionReasonLabel } from '../../utils/productionReasons';
 
 const props = defineProps({
   modelValue: Boolean,
@@ -188,7 +189,7 @@ const otherReasons = [
   { value: 'service', title: '고객 서비스' },
   { value: 'gift', title: '무료 증정' },
   { value: 'staff_use', title: '직원 사용' },
-  { value: 'other', title: '기타' },
+  { value: 'other', title: '직접입력' },
 ];
 
 const open = computed({
@@ -217,6 +218,9 @@ const dialogTitle = computed(() => ({
   waste: '폐기',
   other_outflow: '기타 출고',
 }[props.type]));
+
+// 업무명과 제품명을 한 줄에 표시해 어떤 제품을 수정하는지 헤더에서 바로 확인합니다.
+const dialogHeaderTitle = computed(() => `${dialogTitle.value} - ${props.product?.name || '-'}`);
 
 const dialogDescription = computed(() => ({
   carryover: '남은 수량 안에서 다음 영업일로 넘길 수량을 입력해 주세요.',
@@ -263,66 +267,10 @@ const confirmMessage = computed(() => {
   return message;
 });
 
-// 사유별 수량을 입력하는 반복 UI를 로스·폐기·기타 출고에서 공유합니다.
-const ReasonRows = defineComponent({
-  props: {
-    modelValue: {
-      type: Array,
-      required: true,
-    },
-    reasonOptions: {
-      type: Array,
-      default: () => [],
-    },
-    maxQuantity: {
-      type: Number,
-      default: 0,
-    },
-  },
-  emits: ['update:modelValue'],
-  setup(innerProps, { emit: innerEmit }) {
-    const update = (index, key, value) => {
-      const next = innerProps.modelValue.map((row, rowIndex) => (
-        rowIndex === index ? { ...row, [key]: value } : row
-      ));
-      innerEmit('update:modelValue', next);
-    };
-
-    const remove = (index) => {
-      innerEmit('update:modelValue', innerProps.modelValue.filter((_, rowIndex) => rowIndex !== index));
-    };
-
-    return () => h('div', innerProps.modelValue.map((row, index) => h('div', {
-      class: 'reason-row',
-    }, [
-      h(VSelect, {
-        modelValue: row.reason_code,
-        'onUpdate:modelValue': (value) => update(index, 'reason_code', value),
-        items: innerProps.reasonOptions,
-        'item-title': 'title',
-        'item-value': 'value',
-        label: '사유',
-        variant: 'outlined',
-        density: 'compact',
-      }),
-      h(VNumberInput, {
-        modelValue: row.quantity,
-        'onUpdate:modelValue': (value) => update(index, 'quantity', value),
-        label: '수량',
-        variant: 'outlined',
-        density: 'compact',
-        min: 1,
-        max: innerProps.maxQuantity || undefined,
-      }),
-      h(VBtn, {
-        icon: 'mdi-close',
-        size: 'small',
-        variant: 'text',
-        onClick: () => remove(index),
-      }),
-    ])));
-  },
-});
+// 현재 업무의 선택 목록을 함께 넘겨 과거 사유 코드도 같은 한글 명칭으로 표시합니다.
+function reasonLabel(item) {
+    return productionReasonLabel(item, reasonOptions.value);
+}
 
 // 사유 행의 기본값을 생성합니다.
 function emptyReason() {
@@ -388,6 +336,11 @@ function askSave() {
     return;
   }
 
+  if (reasonRows.value.some((row) => row.reason_code === 'other' && !String(row.reason_text || '').trim())) {
+    emit('error', '직접입력 사유를 입력해주세요.');
+    return;
+  }
+
   if (currentQuantity.value > remainingAvailable.value) {
     emit('error', '입력한 수량이 남은 수량보다 많습니다.');
     return;
@@ -429,135 +382,101 @@ async function save() {
 </script>
 
 <style scoped>
-.flow-overview {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:7px;
-    margin-bottom:10px;
-}
-.flow-overview>div {
-    padding:9px 7px;
-    border-radius:9px;
-    background:rgba(var(--v-theme-on-surface),.04);
-    text-align:center;
-}
-.flow-overview span,.flow-overview strong {
-    display:block;
-}
-.flow-overview span {
-    font-size:.63rem;
-    color:rgba(var(--v-theme-on-surface),.55);
-}
-.flow-overview strong {
-    margin-top:2px;
-    font-size:.82rem;
-    font-weight:650;
-}
 .saved-flow-details {
-    margin:12px 0;
+    margin: 12px 0;
 }
+
 .saved-flow-row {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    min-height:32px;
-    padding:5px 2px;
-    border-bottom:1px solid rgba(var(--v-border-color),.5);
-    font-size:.72rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 32px;
+    padding: 5px 2px;
+    border-bottom: 1px solid rgba(var(--v-border-color), 0.5);
+    font-size: 0.72rem;
 }
+
 .saved-flow-row strong {
-    font-variant-numeric:tabular-nums;
+    font-variant-numeric: tabular-nums;
 }
+
 .flow-guide {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-    margin-bottom:12px;
-    padding:10px 12px;
-    border-radius:10px;
-    background:rgba(var(--v-theme-on-surface),.04);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: rgba(var(--v-theme-on-surface), 0.04);
 }
+
 .flow-guide div {
-    flex:none;
+    flex: none;
 }
-.flow-guide span,.flow-guide strong {
-    display:block;
-}
-.flow-guide span {
-    font-size:.66rem;
-    color:rgba(var(--v-theme-on-surface),.56);
-}
+
+.flow-guide span,
 .flow-guide strong {
-    margin-top:1px;
-    font-size:1rem;
-    font-weight:700;
-    font-variant-numeric:tabular-nums;
+    display: block;
 }
+
+.flow-guide span {
+    font-size: 0.66rem;
+    color: rgba(var(--v-theme-on-surface), 0.56);
+}
+
+.flow-guide strong {
+    margin-top: 1px;
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
 .flow-guide p {
-    margin:0;
-    font-size:.68rem;
-    line-height:1.45;
-    color:rgba(var(--v-theme-on-surface),.62);
-    text-align:right;
+    margin: 0;
+    font-size: 0.68rem;
+    line-height: 1.45;
+    color: rgba(var(--v-theme-on-surface), 0.62);
+    text-align: right;
 }
+
 .flow-summary {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:6px;
-    margin-bottom:14px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin-bottom: 14px;
 }
-.flow-summary>div {
-    padding:7px 9px;
-    border:1px solid rgba(var(--v-border-color),.5);
-    border-radius:8px;
+
+.flow-summary > div {
+    padding: 7px 9px;
+    border: 1px solid rgba(var(--v-border-color), 0.5);
+    border-radius: 8px;
 }
-.flow-summary span,.flow-summary strong {
-    display:block;
-}
-.flow-summary span {
-    font-size:.63rem;
-    color:rgba(var(--v-theme-on-surface),.52);
-}
+
+.flow-summary span,
 .flow-summary strong {
-    margin-top:1px;
-    font-size:.78rem;
-    font-weight:600;
+    display: block;
 }
-.flow-input-heading {
-    margin-bottom:7px;
-    font-size:.74rem;
-    font-weight:600;
+
+.flow-summary span {
+    font-size: 0.63rem;
+    color: rgba(var(--v-theme-on-surface), 0.52);
 }
-.reason-actions {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-    margin-top:0;
+
+.flow-summary strong {
+    margin-top: 1px;
+    font-size: 0.78rem;
+    font-weight: 600;
 }
-.reason-row {
-    display:grid;
-    grid-template-columns:minmax(0,1fr) 96px auto;
-    gap:6px;
-    align-items:start;
-}
-:deep(.v-field) {
-    font-size:.78rem;
-}
-:deep(.v-input) {
-    margin-bottom:2px;
-}
-@media(max-width:520px) {
-  .flow-guide {
-      align-items:flex-start;
-  }
-  .flow-guide p {
-      max-width:68%;
-  }
-  .reason-row {
-      grid-template-columns:minmax(0,1fr) 84px auto;
-  }
+
+@media (max-width: 520px) {
+    .flow-guide {
+        align-items: flex-start;
+    }
+
+    .flow-guide p {
+        max-width: 68%;
+    }
 }
 </style>

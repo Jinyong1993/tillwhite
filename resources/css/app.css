@@ -11,6 +11,7 @@
  */
 @import 'tailwindcss';
 @import './common-ui.css';
+@import './production-ui.css';
 
 /*
  * Tailwind가 실제로 사용하는 Utility Class를 찾을 검색 대상을 지정합니다.

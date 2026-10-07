@@ -66,7 +66,7 @@ class ProductionDailyService
 
         $batches = ProductionBatch::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
         $losses = ProductionLoss::query()->with('reasons')->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
-        $attributedWastes = ProductionWaste::query()->with('reasons')->where('store_id', $storeId)->whereDate('attribution_date', $date)->get()->groupBy('product_id');
+        $attributedWastes = ProductionWaste::query()->with('reasons')->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
         $operationalWastes = ProductionWaste::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
         $outflows = ProductionOtherOutflow::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
         $incoming = ProductStockMovement::query()->where('store_id', $storeId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->get()->groupBy('product_id');
@@ -89,7 +89,7 @@ class ProductionDailyService
             $other = $this->sum($outflows->get($product->id));
             $carryOut = $this->sum($outgoing->get($product->id));
             $confirmation = $confirmations->get($product->id);
-            $wasteRate = $production > 0 ? round($waste / $production * 100, 1) : null;
+            $wasteRate = $this->wasteRate($waste, $production, $carryIn);
 
             // 실제 기록이 존재하는데 과거 확인 플래그만 비어 있는 경우도 완료로 복구합니다.
             // 0개 확인은 기록 행이 없으므로 반드시 ProductionConfirmation의 명시적 플래그를 사용합니다.
@@ -137,6 +137,7 @@ class ProductionDailyService
                 'waste_confirmed' => $wasteConfirmed,
                 'disposition_confirmed' => $dispositionConfirmed,
                 'zero_production_reason' => $confirmation?->zero_production_reason,
+                'zero_production_reason_text' => $confirmation?->zero_production_reason_text,
                 'complete' => ! $isActive || ($productionConfirmed && $lossConfirmed && $wasteConfirmed && $dispositionConfirmed),
             ];
         })->filter(function (array $row) {
@@ -161,9 +162,11 @@ class ProductionDailyService
             'waste' => $activeRows->sum('waste'),
             'other_outflow' => $activeRows->sum('other_outflow'),
         ];
-        $totals['waste_rate'] = $totals['production'] > 0
-            ? round($totals['waste'] / $totals['production'] * 100, 1)
-            : null;
+        $totals['waste_rate'] = $this->wasteRate(
+            (int) $totals['waste'],
+            (int) $totals['production'],
+            (int) $totals['carryover'],
+        );
 
         $closure = ProductionDailyClosure::query()->where('store_id', $storeId)->whereDate('work_date', $date)->first();
         $dailyStatus = StoreDailyStatus::query()->where('store_id', $storeId)->whereDate('work_date', $date)->first();
@@ -180,6 +183,13 @@ class ProductionDailyService
             'required_count' => $activeRows->count(),
             'closure_status' => $closureStatus,
         ];
+    }
+
+    // 폐기율은 당일 생산과 들어온 이월을 합친 실제 사용 가능 수량을 기준으로 계산합니다.
+    private function wasteRate(int $waste, int $production, int $carryover): ?float
+    {
+        $available = $production + $carryover;
+        return $available > 0 ? round($waste / $available * 100, 1) : null;
     }
 
     // 전달된 기록 묶음의 quantity 합계를 안전하게 계산합니다.
