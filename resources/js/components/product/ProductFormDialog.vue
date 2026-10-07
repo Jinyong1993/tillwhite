@@ -5,7 +5,10 @@
     persistent
     @update:model-value="handleDialogChange"
   >
-    <v-card class="product-form-dialog" rounded="lg">
+    <v-card
+        class="product-form-dialog"
+        rounded="lg"
+    >
       <!-- 직원 등록 다이얼로그와 같은 구조의 고정 헤더입니다. -->
       <div class="product-form-header">
         <div class="product-form-header-icon">
@@ -46,7 +49,10 @@
         <!-- 기본 정보 -->
         <section class="product-form-section">
           <div class="product-form-section-header">
-            <v-icon icon="mdi-information-outline" size="18" />
+            <v-icon
+                icon="mdi-information-outline"
+                size="18"
+            />
             기본 정보
           </div>
 
@@ -124,7 +130,10 @@
         <!-- 담당 부서 -->
         <section class="product-form-section">
           <div class="product-form-section-header">
-            <v-icon icon="mdi-account-group-outline" size="18" />
+            <v-icon
+                icon="mdi-account-group-outline"
+                size="18"
+            />
             담당 부서
           </div>
 
@@ -158,7 +167,10 @@
         <!-- 판매 정보 -->
         <section class="product-form-section">
           <div class="product-form-section-header">
-            <v-icon icon="mdi-calendar-check-outline" size="18" />
+            <v-icon
+                icon="mdi-calendar-check-outline"
+                size="18"
+            />
             판매 정보
           </div>
 
@@ -364,10 +376,10 @@ const isEdit = computed(() => Boolean(props.product?.id));
 const isSuperAdmin = computed(() => props.user?.role?.code === 'super_admin');
 const storeLocked = computed(() => !isSuperAdmin.value);
 
-/** 일반 점포 사용자는 선택 UI 대신 자신의 점포명을 표시합니다. */
+// 일반 점포 사용자는 선택 UI 대신 자신의 점포명을 표시합니다.
 const lockedStoreName = computed(() => props.user?.store?.name ?? '-');
 
-/** 현재 선택한 점포에서 사용 가능한 카테고리만 표시합니다. */
+// 현재 선택한 점포에서 사용 가능한 카테고리만 표시합니다.
 const availableCategories = computed(() => {
   const categories = props.categories.filter((category) => {
     return Number(category.store_id) === Number(form.store_id)
@@ -378,18 +390,18 @@ const availableCategories = computed(() => {
   return sortByDisplayName(categories);
 });
 
-/** 최초 상태와 현재 입력값을 비교하여 실제 변경 여부를 판단합니다. */
+// 최초 상태와 현재 입력값을 비교하여 실제 변경 여부를 판단합니다.
 const hasChanges = computed(() => {
   return Boolean(initialSnapshot.value)
     && snapshot() !== initialSnapshot.value;
 });
 
-/** 서버에 저장된 draft 또는 현재 작성 중인 내용이 있는지 확인합니다. */
+// 서버에 저장된 draft 또는 현재 작성 중인 내용이 있는지 확인합니다.
 const hasDraftAndInput = computed(() => {
   return hasChanges.value || Boolean(props.draft);
 });
 
-/** 필수값과 기간한정 날짜 조건을 모두 만족해야 최종 저장할 수 있습니다. */
+// 필수값과 기간한정 날짜 조건을 모두 만족해야 최종 저장할 수 있습니다.
 const canSubmit = computed(() => {
   const hasRequiredFields = Boolean(
     form.store_id
@@ -423,7 +435,7 @@ const canSubmit = computed(() => {
     : true;
 });
 
-/** 다이얼로그가 열릴 때 수정 데이터 또는 Laravel Session draft를 적용합니다. */
+// 다이얼로그가 열릴 때 수정 데이터 또는 Laravel Session draft를 적용합니다.
 watch(
   () => [
     props.modelValue,
@@ -457,7 +469,7 @@ watch(
   },
 );
 
-/** 점포를 바꾸면 이전 점포의 카테고리 선택값을 제거합니다. */
+// 점포를 바꾸면 이전 점포의 카테고리 선택값을 제거합니다.
 watch(
   () => form.store_id,
   () => {
@@ -465,7 +477,7 @@ watch(
   },
 );
 
-/** 상시 제품으로 바꾸면 기간한정 날짜를 폼에 남기지 않습니다. */
+// 상시 제품으로 바꾸면 기간한정 날짜를 폼에 남기지 않습니다.
 watch(
   () => form.sales_type,
   (value) => {
@@ -498,7 +510,7 @@ const priceRule = (value) => {
     || '판매가는 0 이상의 정수로 입력해주세요.';
 };
 
-/** 현재 입력 내용을 Laravel Session 임시저장 API로 전달합니다. */
+// 현재 입력 내용을 Laravel Session 임시저장 API로 전달합니다.
 function saveDraft() {
   if (isEdit.value || props.loading || !hasChanges.value) {
     return;
@@ -507,7 +519,7 @@ function saveDraft() {
   emit('draft', createPayload());
 }
 
-/** 전체삭제 확인과 실제 Session draft 삭제는 부모 화면에서 처리합니다. */
+// 전체삭제 확인과 실제 Session draft 삭제는 부모 화면에서 처리합니다.
 function clearDraft() {
   if (isEdit.value || props.loading || !hasDraftAndInput.value) {
     return;
@@ -516,7 +528,7 @@ function clearDraft() {
   emit('clear-draft');
 }
 
-/** 빈 제품 등록 폼의 기본값을 생성합니다. */
+// 빈 제품 등록 폼의 기본값을 생성합니다.
 function createEmptyForm() {
   return {
     store_id: null,
@@ -532,7 +544,7 @@ function createEmptyForm() {
   };
 }
 
-/** Laravel Session의 제품 등록 draft를 폼 형태로 변환합니다. */
+// Laravel Session의 제품 등록 draft를 폼 형태로 변환합니다.
 function createFormFromDraft(draft) {
   return {
     ...createEmptyForm(),
@@ -540,7 +552,7 @@ function createFormFromDraft(draft) {
   };
 }
 
-/** 기존 제품 데이터를 수정 폼에 맞는 값으로 변환합니다. */
+// 기존 제품 데이터를 수정 폼에 맞는 값으로 변환합니다.
 function createFormFromProduct(product) {
   return {
     store_id: product.store_id ?? product.store?.id ?? null,
@@ -556,7 +568,7 @@ function createFormFromProduct(product) {
   };
 }
 
-/** 현재 점포에서 사용할 수 없는 카테고리 선택값을 정리합니다. */
+// 현재 점포에서 사용할 수 없는 카테고리 선택값을 정리합니다.
 function clearUnavailableCategory() {
   const available = availableCategories.value.some((category) => {
     return Number(category.id) === Number(form.product_category_id);
@@ -567,14 +579,14 @@ function clearUnavailableCategory() {
   }
 }
 
-/** 현재 폼 상태를 비교 가능한 문자열로 만들어 변경 여부를 판단합니다. */
+// 현재 폼 상태를 비교 가능한 문자열로 만들어 변경 여부를 판단합니다.
 function snapshot() {
   return JSON.stringify({
     ...form,
   });
 }
 
-/** 변경사항이 있으면 확인 후 닫고, 없으면 즉시 닫습니다. */
+// 변경사항이 있으면 확인 후 닫고, 없으면 즉시 닫습니다.
 function requestClose() {
   if (props.loading) {
     return;
@@ -588,20 +600,20 @@ function requestClose() {
   emit('close');
 }
 
-/** 작성 중 변경사항을 버리고 다이얼로그를 닫습니다. */
+// 작성 중 변경사항을 버리고 다이얼로그를 닫습니다.
 function discardChanges() {
   discardDialog.value = false;
   emit('close');
 }
 
-/** 외부에서 변경된 다이얼로그 상태를 안전한 닫기 흐름으로 연결합니다. */
+// 외부에서 변경된 다이얼로그 상태를 안전한 닫기 흐름으로 연결합니다.
 function handleDialogChange(value) {
   if (!value) {
     requestClose();
   }
 }
 
-/** 현재 입력값을 정리해 부모의 저장 흐름으로 전달합니다. */
+// 현재 입력값을 정리해 부모의 저장 흐름으로 전달합니다.
 function submit() {
   if (!canSubmit.value || props.loading) {
     return;
@@ -610,7 +622,7 @@ function submit() {
   emit('save', createPayload());
 }
 
-/** 등록/수정 및 draft 저장에 사용할 요청 데이터를 만듭니다. */
+// 등록/수정 및 draft 저장에 사용할 요청 데이터를 만듭니다.
 function createPayload() {
   return {
     ...form,

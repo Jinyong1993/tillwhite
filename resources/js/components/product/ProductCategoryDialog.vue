@@ -336,8 +336,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
-
+import {
+    computed,
+    ref,
+    watch,
+} from 'vue';
 import { sortByDisplayName } from '../../utils/naturalSort';
 
 const props = defineProps({
@@ -658,7 +661,7 @@ function canMoveCategory(category, direction) {
     : index < orderedStoreCategories.value.length - 1;
 }
 
-/** 보존 중인 수동 정렬 기능에서 카테고리 이동 이벤트를 전달합니다. */
+// 보존 중인 수동 정렬 기능에서 카테고리 이동 이벤트를 전달합니다.
 function requestMoveCategory(category, direction) {
   if (props.loading || !canMoveCategory(category, direction)) {
     return;
@@ -667,7 +670,7 @@ function requestMoveCategory(category, direction) {
   emit('reorder', { category, direction });
 }
 
-/** 새 카테고리명을 검증한 뒤 등록 이벤트를 전달합니다. */
+// 새 카테고리명을 검증한 뒤 등록 이벤트를 전달합니다.
 function add() {
   const name = newName.value.trim();
 
@@ -683,7 +686,7 @@ function add() {
   emit('create', pendingCreate.value);
 }
 
-/** 수정할 카테고리와 현재 이름을 보관한 뒤 수정 다이얼로그를 엽니다. */
+// 수정할 카테고리와 현재 이름을 보관한 뒤 수정 다이얼로그를 엽니다.
 function openRenameDialog(category) {
   if (props.loading) {
     return;

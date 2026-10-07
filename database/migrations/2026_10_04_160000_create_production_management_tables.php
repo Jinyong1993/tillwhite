@@ -276,7 +276,7 @@ return new class extends Migration
         });
     }
 
-    /** 생산·폐기 관리 개편 테이블을 의존 관계의 역순으로 제거합니다. */
+    // 생산·폐기 관리 개편 테이블을 의존 관계의 역순으로 제거합니다.
     public function down(): void
     {
         Schema::dropIfExists('product_master_histories');

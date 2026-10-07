@@ -1,6 +1,13 @@
 <template>
-<v-dialog v-model="open" max-width="620" persistent>
-  <v-card rounded="lg" class="app-dialog-card">
+<v-dialog
+    v-model="open"
+    max-width="620"
+    persistent
+>
+  <v-card
+      rounded="lg"
+      class="app-dialog-card"
+  >
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
       <div>
         <div>생산</div>
@@ -16,18 +23,44 @@
       <div class="dialog-guide overview-guide">생산 기록을 확인하고 새 생산량을 추가하거나 기존 기록을 수정할 수 있습니다.</div>
       <div v-if="product?.batches?.length" class="mb-4">
         <div class="text-subtitle-2 mb-2">오늘 생산 기록</div>
-        <v-list density="compact" border rounded>
-          <v-list-item v-for="batch in product.batches" :key="batch.id" :title="`${batch.quantity}개`" :subtitle="new Date(batch.created_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})">
+        <v-list
+            density="compact"
+            border
+            rounded
+        >
+          <v-list-item
+              v-for="batch in product.batches"
+              :key="batch.id"
+              :title="`${batch.quantity}개`"
+              :subtitle="new Date(batch.created_at).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})"
+          >
             <template #append>
-              <v-btn icon="mdi-pencil-outline" size="small" variant="text" @click="editBatch(batch)"/>
-              <v-btn icon="mdi-delete-outline" size="small" variant="text" @click="askDelete(batch)"/>
+              <v-btn
+                  icon="mdi-pencil-outline"
+                  size="small"
+                  variant="text"
+                  @click="editBatch(batch)"
+              />
+              <v-btn
+                  icon="mdi-delete-outline"
+                  size="small"
+                  variant="text"
+                  @click="askDelete(batch)"
+              />
             </template>
           </v-list-item>
         </v-list>
       </div>
       <div class="text-subtitle-2 mb-2">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
       <div class="dialog-guide">오늘 생산한 수량을 입력해 주세요.</div>
-      <v-number-input v-model="form.quantity" label="생산 수량" variant="outlined" density="compact" :min="1" class="primary-quantity-input" />
+      <v-number-input
+          v-model="form.quantity"
+          label="생산 수량"
+          variant="outlined"
+          density="compact"
+          :min="1"
+          class="primary-quantity-input"
+      />
       <v-select
         v-model="form.workerIds"
         :items="workers"
@@ -40,15 +73,43 @@
         clearable
         no-data-text="선택할 수 있는 작업자가 없습니다"
       />
-      <v-checkbox v-model="form.recipeDeviated" label="레시피 변경" density="compact" />
-      <v-textarea v-if="form.recipeDeviated" v-model="form.recipeDeviationNote" label="달라진 작업 내용" variant="outlined" rows="2" />
+      <v-checkbox
+          v-model="form.recipeDeviated"
+          label="레시피 변경"
+          density="compact"
+      />
+      <v-textarea
+          v-if="form.recipeDeviated"
+          v-model="form.recipeDeviationNote"
+          label="달라진 작업 내용"
+          variant="outlined"
+          rows="2"
+      />
       <v-checkbox v-model="form.recommendationReferenced" label="추천 생산량 참고" density="compact" hide-details/><div v-if="form.recommendationReferenced" class="field-help">추천 생산량을 확인하고 생산 수량을 결정한 경우입니다.</div>
-      <v-text-field v-if="form.recommendationReferenced" v-model="form.recommendationDeviationReason" label="추천 범위와 다르게 생산한 이유 · 선택" variant="outlined"/>
-      <v-textarea v-model="form.note" label="메모" variant="outlined" rows="2" />
+      <v-text-field
+          v-if="form.recommendationReferenced"
+          v-model="form.recommendationDeviationReason"
+          label="추천 범위와 다르게 생산한 이유 · 선택"
+          variant="outlined"
+      />
+      <v-textarea
+          v-model="form.note"
+          label="메모"
+          variant="outlined"
+          rows="2"
+      />
       <div v-if="!product?.recipe" class="recipe-empty"><v-icon icon="mdi-book-open-variant-outline" size="18"/><div><strong>등록된 레시피가 없습니다.</strong><span>레시피가 필요한 경우 제품 관리에서 등록해 주세요.</span></div></div>
       <v-divider class="my-3" />
       <div class="text-subtitle-2 mb-2">오늘 생산하지 않은 경우</div>
-      <v-select v-model="zeroReason" :items="zeroReasons" item-title="title" item-value="value" label="생산 0개 사유" variant="outlined" clearable />
+      <v-select
+          v-model="zeroReason"
+          :items="zeroReasons"
+          item-title="title"
+          item-value="value"
+          label="생산 0개 사유"
+          variant="outlined"
+          clearable
+      />
       <v-btn variant="outlined" block :disabled="!zeroReason || saving" @click="confirmZeroOpen = true">생산 0개 확인</v-btn>
     </v-card-text>
     <v-card-actions class="app-dialog-footer px-4 pb-4">
@@ -59,14 +120,34 @@
     </v-card-actions>
   </v-card>
 </v-dialog>
-<ConfirmDialog v-model="deleteConfirmOpen" title="생산 기록 삭제" message="이 생산 기록을 삭제하시겠습니까? 이미 이월과 연결된 기록은 삭제할 수 없습니다." :loading="saving" @confirm="deleteBatch" />
-<ConfirmDialog v-model="confirmZeroOpen" title="생산 0개 확인" message="오늘 이 제품을 생산하지 않은 것으로 확정하시겠습니까? 선택한 사유는 추천 분석에서 일반 수요와 구분해 사용합니다." :loading="saving" @confirm="saveZero" />
-<ConfirmDialog v-model="confirmClose" title="작성 취소" message="작성 중인 내용이 있습니다. 닫으시겠습니까?" @confirm="forceClose" />
+<ConfirmDialog
+    v-model="deleteConfirmOpen"
+    title="생산 기록 삭제"
+    message="이 생산 기록을 삭제하시겠습니까? 이미 이월과 연결된 기록은 삭제할 수 없습니다."
+    :loading="saving"
+    @confirm="deleteBatch"
+/>
+<ConfirmDialog
+    v-model="confirmZeroOpen"
+    title="생산 0개 확인"
+    message="오늘 이 제품을 생산하지 않은 것으로 확정하시겠습니까? 선택한 사유는 추천 분석에서 일반 수요와 구분해 사용합니다."
+    :loading="saving"
+    @confirm="saveZero"
+/>
+<ConfirmDialog
+    v-model="confirmClose"
+    title="작성 취소"
+    message="작성 중인 내용이 있습니다. 닫으시겠습니까?"
+    @confirm="forceClose"
+/>
 </template>
 
 <script setup>
 import {
-  computed, reactive, ref, watch
+    computed,
+    reactive,
+    ref,
+    watch,
 } from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 const props = defineProps({
@@ -90,11 +171,11 @@ const form = reactive({
 const open = computed({
   get: () => props.modelValue, set: (value) => emit('update:modelValue', value)
 });
-/** 다이얼로그가 열릴 때 이전 제품의 입력값이 남지 않도록 초기화합니다. */
+// 다이얼로그가 열릴 때 이전 제품의 입력값이 남지 않도록 초기화합니다.
 watch(() => props.modelValue, (value) => {
   if (value) reset();
 });
-/** 현재 입력값을 새 생산 기록의 기본값으로 되돌립니다. */
+// 현재 입력값을 새 생산 기록의 기본값으로 되돌립니다.
 function reset() {
   editingBatch.value = null;
   deletingBatch.value = null;
@@ -107,11 +188,11 @@ function reset() {
   form.recommendationDeviationReason = '';
   form.note = '';
 }
-/** 사용자가 입력한 내용이 있는지 확인해 실수로 닫히는 것을 방지합니다. */
+// 사용자가 입력한 내용이 있는지 확인해 실수로 닫히는 것을 방지합니다.
 function isDirty() {
   return form.quantity !== 1 || form.workerIds.length > 0 || form.recipeDeviated || !!form.recipeDeviationNote || form.recommendationReferenced || !!form.recommendationDeviationReason || !!form.note;
 }
-/** 작성 내용이 있으면 확인창을 거친 뒤 닫습니다. */
+// 작성 내용이 있으면 확인창을 거친 뒤 닫습니다.
 function requestClose() {
   if (saving.value) return;
   if (isDirty()) {
@@ -121,29 +202,29 @@ function requestClose() {
 
   forceClose();
 }
-/** 확인을 마친 뒤 생산 입력 다이얼로그를 닫습니다. */
+// 확인을 마친 뒤 생산 입력 다이얼로그를 닫습니다.
 function forceClose() {
   confirmClose.value = false;
   open.value = false;
 }
-/** 기존 생산 기록을 수정할 수 있도록 해당 값을 입력 폼에 불러옵니다. */
+// 기존 생산 기록을 수정할 수 있도록 해당 값을 입력 폼에 불러옵니다.
 function editBatch(batch) {
   editingBatch.value = batch;
   form.quantity = batch.quantity;
   form.note = batch.note || '';
 }
-/** 생산 수정 모드를 끝내고 신규 입력 상태로 돌아갑니다. */
+// 생산 수정 모드를 끝내고 신규 입력 상태로 돌아갑니다.
 function cancelEdit() {
   editingBatch.value = null;
   form.quantity = 1;
   form.note = '';
 }
-/** 삭제할 생산 기록을 기억하고 중요 작업 확인창을 엽니다. */
+// 삭제할 생산 기록을 기억하고 중요 작업 확인창을 엽니다.
 function askDelete(batch) {
   deletingBatch.value = batch;
   deleteConfirmOpen.value = true;
 }
-/** 서버 검증 뒤 생산 기록을 Soft Delete하고 성공 시 목록을 다시 조회합니다. */
+// 서버 검증 뒤 생산 기록을 Soft Delete하고 성공 시 목록을 다시 조회합니다.
 async function deleteBatch() {
   if (!deletingBatch.value) return;
   saving.value = true;
@@ -162,7 +243,7 @@ async function deleteBatch() {
     saving.value = false;
   }
 }
-/** 생산하지 않은 날은 0과 사유를 명시적으로 확인해 미입력과 구분합니다. */
+// 생산하지 않은 날은 0과 사유를 명시적으로 확인해 미입력과 구분합니다.
 async function saveZero() {
   saving.value = true;
   try {
@@ -178,7 +259,7 @@ async function saveZero() {
     saving.value = false;
   }
 }
-/** 서버 확인이 끝난 생산 기록만 성공 처리하고 실패 시 입력값을 유지합니다. */
+// 서버 확인이 끝난 생산 기록만 성공 처리하고 실패 시 입력값을 유지합니다.
 async function save() {
   if (!props.product?.id || !form.quantity) return;
   if (form.recipeDeviated && !form.recipeDeviationNote.trim()) {
@@ -222,18 +303,71 @@ async function save() {
 </script>
 
 <style scoped>
-.dialog-overview { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:8px; }
-.dialog-overview>div { padding:9px 7px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); text-align:center; }
-.dialog-overview span,.dialog-overview strong { display:block; }
-.dialog-overview span { font-size:.63rem; color:rgba(var(--v-theme-on-surface),.55); }
-.dialog-overview strong { margin-top:2px; font-size:.82rem; font-weight:650; }
-.overview-guide { margin-bottom:14px !important; }
-.dialog-guide { margin-bottom:9px; font-size:.7rem; line-height:1.45; color:rgba(var(--v-theme-on-surface),.6); }
-.primary-quantity-input :deep(input) { font-size:.9rem; font-weight:650; font-variant-numeric:tabular-nums; }
-.field-help { margin:-7px 0 9px 32px; font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
-.recipe-empty { display:flex; gap:8px; align-items:flex-start; margin:4px 0 10px; padding:9px 10px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); }
-.recipe-empty strong,.recipe-empty span { display:block; }
-.recipe-empty strong { font-size:.72rem; font-weight:600; }
-.recipe-empty span { margin-top:2px; font-size:.65rem; color:rgba(var(--v-theme-on-surface),.58); }
-:deep(.v-field) { font-size:.78rem; }
+.dialog-overview {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:7px;
+    margin-bottom:8px;
+}
+.dialog-overview>div {
+    padding:9px 7px;
+    border-radius:9px;
+    background:rgba(var(--v-theme-on-surface),.04);
+    text-align:center;
+}
+.dialog-overview span,.dialog-overview strong {
+    display:block;
+}
+.dialog-overview span {
+    font-size:.63rem;
+    color:rgba(var(--v-theme-on-surface),.55);
+}
+.dialog-overview strong {
+    margin-top:2px;
+    font-size:.82rem;
+    font-weight:650;
+}
+.overview-guide {
+    margin-bottom:14px !important;
+}
+.dialog-guide {
+    margin-bottom:9px;
+    font-size:.7rem;
+    line-height:1.45;
+    color:rgba(var(--v-theme-on-surface),.6);
+}
+.primary-quantity-input :deep(input) {
+    font-size:.9rem;
+    font-weight:650;
+    font-variant-numeric:tabular-nums;
+}
+.field-help {
+    margin:-7px 0 9px 32px;
+    font-size:.66rem;
+    color:rgba(var(--v-theme-on-surface),.56);
+}
+.recipe-empty {
+    display:flex;
+    gap:8px;
+    align-items:flex-start;
+    margin:4px 0 10px;
+    padding:9px 10px;
+    border-radius:9px;
+    background:rgba(var(--v-theme-on-surface),.04);
+}
+.recipe-empty strong,.recipe-empty span {
+    display:block;
+}
+.recipe-empty strong {
+    font-size:.72rem;
+    font-weight:600;
+}
+.recipe-empty span {
+    margin-top:2px;
+    font-size:.65rem;
+    color:rgba(var(--v-theme-on-surface),.58);
+}
+:deep(.v-field) {
+    font-size:.78rem;
+}
 </style>

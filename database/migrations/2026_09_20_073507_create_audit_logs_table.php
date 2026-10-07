@@ -23,9 +23,7 @@ return new class extends Migration
     {
         Schema::create('audit_logs', function (Blueprint $table) {
 
-            /**
-             * 감사 로그 고유 ID
-             */
+            // * 감사 로그 고유 ID
             $table->id();
 
             /**
@@ -184,17 +182,13 @@ return new class extends Migration
              */
             $table->timestamps();
 
-            /**
-             * 사용자별 감사 로그 조회용 인덱스
-             */
+            // * 사용자별 감사 로그 조회용 인덱스
             $table->index([
                 'user_id',
                 'created_at',
             ]);
 
-            /**
-             * 기능 영역 및 작업별 조회용 인덱스
-             */
+            // * 기능 영역 및 작업별 조회용 인덱스
             $table->index([
                 'domain',
                 'action',
@@ -213,9 +207,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 감사 로그 테이블 삭제
-     */
+    // * 감사 로그 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('audit_logs');

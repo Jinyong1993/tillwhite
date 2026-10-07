@@ -14,9 +14,7 @@ use Illuminate\Http\Request;
 
 class WorkController extends Controller
 {
-    /**
-     * 권한 검사와 감사 로그 서비스를 주입받습니다.
-     */
+    // * 권한 검사와 감사 로그 서비스를 주입받습니다.
     public function __construct(
         private AccessService $access,
         private AuditService $audit

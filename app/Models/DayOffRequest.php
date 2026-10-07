@@ -30,9 +30,7 @@ class DayOffRequest extends Model
         ];
     }
 
-    /**
-     * 희망휴무를 신청한 직원
-     */
+    // * 희망휴무를 신청한 직원
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

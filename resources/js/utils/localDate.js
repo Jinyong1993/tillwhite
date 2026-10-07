@@ -9,7 +9,7 @@ export function toLocalDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-/** YYYY-MM-DD 날짜에 일수를 더하고 로컬 날짜 문자열로 반환합니다. */
+// YYYY-MM-DD 날짜에 일수를 더하고 로컬 날짜 문자열로 반환합니다.
 export function addLocalDays(value, amount) {
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(year, month - 1, day);
@@ -17,7 +17,7 @@ export function addLocalDays(value, amount) {
   return toLocalDateString(date);
 }
 
-/** YYYY-MM-DD 날짜를 사용자가 읽기 쉬운 한국어 날짜로 표시합니다. */
+// YYYY-MM-DD 날짜를 사용자가 읽기 쉬운 한국어 날짜로 표시합니다.
 export function formatKoreanDate(value) {
   const [year, month, day] = value.split('-').map(Number);
   return new Intl.DateTimeFormat('ko-KR', {

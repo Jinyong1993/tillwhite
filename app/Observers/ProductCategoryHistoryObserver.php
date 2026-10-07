@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 class ProductCategoryHistoryObserver
 {
-    /** 카테고리명·활성 상태 변경 시 과거 표시와 분석에 사용할 유효기간 이력을 남깁니다. */
+    // 카테고리명·활성 상태 변경 시 과거 표시와 분석에 사용할 유효기간 이력을 남깁니다.
     public function saved(ProductCategory $category): void
     {
         if (!Schema::hasTable('product_category_histories')) {

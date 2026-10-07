@@ -22,9 +22,7 @@ return new class extends Migration
     {
         Schema::create('production_records', function (Blueprint $table) {
 
-            /**
-             * 생산·폐기·로스 기록 고유 ID
-             */
+            // * 생산·폐기·로스 기록 고유 ID
             $table->id();
 
             /**
@@ -222,9 +220,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->restrictOnDelete();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -285,9 +281,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 생산·폐기·로스 기록 테이블 삭제
-     */
+    // * 생산·폐기·로스 기록 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('production_records');

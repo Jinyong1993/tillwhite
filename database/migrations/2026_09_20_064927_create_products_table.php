@@ -22,9 +22,7 @@ return new class extends Migration
     {
         Schema::create('products', function (Blueprint $table) {
 
-            /**
-             * 제품 고유 ID
-             */
+            // * 제품 고유 ID
             $table->id();
 
             /**
@@ -128,9 +126,7 @@ return new class extends Migration
             $table->boolean('is_active')
                 ->default(true);
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -177,9 +173,7 @@ return new class extends Migration
                 'is_active',
             ]);
 
-            /**
-             * 점포 및 관리 부서별 제품 조회용 인덱스
-             */
+            // * 점포 및 관리 부서별 제품 조회용 인덱스
             $table->index([
                 'store_id',
                 'management_department',
@@ -188,9 +182,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 제품 테이블 삭제
-     */
+    // * 제품 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('products');

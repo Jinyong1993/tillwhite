@@ -244,30 +244,22 @@ function setAlert(type, message) {
   }, timeout);
 }
 
-/**
- * 오류(error) 알림을 표시합니다.
- */
+// * 오류(error) 알림을 표시합니다.
 function setError(message) {
   setAlert('error', message);
 }
 
-/**
- * 성공(success) 알림을 표시합니다.
- */
+// * 성공(success) 알림을 표시합니다.
 function setSuccess(message) {
   setAlert('success', message);
 }
 
-/**
- * 경고(warning) 알림을 표시합니다.
- */
+// * 경고(warning) 알림을 표시합니다.
 function setWarning(message) {
   setAlert('warning', message);
 }
 
-/**
- * 안내(info) 알림을 표시합니다.
- */
+// * 안내(info) 알림을 표시합니다.
 function setInfo(message) {
   setAlert('info', message);
 }

@@ -41,9 +41,7 @@ class PermissionSeeder extends Seeder
             ['code' => 'attendance.manage', 'name' => '근태 기록 관리', 'description' => '권한 범위 내 근태 기록을 관리할 수 있는 권한', 'is_active' => true],
             ['code' => 'leave.view', 'name' => '휴가 내역 조회', 'description' => '권한 범위 내 휴가 발생·사용 내역 및 신청 내역을 조회할 수 있는 권한', 'is_active' => true],
             ['code' => 'leave.manage', 'name' => '휴가 관리', 'description' => '권한 범위 내 휴가 발생·조정 및 휴가 신청을 관리할 수 있는 권한', 'is_active' => true],
-            /**
-             * 제품 관리
-             */
+            // * 제품 관리
             ['code' => 'product.view', 'name' => '제품 조회', 'description' => '권한 범위 내 제품 및 제품 카테고리를 조회할 수 있는 권한', 'is_active' => true],
             ['code' => 'product.manage', 'name' => '제품 관리', 'description' => '권한 범위 내 제품, 제품 카테고리 및 제품 가격을 관리할 수 있는 권한', 'is_active' => true],
             /**
@@ -54,19 +52,13 @@ class PermissionSeeder extends Seeder
              */
             ['code' => 'recipe.view', 'name' => '레시피 조회', 'description' => '권한 범위 내 레시피를 조회할 수 있는 권한', 'is_active' => true],
             ['code' => 'recipe.manage', 'name' => '레시피 관리', 'description' => '권한 범위 내 레시피, 재료, 제조 단계 및 이미지를 관리할 수 있는 권한', 'is_active' => true],
-            /**
-             * 매출 관리
-             */
+            // * 매출 관리
             ['code' => 'sales.view', 'name' => '매출 조회', 'description' => '권한 범위 내 매출 및 환불 내역과 통계를 조회할 수 있는 권한', 'is_active' => true],
             ['code' => 'sales.manage', 'name' => '매출 관리', 'description' => '권한 범위 내 매출, 프로모션 및 환불을 관리할 수 있는 권한', 'is_active' => true],
-            /**
-             * 직원 관리
-             */
+            // * 직원 관리
             ['code' => 'employee.view', 'name' => '직원 조회', 'description' => '권한 범위 내 직원 정보와 인사발령 이력을 조회할 수 있는 권한', 'is_active' => true],
             ['code' => 'employee.manage', 'name' => '직원 관리', 'description' => '권한 범위 내 직원 정보 및 인사발령을 관리할 수 있는 권한', 'is_active' => true],
-            /**
-             * 점포 관리
-             */
+            // * 점포 관리
             ['code' => 'store.view', 'name' => '점포 조회', 'description' => '점포 정보를 조회할 수 있는 권한', 'is_active' => true],
             ['code' => 'store.manage', 'name' => '점포 관리', 'description' => '점포 등록, 수정, 운영 상태 및 위치 정보를 관리할 수 있는 권한', 'is_active' => true],
             /**

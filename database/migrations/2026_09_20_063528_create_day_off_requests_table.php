@@ -23,9 +23,7 @@ return new class extends Migration
     {
         Schema::create('day_off_requests', function (Blueprint $table) {
 
-            /**
-             * 희망 휴무 신청 고유 ID
-             */
+            // * 희망 휴무 신청 고유 ID
             $table->id();
 
             /**
@@ -133,14 +131,10 @@ return new class extends Migration
              */
             $table->timestamp('cancelled_at')->nullable();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
-            /**
-             * 직원별 월 희망 휴무 신청 조회용 인덱스
-             */
+            // * 직원별 월 희망 휴무 신청 조회용 인덱스
             $table->index([
                 'user_id',
                 'target_year',
@@ -161,9 +155,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 희망 휴무 신청 테이블 삭제
-     */
+    // * 희망 휴무 신청 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('day_off_requests');

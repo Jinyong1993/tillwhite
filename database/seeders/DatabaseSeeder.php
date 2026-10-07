@@ -76,7 +76,7 @@ class DatabaseSeeder extends Seeder
              * 상시/기간한정/취급중단/삭제 상태를 함께 검증합니다.
              */
             ProductSeeder::class,
-            /** 생산·폐기 관리 최근 10일 통합 검증 데이터 */
+            // 생산·폐기 관리 최근 10일 통합 검증 데이터
             ProductionManagementSeeder::class,
         ]);
     }

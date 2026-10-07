@@ -143,7 +143,9 @@ button.app-date-main {
     justify-content: flex-end;
 }
 
-.app-date-today { min-width: 48px; }
+.app-date-today {
+    min-width: 48px;
+}
 
 @media (max-width: 600px) {
     .app-date-toolbar { 

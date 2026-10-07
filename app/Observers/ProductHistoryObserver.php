@@ -22,7 +22,7 @@ class ProductHistoryObserver
         $this->record($product);
     }
 
-    /** Soft Delete 시점도 제품 상태 이력으로 남깁니다. */
+    // Soft Delete 시점도 제품 상태 이력으로 남깁니다.
     public function deleted(Product $product): void
     {
         if (Schema::hasTable('product_master_histories')) {
@@ -30,7 +30,7 @@ class ProductHistoryObserver
         }
     }
 
-    /** 복구 시점도 같은 제품의 새 유효 구간으로 남깁니다. */
+    // 복구 시점도 같은 제품의 새 유효 구간으로 남깁니다.
     public function restored(Product $product): void
     {
         if (Schema::hasTable('product_master_histories')) {
@@ -38,7 +38,7 @@ class ProductHistoryObserver
         }
     }
 
-    /** 현재 제품 상태를 새 유효 구간으로 기록합니다. */
+    // 현재 제품 상태를 새 유효 구간으로 기록합니다.
     private function record(Product $product): void
     {
         $now = now();

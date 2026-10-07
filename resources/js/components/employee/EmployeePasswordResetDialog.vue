@@ -5,7 +5,10 @@
     persistent
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-card rounded="lg" class="app-dialog-card">
+    <v-card
+        rounded="lg"
+        class="app-dialog-card"
+    >
       <v-card-title class="app-dialog-header pa-5 pb-2">
         비밀번호 초기화
       </v-card-title>

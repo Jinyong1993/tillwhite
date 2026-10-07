@@ -21,9 +21,7 @@ return new class extends Migration
     {
         Schema::create('sale_refund_items', function (Blueprint $table) {
 
-            /**
-             * 환불 상세 고유 ID
-             */
+            // * 환불 상세 고유 ID
             $table->id();
 
             /**
@@ -120,9 +118,7 @@ return new class extends Migration
             $table->text('note')
                 ->nullable();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -151,9 +147,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 판매 환불 상세 테이블 삭제
-     */
+    // * 판매 환불 상세 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('sale_refund_items');

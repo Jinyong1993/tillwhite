@@ -437,7 +437,7 @@ const isIncomplete = computed(() => {
   return sortedIngredients.value.length === 0 || sortedSteps.value.length === 0;
 });
 
-/** 레시피 관리 버튼은 동일한 외형을 유지하고 권한이 없으면 알림만 요청합니다. */
+// 레시피 관리 버튼은 동일한 외형을 유지하고 권한이 없으면 알림만 요청합니다.
 function requestAction(action) {
   if (!props.canManage) {
     emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
@@ -452,12 +452,12 @@ function requestAction(action) {
   emit(action);
 }
 
-/** 감사 로그 동작 코드를 사용자에게 보여줄 한글 이름으로 변환합니다. */
+// 감사 로그 동작 코드를 사용자에게 보여줄 한글 이름으로 변환합니다.
 function auditActionText(action) {
   return { create: '등록', update: '수정', delete: '삭제', restore: '복구' }[action] ?? '-';
 }
 
-/** 관리 이력의 작업자와 일시를 카드용 한 줄 문자열로 만듭니다. */
+// 관리 이력의 작업자와 일시를 카드용 한 줄 문자열로 만듭니다.
 function historyText(entry, fallbackAt = null) {
   const actor = entry?.user?.name ?? '-';
   const value = entry?.at ?? fallbackAt;
@@ -466,7 +466,7 @@ function historyText(entry, fallbackAt = null) {
   return `${actor} · ${at}`;
 }
 
-/** 관리 이력 일시를 분 단위의 한국어 날짜 형식으로 표시합니다. */
+// 관리 이력 일시를 분 단위의 한국어 날짜 형식으로 표시합니다.
 function formatHistoryDateTime(value) {
   if (!value) return '-';
 
@@ -483,7 +483,7 @@ function formatHistoryDateTime(value) {
   }).format(date);
 }
 
-/** 재료 사용량이 없으면 하이픈, 있으면 불필요한 소수점 0을 제거해 표시합니다. */
+// 재료 사용량이 없으면 하이픈, 있으면 불필요한 소수점 0을 제거해 표시합니다.
 function ingredientQuantity(item) {
   const quantity = item?.quantity;
   return quantity === null || quantity === undefined || quantity === ''
@@ -491,12 +491,12 @@ function ingredientQuantity(item) {
     : formatQuantity(quantity);
 }
 
-/** 재료 단위가 비어 있으면 공통 누락 표시인 하이픈을 반환합니다. */
+// 재료 단위가 비어 있으면 공통 누락 표시인 하이픈을 반환합니다.
 function ingredientUnit(item) {
   return String(item?.unit ?? '').trim() || '-';
 }
 
-/** DB decimal 문자열의 불필요한 뒤쪽 0을 제거해 입력한 수량을 자연스럽게 보여줍니다. */
+// DB decimal 문자열의 불필요한 뒤쪽 0을 제거해 입력한 수량을 자연스럽게 보여줍니다.
 function formatQuantity(value) {
   const text = String(value);
 

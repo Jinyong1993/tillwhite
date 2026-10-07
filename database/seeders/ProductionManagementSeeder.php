@@ -106,7 +106,7 @@ class ProductionManagementSeeder extends Seeder
         StoreCalendarEvent::updateOrCreate(['store_id' => $store->id, 'title' => '가을 베이커리 프로모션', 'start_date' => '2026-10-02'], ['event_type' => 'promotion', 'end_date' => '2026-10-04', 'discount_type' => 'percent', 'discount_value' => 20, 'memo' => '분석·캘린더 화면 검증용 행사', 'created_by' => $user->id]);
     }
 
-    /** 무역점에서 확인할 10개 제품과 가격을 준비합니다. */
+    // 무역점에서 확인할 10개 제품과 가격을 준비합니다.
     private function prepareProducts(int $storeId, int $userId)
     {
         $bakery = ProductCategory::updateOrCreate(['store_id' => $storeId, 'name' => '베이커리'], ['sort_order' => 10, 'is_active' => true]);

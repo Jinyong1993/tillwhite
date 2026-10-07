@@ -7,7 +7,13 @@
       </div>
     </header>
 
-    <v-btn-toggle v-model="periodDays" mandatory density="compact" variant="outlined" class="period-tabs">
+    <v-btn-toggle
+        v-model="periodDays"
+        mandatory
+        density="compact"
+        variant="outlined"
+        class="period-tabs"
+    >
       <v-btn :value="7">최근 1주</v-btn>
       <v-btn :value="30">최근 1개월</v-btn>
       <v-btn :value="90">최근 3개월</v-btn>
@@ -30,7 +36,13 @@
 
     <section class="analysis-section">
       <div class="section-title-row"><div><h4>제품별 {{ mixLabel }} 비중</h4><p>선택한 항목이 어떤 제품에서 많이 발생했는지 비교합니다.</p></div></div>
-      <v-btn-toggle v-model="mixType" mandatory density="compact" variant="text" class="mix-tabs">
+      <v-btn-toggle
+          v-model="mixType"
+          mandatory
+          density="compact"
+          variant="text"
+          class="mix-tabs"
+      >
         <v-btn value="production">생산</v-btn><v-btn value="waste">폐기</v-btn><v-btn value="loss">로스</v-btn><v-btn value="carryover">이월</v-btn>
       </v-btn-toggle>
       <div v-if="mixTotal > 0" class="mix-layout">
@@ -47,7 +59,16 @@
 
     <section class="analysis-section">
       <div class="section-title-row"><div><h4>제품별 분석</h4><p>제품별 생산·이월·로스·폐기 현황과 확인할 내용을 비교합니다.</p></div><span>{{ filteredItems.length }}개</span></div>
-      <v-text-field v-model="search" prepend-inner-icon="mdi-magnify" label="제품명 검색" variant="outlined" density="compact" hide-details clearable class="analysis-search" />
+      <v-text-field
+          v-model="search"
+          prepend-inner-icon="mdi-magnify"
+          label="제품명 검색"
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          class="analysis-search"
+      />
       <div v-if="pagedItems.length" class="analysis-list">
         <article v-for="item in pagedItems" :key="item.product_id" class="analysis-item">
           <div class="analysis-item-head"><div><strong>{{ item.product_name }}</strong><span>{{ item.flags.length ? `확인할 내용 ${item.flags.length}건` : '특이사항 없음' }}</span></div><span class="confidence-chip">{{ confidenceText(item.recommendation.confidence) }}</span></div>
@@ -63,7 +84,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+    computed,
+    ref,
+    watch,
+} from 'vue';
 const props = defineProps({ storeId:Number, workDate:String });
 const emit = defineEmits(['error']);
 const items=ref([]), dailyFlow=ref([]), productTotals=ref([]), mixType=ref('production'), loading=ref(false), search=ref(''), page=ref(1), periodDays=ref(30);
@@ -89,9 +114,13 @@ async function load(){if(!props.storeId||loading.value)return;loading.value=true
 function totalsFor(item){return totalsMap.value.get(item.product_id)||{production:0,carryover:0,loss:0,waste:0};}
 function recommendationText(r){return r?.min==null?'데이터 부족':`${r.min}~${r.max}`;}
 function confidenceText(v){return {insufficient:'데이터 부족',low:'참고',normal:'보통',high:'높음'}[v]||'-';}
-function percent(v){return mixTotal.value?(Number(v||0)/mixTotal.value*100).toFixed(1):'0.0';}
+function percent(v) {
+    return mixTotal.value?(Number(v||0)/mixTotal.value*100).toFixed(1):'0.0';
+}
 function shortDay(date){const [,m,d]=String(date).split('-');return `${Number(m)}/${Number(d)}`;}
-function mixColor(index){return palette[index%palette.length];}
+function mixColor(index) {
+    return palette[index % palette.length];
+}
 </script>
 
 <style scoped>

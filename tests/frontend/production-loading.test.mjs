@@ -8,7 +8,7 @@ const filename = 'resources/js/pages/Production/ProductionPage.vue';
 const source = readFileSync(new URL('../../' + filename, import.meta.url), 'utf8');
 const { descriptor } = parse(source);
 
-/** 실제 페이지 스크립트를 실행하며 HTTP와 화면 이동만 대체합니다. */
+// 실제 페이지 스크립트를 실행하며 HTTP와 화면 이동만 대체합니다.
 function createPage(get) {
   const calls = { complete: 0, cancel: 0, clear: 0, redirects: [], errors: [] };
   const script = descriptor.scriptSetup.content.replace(/^import[\s\S]*?;\s*/gm, '');
@@ -37,12 +37,12 @@ function createPage(get) {
   return { page, calls };
 }
 
-/** 인증·권한·서버 오류 응답을 Axios와 같은 형태로 만듭니다. */
+// 인증·권한·서버 오류 응답을 Axios와 같은 형태로 만듭니다.
 function httpError(status) {
   return { response: { status, data: { message: `서버 오류 ${status}` } } };
 }
 
-/** 조회 가능한 점포를 포함하는 최소 선택 목록 응답입니다. */
+// 조회 가능한 점포를 포함하는 최소 선택 목록 응답입니다.
 function optionsResponse() {
   return { data: { stores: [{ id: 7, name: '무역점' }], products: [], workers: [] } };
 }

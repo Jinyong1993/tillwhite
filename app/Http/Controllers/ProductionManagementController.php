@@ -34,12 +34,12 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 class ProductionManagementController extends Controller
 {
-    /** 생산 업무의 권한, 일일 계산, 감사, 추천 서비스를 주입합니다. */
+    // 생산 업무의 권한, 일일 계산, 감사, 추천 서비스를 주입합니다.
     public function __construct(private readonly AccessService $accessService, private readonly AuditService $auditService, private readonly ProductionDailyService $dailyService, private readonly ProductionRecommendationService $recommendationService)
     {
     }
 
-    /** 선택한 날짜의 생산·폐기 업무 화면 전체 데이터를 반환합니다. */
+    // 선택한 날짜의 생산·폐기 업무 화면 전체 데이터를 반환합니다.
     public function daily(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -57,7 +57,7 @@ class ProductionManagementController extends Controller
         return response()->json($daily);
     }
 
-    /** 생산 화면에서 필요한 점포, 제품, 근무자와 사유 선택 목록을 반환합니다. */
+    // 생산 화면에서 필요한 점포, 제품, 근무자와 사유 선택 목록을 반환합니다.
     public function options(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -95,7 +95,7 @@ class ProductionManagementController extends Controller
         return response()->json(['product' => $product]);
     }
 
-    /** 한 번의 생산 배치를 저장하고 생산 당시 레시피와 작업자를 함께 고정합니다. */
+    // 한 번의 생산 배치를 저장하고 생산 당시 레시피와 작업자를 함께 고정합니다.
     public function storeBatch(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -113,7 +113,16 @@ class ProductionManagementController extends Controller
                 DB::table('production_batch_workers')->insert(['production_batch_id' => $batch->id, 'user_id' => $worker['user_id'], 'process_type' => $worker['process_type'] ?? 'all', 'created_at' => now(), 'updated_at' => now()]);
             }
             ProductStockLot::create(['store_id' => $data['store_id'], 'product_id' => $data['product_id'], 'production_batch_id' => $batch->id, 'origin_production_date' => $data['work_date'], 'initial_quantity' => $data['quantity'], 'remaining_quantity' => $data['quantity'], 'status' => 'active']);
-            ProductionConfirmation::updateOrCreate(['store_id' => $data['store_id'], 'product_id' => $data['product_id'], 'work_date' => $data['work_date']], ['production_confirmed' => true, 'zero_production_reason' => null, 'confirmed_by' => $user->id]);
+            $this->updateConfirmationForDate(
+                (int) $data['store_id'],
+                (int) $data['product_id'],
+                $data['work_date'],
+                [
+                    'production_confirmed' => true,
+                    'zero_production_reason' => null,
+                    'confirmed_by' => $user->id,
+                ],
+            );
             if ((bool) ($data['recommendation_referenced'] ?? false)) {
                 $history = collect();
                 $target = Carbon::parse($data['work_date']);
@@ -135,7 +144,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '생산 기록을 저장했습니다.', 'batch' => $batch], 201);
     }
 
-    /** 마감 전 생산 배치의 수량·메모를 수정하고 동시 수정 충돌을 검사합니다. */
+    // 마감 전 생산 배치의 수량·메모를 수정하고 동시 수정 충돌을 검사합니다.
     public function updateBatch(Request $request, ProductionBatch $batch): JsonResponse
     {
         $user = $this->user($request);
@@ -156,7 +165,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '생산 기록을 수정했습니다.']);
     }
 
-    /** 마감 전 생산 배치를 Soft Delete하고 연결 재고가 이미 이월되었다면 삭제를 차단합니다. */
+    // 마감 전 생산 배치를 Soft Delete하고 연결 재고가 이미 이월되었다면 삭제를 차단합니다.
     public function deleteBatch(Request $request, ProductionBatch $batch): JsonResponse
     {
         $user = $this->user($request);
@@ -176,7 +185,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '생산 기록을 삭제했습니다.']);
     }
 
-    /** 생산하지 않은 제품을 0개로 명시 확인하고 사유를 저장합니다. */
+    // 생산하지 않은 제품을 0개로 명시 확인하고 사유를 저장합니다.
     public function confirmZeroProduction(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -184,7 +193,17 @@ class ProductionManagementController extends Controller
         $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'reason' => ['required', 'string', Rule::in(['no_plan', 'material_shortage', 'equipment_issue', 'staffing_issue', 'no_demand', 'other'])], 'note' => ['nullable', 'string', 'max:1000']]);
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
-        ProductionConfirmation::updateOrCreate(['store_id' => $data['store_id'], 'product_id' => $data['product_id'], 'work_date' => $data['work_date']], ['production_confirmed' => true, 'zero_production_reason' => $data['reason'], 'zero_production_note' => $data['note'] ?? null, 'confirmed_by' => $user->id]);
+        $this->updateConfirmationForDate(
+            (int) $data['store_id'],
+            (int) $data['product_id'],
+            $data['work_date'],
+            [
+                'production_confirmed' => true,
+                'zero_production_reason' => $data['reason'],
+                'zero_production_note' => $data['note'] ?? null,
+                'confirmed_by' => $user->id,
+            ],
+        );
         $this->auditService->log($user, 'production', 'confirm', Product::class, (int) $data['product_id'], null, $data, '생산 0개 확인');
         return response()->json(['message' => '생산 0개를 확인했습니다.']);
     }
@@ -338,7 +357,7 @@ class ProductionManagementController extends Controller
         ]);
     }
 
-    /** 미확인 생산·이월·로스·폐기를 0개 상태로 확인하며 기존 실제 기록은 건드리지 않습니다. */
+    // 미확인 생산·이월·로스·폐기를 0개 상태로 확인하며 기존 실제 기록은 건드리지 않습니다.
     public function bulkConfirmZero(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -402,7 +421,7 @@ class ProductionManagementController extends Controller
         ]);
     }
 
-    /** 관리자 권한으로 마감된 날짜를 수정 상태로 열고 필수 수정 사유를 기록합니다. */
+    // 관리자 권한으로 마감된 날짜를 수정 상태로 열고 필수 수정 사유를 기록합니다.
     public function openCorrection(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -421,7 +440,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '마감 후 수정이 열렸습니다. 수정 후 다시 마감해주세요.', 'affected_dates' => $affectedDates]);
     }
 
-    /** 마감 전 전체 수량과 미완료 제품을 검증하여 최종 확인 화면 데이터를 반환합니다. */
+    // 마감 전 전체 수량과 미완료 제품을 검증하여 최종 확인 화면 데이터를 반환합니다.
     public function closePreview(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -437,7 +456,7 @@ class ProductionManagementController extends Controller
         ]);
     }
 
-    /** 사용자의 최종 확인 뒤 하루 업무를 마감합니다. 미완료나 수량 불일치가 있으면 서버에서 차단합니다. */
+    // 사용자의 최종 확인 뒤 하루 업무를 마감합니다. 미완료나 수량 불일치가 있으면 서버에서 차단합니다.
     public function closeDay(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -446,8 +465,9 @@ class ProductionManagementController extends Controller
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
         abort_if(collect($daily['rows'])->where('is_active', true)->contains('complete', false), 422, '아직 확인하지 않은 제품이 있어 마감할 수 없습니다.');
-        $closure = ProductionDailyClosure::updateOrCreate(
-            ['store_id' => $data['store_id'], 'work_date' => $data['work_date']],
+        $closure = $this->updateDailyClosureForDate(
+            (int) $data['store_id'],
+            $data['work_date'],
             [
                 'status' => 'closed',
                 'daily_memo' => $data['daily_memo'] ?? null,
@@ -551,7 +571,7 @@ class ProductionManagementController extends Controller
         return response()->json(['days' => $days]);
     }
 
-    /** 월간 수량 모델을 한 번 조회해 날짜별 합계로 묶습니다. */
+    // 월간 수량 모델을 한 번 조회해 날짜별 합계로 묶습니다.
     private function monthlyQuantities($query, int $storeId, string $dateColumn, string $startDate, string $endDate): array
     {
         return $query
@@ -563,7 +583,7 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
-    /** 이월 이동 기록을 월 단위로 조회해 날짜별 합계로 묶습니다. */
+    // 이월 이동 기록을 월 단위로 조회해 날짜별 합계로 묶습니다.
     private function monthlyMovementQuantities(int $storeId, string $startDate, string $endDate, string $type): array
     {
         return ProductStockMovement::query()
@@ -576,7 +596,7 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
-    /** 점포 행사·할인·단체주문 같은 분석 조건을 저장합니다. */
+    // 점포 행사·할인·단체주문 같은 분석 조건을 저장합니다.
     public function storeEvent(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -594,7 +614,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '캘린더 일정을 저장했습니다.', 'event' => $event], 201);
     }
 
-    /** 날짜를 휴점 또는 정상 영업일로 변경하며 기존 업무 기록이 있는 휴점 지정은 차단합니다. */
+    // 날짜를 휴점 또는 정상 영업일로 변경하며 기존 업무 기록이 있는 휴점 지정은 차단합니다.
     public function setStoreDayStatus(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -611,7 +631,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => $data['status'] === 'closed' ? '휴점일로 설정했습니다.' : '휴점을 해제했습니다.']);
     }
 
-    /** 기간별 생산·이월·로스·폐기 통계를 날짜별 집계 쿼리로 빠르게 반환합니다. */
+    // 기간별 생산·이월·로스·폐기 통계를 날짜별 집계 쿼리로 빠르게 반환합니다.
     public function statistics(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -709,7 +729,7 @@ class ProductionManagementController extends Controller
         ]);
     }
 
-    /** 날짜 컬럼과 quantity를 기간별로 합산해 통계용 날짜=>수량 맵을 만듭니다. */
+    // 날짜 컬럼과 quantity를 기간별로 합산해 통계용 날짜=>수량 맵을 만듭니다.
     private function sumByDate($query, int $storeId, string $dateColumn, string $from, string $to): array
     {
         return $query
@@ -723,7 +743,7 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
-    /** 날짜 범위의 quantity를 제품별로 합산해 그래프와 순위에서 재사용합니다. */
+    // 날짜 범위의 quantity를 제품별로 합산해 그래프와 순위에서 재사용합니다.
     private function sumByProduct($query, int $storeId, string $dateColumn, string $from, string $to): array
     {
         return $query
@@ -737,7 +757,7 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
-    /** 선택 기간의 흐름과 제품별 현황을 반환하며 추천 계산은 최근 28일 이내 기록만 사용합니다. */
+    // 선택 기간의 흐름과 제품별 현황을 반환하며 추천 계산은 최근 28일 이내 기록만 사용합니다.
     public function analysis(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -841,7 +861,7 @@ class ProductionManagementController extends Controller
         ]);
     }
 
-    /** 선택한 날짜의 생산 관련 변경 이력을 최신순으로 반환합니다. */
+    // 선택한 날짜의 생산 관련 변경 이력을 최신순으로 반환합니다.
     public function history(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -854,7 +874,7 @@ class ProductionManagementController extends Controller
         return response()->json(['logs' => $logs]);
     }
 
-    /** 현재 사용자의 생산 다단계 입력 임시저장을 Laravel Session에서 조회합니다. */
+    // 현재 사용자의 생산 다단계 입력 임시저장을 Laravel Session에서 조회합니다.
     public function draft(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -863,7 +883,7 @@ class ProductionManagementController extends Controller
         return response()->json(['draft' => Session::get($this->draftKey((int) $data['store_id'], $data['work_date']))]);
     }
 
-    /** 생산 다단계 입력 내용을 현재 로그인 세션에 임시저장합니다. */
+    // 생산 다단계 입력 내용을 현재 로그인 세션에 임시저장합니다.
     public function saveDraft(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -873,7 +893,7 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '작성 중인 내용을 임시저장했습니다.']);
     }
 
-    /** 현재 날짜의 생산 임시저장만 삭제하고 실제 업무 기록은 건드리지 않습니다. */
+    // 현재 날짜의 생산 임시저장만 삭제하고 실제 업무 기록은 건드리지 않습니다.
     public function deleteDraft(Request $request): JsonResponse
     {
         $user = $this->user($request);
@@ -883,16 +903,18 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => '임시저장을 삭제했습니다.']);
     }
 
-    /** 인증 사용자를 반환하고 비정상 요청은 인증 오류로 차단합니다. */
+    // 인증 사용자를 반환하고 비정상 요청은 인증 오류로 차단합니다.
     private function user(Request $request): User
     {
-        /** @var User|null $user */
+        /**
+         * @var User|null $user
+         */
         $user = $request->user();
         abort_unless($user, 401, '로그인이 필요합니다.');
         return $user;
     }
 
-    /** 일반 직원은 소속 점포, 본사/최고 관리자는 요청 점포를 사용합니다. */
+    // 일반 직원은 소속 점포, 본사/최고 관리자는 요청 점포를 사용합니다.
     private function resolveStoreId(User $user, ?int $requestedStoreId): int
     {
         if ($user->role?->code === 'super_admin' || $user->isHeadOffice()) {
@@ -902,7 +924,7 @@ class ProductionManagementController extends Controller
         return (int) $user->store_id;
     }
 
-    /** 조회 가능한 점포인지 서버에서 다시 확인합니다. */
+    // 조회 가능한 점포인지 서버에서 다시 확인합니다.
     private function assertStoreReadable(User $user, int $storeId): void
     {
         if ($user->role?->code === 'super_admin' || $user->isHeadOffice()) {
@@ -911,7 +933,7 @@ class ProductionManagementController extends Controller
         abort_unless((int) $user->store_id === $storeId, 403, '다른 점포의 데이터는 조회할 수 없습니다.');
     }
 
-    /** 사용자가 선택할 수 있는 점포 목록을 권한 범위에 맞게 반환합니다. */
+    // 사용자가 선택할 수 있는 점포 목록을 권한 범위에 맞게 반환합니다.
     private function accessibleStores(User $user)
     {
         if ($user->role?->code === 'super_admin' || $user->isHeadOffice()) {
@@ -920,7 +942,7 @@ class ProductionManagementController extends Controller
         return Store::query()->whereKey($user->store_id)->get(['id', 'name']);
     }
 
-    /** 생산 배치 요청을 검증합니다. */
+    // 생산 배치 요청을 검증합니다.
     private function validateBatch(Request $request): array
     {
         return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['array'], 'workers.*.user_id' => ['required', 'integer', 'exists:users,id'], 'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
@@ -958,7 +980,57 @@ class ProductionManagementController extends Controller
             ->get(['id', 'name', 'department']);
     }
 
-    /** 작업자로 선택된 직원이 해당 날짜에 실제 근무 예정인지 확인합니다. */
+    /**
+     * 같은 점포·제품·업무일의 확인 행을 날짜 기준으로 찾아 갱신합니다.
+     * 과거 날짜 저장 형식이 달라도 새 중복 행을 만들지 않도록 기존 행을 우선 사용합니다.
+     */
+    private function updateConfirmationForDate(int $storeId, int $productId, string $date, array $values): ProductionConfirmation
+    {
+        $confirmation = ProductionConfirmation::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', $date)
+            ->first();
+
+        if (! $confirmation) {
+            $confirmation = new ProductionConfirmation([
+                'store_id' => $storeId,
+                'product_id' => $productId,
+                'work_date' => $date,
+            ]);
+        }
+
+        $confirmation->fill($values);
+        $confirmation->save();
+
+        return $confirmation;
+    }
+
+    /**
+     * 같은 점포·업무일의 마감 행을 날짜 기준으로 찾아 갱신합니다.
+     * 기존 날짜 형식 차이 때문에 마감 행이 중복 생성되는 문제를 방지합니다.
+     */
+    private function updateDailyClosureForDate(int $storeId, string $date, array $values): ProductionDailyClosure
+    {
+        $closure = ProductionDailyClosure::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->first();
+
+        if (! $closure) {
+            $closure = new ProductionDailyClosure([
+                'store_id' => $storeId,
+                'work_date' => $date,
+            ]);
+        }
+
+        $closure->fill($values);
+        $closure->save();
+
+        return $closure;
+    }
+
+    // 작업자로 선택된 직원이 해당 날짜에 실제 근무 예정인지 확인합니다.
     private function assertWorkersScheduled(int $storeId, string $date, array $workers): void
     {
         if (empty($workers)) {
@@ -969,34 +1041,37 @@ class ProductionManagementController extends Controller
         abort_unless($ids->diff($allowed)->isEmpty(), 422, '선택한 작업자의 점포 소속 또는 재직 상태를 확인해주세요.');
     }
 
-    /** 마감된 날짜의 일반 수정을 차단합니다. */
+    // 마감된 날짜의 일반 수정을 차단합니다.
     private function assertDateUnlocked(int $storeId, string $date): void
     {
         $closed = ProductionDailyClosure::query()->where('store_id', $storeId)->whereDate('work_date', $date)->where('status', 'closed')->exists();
         abort_if($closed, 422, '이미 마감된 날짜입니다. 마감 후 수정 기능을 이용해주세요.');
     }
 
-    /** 선택 날짜에 적용되는 행사 목록을 반환합니다. */
+    // 선택 날짜에 적용되는 행사 목록을 반환합니다.
     private function eventsForDate(int $storeId, string $date): array
     {
         return StoreCalendarEvent::query()->with('products:id,name')->where('store_id', $storeId)->whereDate('start_date', '<=', $date)->whereDate('end_date', '>=', $date)->orderBy('start_date')->get()->toArray();
     }
 
-    /** 선택 날짜보다 이전에 남아 있는 가장 오래된 미마감 영업일을 찾습니다. */
+    // 선택 날짜보다 이전에 남아 있는 가장 오래된 미마감 영업일을 찾습니다.
     private function blockingPreviousDate(int $storeId, string $date): ?string
     {
         $start = Carbon::parse($date)->subDays(30);
         $target = Carbon::parse($date)->subDay();
         for ($cursor = $start; $cursor->lte($target); $cursor->addDay()) {
-            $closedDay = StoreDailyStatus::query()->where('store_id', $storeId)->whereDate('work_date', $cursor)->where('status', 'closed')->exists();
+            // whereDate 비교값은 DB와 동일한 Y-m-d 문자열로 고정해 DB 엔진별 날짜 바인딩 차이를 없앱니다.
+            $cursorDate = $cursor->toDateString();
+
+            $closedDay = StoreDailyStatus::query()->where('store_id', $storeId)->whereDate('work_date', $cursorDate)->where('status', 'closed')->exists();
             if ($closedDay) {
                 continue;
             }
-            $hasData = ProductionBatch::query()->where('store_id', $storeId)->whereDate('work_date', $cursor)->exists() || ProductionConfirmation::query()->where('store_id', $storeId)->whereDate('work_date', $cursor)->exists();
+            $hasData = ProductionBatch::query()->where('store_id', $storeId)->whereDate('work_date', $cursorDate)->exists() || ProductionConfirmation::query()->where('store_id', $storeId)->whereDate('work_date', $cursorDate)->exists();
             if (!$hasData) {
                 continue;
             }
-            $closed = ProductionDailyClosure::query()->where('store_id', $storeId)->whereDate('work_date', $cursor)->where('status', 'closed')->exists();
+            $closed = ProductionDailyClosure::query()->where('store_id', $storeId)->whereDate('work_date', $cursorDate)->where('status', 'closed')->exists();
             if (!$closed) {
                 return $cursor->toDateString();
             }
@@ -1004,7 +1079,7 @@ class ProductionManagementController extends Controller
         return null;
     }
 
-    /** 로스 기록과 사유 배분을 현재 입력값으로 교체합니다. */
+    // 로스 기록과 사유 배분을 현재 입력값으로 교체합니다.
     private function replaceLosses(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
         $old = ProductionLoss::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->get();
@@ -1022,7 +1097,7 @@ class ProductionManagementController extends Controller
         }
     }
 
-    /** 폐기 기록과 사유 배분을 현재 입력값으로 교체합니다. */
+    // 폐기 기록과 사유 배분을 현재 입력값으로 교체합니다.
     private function replaceWastes(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
         $old = ProductionWaste::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->get();
@@ -1042,7 +1117,7 @@ class ProductionManagementController extends Controller
         }
     }
 
-    /** 시식·서비스·직원사용 등 기타 출고를 현재 입력값으로 교체합니다. */
+    // 시식·서비스·직원사용 등 기타 출고를 현재 입력값으로 교체합니다.
     private function replaceOutflows(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
         ProductionOtherOutflow::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->delete();
@@ -1052,7 +1127,7 @@ class ProductionManagementController extends Controller
         }
     }
 
-    /** 다음 날 이월을 동일 재고 lot의 이동으로 기록하여 수량이 새로 생기지 않게 합니다. */
+    // 다음 날 이월을 동일 재고 lot의 이동으로 기록하여 수량이 새로 생기지 않게 합니다.
     private function replaceCarryover(int $storeId, int $productId, string $date, int $quantity, string $source, int $userId): void
     {
         $existing = ProductStockMovement::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->where('movement_type', 'carryover_out')->get();
@@ -1071,14 +1146,14 @@ class ProductionManagementController extends Controller
         $lot->update(['remaining_quantity' => $quantity, 'status' => 'active']);
     }
 
-    /** 해당 날짜에 들어온 이월과 연결된 원산지 재고 lot를 찾습니다. */
+    // 해당 날짜에 들어온 이월과 연결된 원산지 재고 lot를 찾습니다.
     private function incomingLotForDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
         $movement = ProductStockMovement::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->latest('id')->first();
         return $movement ? ProductStockLot::query()->find($movement->stock_lot_id) : null;
     }
 
-    /** 해당 날짜의 당일 생산 또는 들어온 이월과 연결된 재고 lot를 찾습니다. */
+    // 해당 날짜의 당일 생산 또는 들어온 이월과 연결된 재고 lot를 찾습니다.
     private function lotForProductDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
         $batchLot = ProductStockLot::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('origin_production_date', $date)->latest('id')->first();
@@ -1089,7 +1164,7 @@ class ProductionManagementController extends Controller
         return $movement ? ProductStockLot::query()->find($movement->stock_lot_id) : null;
     }
 
-    /** 로그인 사용자·점포·날짜별로 격리된 생산 임시저장 Session 키를 만듭니다. */
+    // 로그인 사용자·점포·날짜별로 격리된 생산 임시저장 Session 키를 만듭니다.
     private function draftKey(int $storeId, string $date): string
     {
         return 'production.draft.' . auth()->id() . '.' . $storeId . '.' . $date;

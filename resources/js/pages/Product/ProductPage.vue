@@ -310,10 +310,16 @@
         persistent
         @after-leave="resetRecipeDialogState"
       >
-        <v-card class="recipe-dialog" rounded="lg">
+        <v-card
+            class="recipe-dialog"
+            rounded="lg"
+        >
           <div class="recipe-dialog-header">
             <div class="recipe-dialog-header-icon">
-              <v-icon :icon="recipeDialogIcon" size="22" />
+              <v-icon
+                  :icon="recipeDialogIcon"
+                  size="22"
+              />
             </div>
             <div class="min-width-0">
               <div class="text-h6 font-weight-bold">{{ recipeDialogTitle }}</div>
@@ -335,8 +341,18 @@
 
             <section v-if="recipeEditMode === 'full' || recipeEditMode === 'basic'" class="recipe-form-section recipe-form-section--basic">
               <div class="recipe-form-section-title"><v-icon icon="mdi-notebook-outline" size="18" />기본 내용</div>
-              <v-text-field v-model="recipe.name" label="레시피명 *" variant="outlined" />
-              <v-textarea v-model="recipe.description" label="설명" variant="outlined" auto-grow rows="2" />
+              <v-text-field
+                  v-model="recipe.name"
+                  label="레시피명 *"
+                  variant="outlined"
+              />
+              <v-textarea
+                  v-model="recipe.description"
+                  label="설명"
+                  variant="outlined"
+                  auto-grow
+                  rows="2"
+              />
             </section>
 
             <section v-if="recipeEditMode === 'full' || recipeEditMode === 'ingredient'" class="recipe-form-section">
@@ -432,7 +448,15 @@
                   <div class="recipe-builder-number">
                     {{ String(actualStepIndex(index) + 1).padStart(2, '0') }}
                   </div>
-                  <v-textarea v-model="step.description" label="공정 내용 *" variant="outlined" density="comfortable" auto-grow rows="3" hide-details />
+                  <v-textarea
+                      v-model="step.description"
+                      label="공정 내용 *"
+                      variant="outlined"
+                      density="comfortable"
+                      auto-grow
+                      rows="3"
+                      hide-details
+                  />
                   <div v-if="recipeEditMode === 'full'" class="recipe-step-actions">
                     <v-btn
                       icon="mdi-chevron-up"
@@ -450,7 +474,13 @@
                       aria-label="공정 아래로 이동"
                       @click="moveRecipeStep(actualStepIndex(index), 1)"
                     />
-                    <v-btn icon="mdi-close" size="small" variant="text" aria-label="공정 삭제" @click="requestRemoveRecipeStep(actualStepIndex(index))" />
+                    <v-btn
+                        icon="mdi-close"
+                        size="small"
+                        variant="text"
+                        aria-label="공정 삭제"
+                        @click="requestRemoveRecipeStep(actualStepIndex(index))"
+                    />
                   </div>
                 </div>
               </div>
@@ -472,7 +502,10 @@
               class="recipe-form-section"
             >
               <div class="recipe-form-section-title">
-                <v-icon icon="mdi-clock-outline" size="18" />
+                <v-icon
+                    icon="mdi-clock-outline"
+                    size="18"
+                />
                 시스템 정보
               </div>
               <div class="recipe-system-grid">
@@ -534,17 +567,17 @@ const {
   completePageLoading,
 } = useAppLoading();
 
-/** 서버 원본 데이터 */
+// 서버 원본 데이터
 const products = ref([]);
 const categories = ref([]);
 const visibleStores = ref([]);
 
-/** 현재 화면 사용자 및 제품 선택 상태 */
+// 현재 화면 사용자 및 제품 선택 상태
 const currentUser = ref(null);
 const selectedProduct = ref(null);
 const productDraft = ref(null);
 
-/** 다이얼로그 상태 */
+// 다이얼로그 상태
 const registerDialog = ref(false);
 const detailDialog = ref(false);
 const editDialog = ref(false);
@@ -559,10 +592,10 @@ const cloneFromRecipe = ref(false);
 const cloneInitialSnapshot = ref('');
 const recentViewed = ref([]);
 
-/** 제품 API 중복 요청을 막기 위한 현재 작업 상태 */
+// 제품 API 중복 요청을 막기 위한 현재 작업 상태
 const productActionLoading = ref(null);
 
-/** 목록 검색/필터/페이지 상태 */
+// 목록 검색/필터/페이지 상태
 const searchQuery = ref('');
 const categoryFilter = ref('all');
 const statusFilter = ref('active');
@@ -572,7 +605,7 @@ const itemsPerPage = ref(10);
 const currentPage = ref(1);
 const paginationRef = ref(null);
 
-/** 삭제/복구/취급상태 변경/중요 수정에서 재사용하는 확인창 */
+// 삭제/복구/취급상태 변경/중요 수정에서 재사용하는 확인창
 const confirmDialog = reactive({
   open: false,
   action: null,
@@ -582,7 +615,7 @@ const confirmDialog = reactive({
   payload: null,
 });
 
-/** 레시피 등록/수정 입력 상태 */
+// 레시피 등록/수정 입력 상태
 let recipeRowKey = 0;
 const recipe = reactive(createEmptyRecipe());
 const editingRecipeId = ref(null);
@@ -751,7 +784,7 @@ const hasActiveFilters = computed(() => Boolean(
   || storeFilter.value !== 'all',
 ));
 
-/** 모든 검색/필터는 서버 재요청 없이 현재 조회된 제품 배열에서 즉시 처리합니다. */
+// 모든 검색/필터는 서버 재요청 없이 현재 조회된 제품 배열에서 즉시 처리합니다.
 const filteredProducts = computed(() => {
   const keyword = String(searchQuery.value ?? '')
     .trim()
@@ -803,7 +836,7 @@ const pageEnd = computed(() => Math.min(
   filteredProducts.value.length,
 ));
 
-/** 검색 조건이 바뀌면 존재하지 않는 높은 페이지에 남지 않도록 1페이지로 이동합니다. */
+// 검색 조건이 바뀌면 존재하지 않는 높은 페이지에 남지 않도록 1페이지로 이동합니다.
 watch(
   [searchQuery, categoryFilter, statusFilter, salesTypeFilter, storeFilter, itemsPerPage],
   () => {
@@ -811,7 +844,7 @@ watch(
   },
 );
 
-/** 점포 필터 변경 후 선택 카테고리가 범위를 벗어나면 카테고리를 초기화합니다. */
+// 점포 필터 변경 후 선택 카테고리가 범위를 벗어나면 카테고리를 초기화합니다.
 watch(storeFilter, () => {
   if (!categoryFilterItems.value.some(
     (item) => String(item.value) === String(categoryFilter.value),
@@ -826,7 +859,7 @@ watch(totalPages, (pages) => {
   }
 });
 
-/** 제품 관리 화면 데이터를 조회합니다. */
+// 제품 관리 화면 데이터를 조회합니다.
 async function load() {
   const response = await window.axios.get('/tillwhite/api/products');
 
@@ -835,7 +868,7 @@ async function load() {
   visibleStores.value = response.data.stores ?? [];
 }
 
-/** 최초 제품 조회를 완료한 뒤 보조 기능인 최근 본 제품을 별도로 불러옵니다. */
+// 최초 제품 조회를 완료한 뒤 보조 기능인 최근 본 제품을 별도로 불러옵니다.
 async function initialLoad() {
   try {
     await load();
@@ -856,7 +889,7 @@ async function initialLoad() {
   }
 }
 
-/** 카테고리 관리 권한을 확인하고 관리 다이얼로그를 엽니다. */
+// 카테고리 관리 권한을 확인하고 관리 다이얼로그를 엽니다.
 function openCategoryDialog(can, setError) {
   if (!can('product.manage')) {
     setError('카테고리를 관리할 권한이 없습니다.');
@@ -866,7 +899,7 @@ function openCategoryDialog(can, setError) {
   categoryDialog.value = true;
 }
 
-/** 카테고리 변경은 실제 API 요청 전에 공통 확인창을 한 번만 거칩니다. */
+// 카테고리 변경은 실제 API 요청 전에 공통 확인창을 한 번만 거칩니다.
 function requestCategoryCreate(payload, setError, setSuccess) {
   openConfirm(
     'category-create',
@@ -877,7 +910,7 @@ function requestCategoryCreate(payload, setError, setSuccess) {
   );
 }
 
-/** 카테고리명 수정 전에 공통 확인창을 엽니다. */
+// 카테고리명 수정 전에 공통 확인창을 엽니다.
 function requestCategoryRename(payload, setError, setSuccess) {
   openConfirm(
     'category-rename',
@@ -888,7 +921,7 @@ function requestCategoryRename(payload, setError, setSuccess) {
   );
 }
 
-/** 카테고리 사용 상태 변경 전에 영향 범위를 안내합니다. */
+// 카테고리 사용 상태 변경 전에 영향 범위를 안내합니다.
 function requestCategoryToggle(category, setError, setSuccess) {
   const actionText = category.is_active ? '사용을 중단' : '다시 사용';
 
@@ -901,7 +934,7 @@ function requestCategoryToggle(category, setError, setSuccess) {
   );
 }
 
-/** 관리 화면의 수동 순서 변경도 다른 영속 변경과 동일한 확인 흐름을 사용합니다. */
+// 관리 화면의 수동 순서 변경도 다른 영속 변경과 동일한 확인 흐름을 사용합니다.
 function requestCategoryReorder({ category, direction }, setError, setSuccess) {
   const directionText = direction < 0 ? '위로' : '아래로';
 
@@ -914,7 +947,7 @@ function requestCategoryReorder({ category, direction }, setError, setSuccess) {
   );
 }
 
-/** 카테고리 API 요청의 로딩·성공·실패 처리를 공통화합니다. */
+// 카테고리 API 요청의 로딩·성공·실패 처리를 공통화합니다.
 async function runCategoryRequest(
   request,
   successMessage,
@@ -943,7 +976,7 @@ async function runCategoryRequest(
   }
 }
 
-/** 카테고리 등록 API를 공통 요청 처리기로 실행합니다. */
+// 카테고리 등록 API를 공통 요청 처리기로 실행합니다.
 function createCategory(payload, setError, setSuccess) {
   return runCategoryRequest(
     () => window.axios.post(
@@ -956,7 +989,7 @@ function createCategory(payload, setError, setSuccess) {
   );
 }
 
-/** 카테고리명 수정 API를 공통 요청 처리기로 실행합니다. */
+// 카테고리명 수정 API를 공통 요청 처리기로 실행합니다.
 function renameCategory({ category, name }, setError, setSuccess) {
   return runCategoryRequest(
     () => window.axios.put(
@@ -969,7 +1002,7 @@ function renameCategory({ category, name }, setError, setSuccess) {
   );
 }
 
-/** 카테고리 사용 상태 변경 API를 공통 요청 처리기로 실행합니다. */
+// 카테고리 사용 상태 변경 API를 공통 요청 처리기로 실행합니다.
 function toggleCategory(category, setError, setSuccess) {
   const successMessage = category.is_active
     ? '카테고리 사용을 중단했습니다.'
@@ -985,7 +1018,7 @@ function toggleCategory(category, setError, setSuccess) {
   );
 }
 
-/** 숨겨 둔 수동 정렬 API 기능을 기존 호환을 위해 유지합니다. */
+// 숨겨 둔 수동 정렬 API 기능을 기존 호환을 위해 유지합니다.
 function reorderCategory(category, direction, setError, setSuccess) {
   return runCategoryRequest(
     () => window.axios.put(
@@ -998,7 +1031,7 @@ function reorderCategory(category, direction, setError, setSuccess) {
   );
 }
 
-/** 제품 등록 권한과 Laravel Session draft를 확인한 뒤 등록창을 엽니다. */
+// 제품 등록 권한과 Laravel Session draft를 확인한 뒤 등록창을 엽니다.
 async function openRegisterDialog(user, can, setError) {
   if (!can('product.manage')) {
     setError('제품을 등록할 권한이 없습니다.');
@@ -1031,7 +1064,7 @@ async function openRegisterDialog(user, can, setError) {
   }
 }
 
-/** 제품 등록 draft 저장 전 직원관리와 동일하게 공통 확인창을 표시합니다. */
+// 제품 등록 draft 저장 전 직원관리와 동일하게 공통 확인창을 표시합니다.
 function requestSaveProductDraft(payload, setError, setSuccess) {
   if (productActionLoading.value) {
     return;
@@ -1049,7 +1082,7 @@ function requestSaveProductDraft(payload, setError, setSuccess) {
   confirmDialog.open = true;
 }
 
-/** 제품 등록 draft 전체삭제 전 공통 확인창을 표시합니다. */
+// 제품 등록 draft 전체삭제 전 공통 확인창을 표시합니다.
 function requestClearProductDraft(setError, setSuccess) {
   if (productActionLoading.value) {
     return;
@@ -1066,7 +1099,7 @@ function requestClearProductDraft(setError, setSuccess) {
   confirmDialog.open = true;
 }
 
-/** 현재 제품 등록 내용을 Laravel Session에 임시저장합니다. */
+// 현재 제품 등록 내용을 Laravel Session에 임시저장합니다.
 async function saveProductDraft(payload, setError, setSuccess) {
   if (productActionLoading.value) {
     return;
@@ -1096,7 +1129,7 @@ async function saveProductDraft(payload, setError, setSuccess) {
   }
 }
 
-/** Laravel Session draft와 현재 등록 폼을 함께 초기화합니다. */
+// Laravel Session draft와 현재 등록 폼을 함께 초기화합니다.
 async function clearProductDraft(setError, setSuccess) {
   if (productActionLoading.value) {
     return;
@@ -1130,12 +1163,12 @@ async function clearProductDraft(setError, setSuccess) {
   }
 }
 
-/** 제품 등록은 서버 반영 직전에 한 번 확인하여 오등록을 방지합니다. */
+// 제품 등록은 서버 반영 직전에 한 번 확인하여 오등록을 방지합니다.
 function requestProductCreate(payload, setError, setSuccess) {
   openConfirm('create', '제품을 등록하시겠습니까?', `‘${payload.name}’ 제품을 등록합니다.`, '등록', { payload, setError, setSuccess });
 }
 
-/** 신규 제품을 저장합니다. */
+// 신규 제품을 저장합니다.
 async function saveProduct(payload, setError, setSuccess) {
   if (productActionLoading.value) {
     return;
@@ -1162,7 +1195,7 @@ async function saveProduct(payload, setError, setSuccess) {
   }
 }
 
-/** 제품 카드를 누르면 서버에서 최신 상세정보와 접근 권한을 다시 확인합니다. */
+// 제품 카드를 누르면 서버에서 최신 상세정보와 접근 권한을 다시 확인합니다.
 async function openDetailDialog(product, user, setError) {
   currentUser.value = user;
   selectedProduct.value = null;
@@ -1181,7 +1214,7 @@ async function openDetailDialog(product, user, setError) {
   }
 }
 
-/** 제품 상세와 연결된 하위 다이얼로그를 함께 닫습니다. */
+// 제품 상세와 연결된 하위 다이얼로그를 함께 닫습니다.
 function closeDetailDialog() {
   if (productActionLoading.value) {
     return;
@@ -1194,14 +1227,14 @@ function closeDetailDialog() {
   recipeDialog.value = false;
 }
 
-/** 상세 다이얼로그 퇴장 애니메이션이 끝난 뒤 선택 제품을 비웁니다. */
+// 상세 다이얼로그 퇴장 애니메이션이 끝난 뒤 선택 제품을 비웁니다.
 function clearClosedDetailState() {
   if (!detailDialog.value) {
     selectedProduct.value = null;
   }
 }
 
-/** 삭제 상태를 확인한 뒤 제품 수정 다이얼로그를 엽니다. */
+// 삭제 상태를 확인한 뒤 제품 수정 다이얼로그를 엽니다.
 function openEditDialog() {
   if (!selectedProduct.value) return;
 
@@ -1229,12 +1262,12 @@ function canManageProduct(product, user, can) {
   return Number(user?.store?.id) === Number(product.store_id);
 }
 
-/** 현재 선택 제품에 대한 제품 관리 가능 여부를 계산합니다. */
+// 현재 선택 제품에 대한 제품 관리 가능 여부를 계산합니다.
 function canManageSelectedProduct(can) {
   return canManageProduct(selectedProduct.value, currentUser.value, can);
 }
 
-/** 현재 선택 제품의 레시피 관리 가능 여부를 계산합니다. */
+// 현재 선택 제품의 레시피 관리 가능 여부를 계산합니다.
 function canManageSelectedRecipe(can) {
   if (!selectedProduct.value || !can('recipe.manage')) {
     return false;
@@ -1247,7 +1280,7 @@ function canManageSelectedRecipe(can) {
   return Number(currentUser.value?.store?.id) === Number(selectedProduct.value.store_id);
 }
 
-/** 수정 시 가격/상태/판매기간 등 영향이 큰 변경사항은 확인창을 한 번 더 표시합니다. */
+// 수정 시 가격/상태/판매기간 등 영향이 큰 변경사항은 확인창을 한 번 더 표시합니다.
 function requestProductEdit(payload, setError, setSuccess) {
   if (!selectedProduct.value || productActionLoading.value) return;
 
@@ -1260,7 +1293,7 @@ function requestProductEdit(payload, setError, setSuccess) {
   );
 }
 
-/** 제품 수정 내용을 서버에 저장하고 최신 상세정보를 다시 조회합니다. */
+// 제품 수정 내용을 서버에 저장하고 최신 상세정보를 다시 조회합니다.
 async function saveProductEdit(payload, setError, setSuccess) {
   if (!selectedProduct.value || productActionLoading.value) {
     return;
@@ -1306,7 +1339,7 @@ function requestCardProductStatus(product, nextActive) {
   requestProductAction('toggle');
 }
 
-/** 상세 화면의 취급중단/삭제/복구 버튼에서 공통 확인창을 엽니다. */
+// 상세 화면의 취급중단/삭제/복구 버튼에서 공통 확인창을 엽니다.
 function requestProductAction(action) {
   if (!selectedProduct.value || productActionLoading.value) {
     return;
@@ -1348,7 +1381,7 @@ function requestProductAction(action) {
   confirmDialog.open = true;
 }
 
-/** 공통 확인창에서 승인된 작업을 실제 API 동작으로 분기합니다. */
+// 공통 확인창에서 승인된 작업을 실제 API 동작으로 분기합니다.
 async function executeConfirmedAction(setError, setSuccess) {
   const action = confirmDialog.action;
 
@@ -1534,7 +1567,7 @@ async function executeConfirmedAction(setError, setSuccess) {
   }
 }
 
-/** 제품 복제 또는 레시피 기반 새 제품 생성 다이얼로그를 엽니다. */
+// 제품 복제 또는 레시피 기반 새 제품 생성 다이얼로그를 엽니다.
 function openCloneProductDialog(fromRecipe = false) {
   if (!selectedProduct.value || selectedProduct.value.deleted_at) {
     appShellRef.value?.setError?.('삭제된 제품은 복제할 수 없습니다.');
@@ -1551,7 +1584,7 @@ function openCloneProductDialog(fromRecipe = false) {
   cloneProductDialog.value = true;
 }
 
-/** 제품 복제/새 제품 만들기에서 입력이 바뀐 경우 닫기 전에 유실 여부를 확인합니다. */
+// 제품 복제/새 제품 만들기에서 입력이 바뀐 경우 닫기 전에 유실 여부를 확인합니다.
 function requestCloseCloneProductDialog() {
   if (productActionLoading.value === 'clone-product') {
     return;
@@ -1575,7 +1608,7 @@ function requestCloseCloneProductDialog() {
   cloneProductDialog.value = false;
 }
 
-/** 새 제품과 선택한 레시피 복사본을 서버에서 하나의 트랜잭션으로 생성합니다. */
+// 새 제품과 선택한 레시피 복사본을 서버에서 하나의 트랜잭션으로 생성합니다.
 async function createClonedProduct(setError, setSuccess) {
   if (
     !selectedProduct.value
@@ -1614,7 +1647,7 @@ async function createClonedProduct(setError, setSuccess) {
   }
 }
 
-/** 레시피 삭제는 실제 행을 제거하지 않고 Soft Delete 확인창을 거칩니다. */
+// 레시피 삭제는 실제 행을 제거하지 않고 Soft Delete 확인창을 거칩니다.
 function requestRecipeDelete(setError, setSuccess, requestedRecipe = null) {
   const target = requestedRecipe ?? displayedSelectedRecipe.value;
   if (!target || target.deleted_at) {
@@ -1630,7 +1663,7 @@ function requestRecipeDelete(setError, setSuccess, requestedRecipe = null) {
   );
 }
 
-/** 삭제된 레시피 복구도 동일한 확인 규칙을 사용합니다. */
+// 삭제된 레시피 복구도 동일한 확인 규칙을 사용합니다.
 function requestRecipeRestore(setError, setSuccess, requestedRecipe = null) {
   const target = requestedRecipe ?? displayedSelectedRecipe.value;
   if (!target?.deleted_at) {
@@ -1646,7 +1679,7 @@ function requestRecipeRestore(setError, setSuccess, requestedRecipe = null) {
   );
 }
 
-/** 최근 본 제품은 Laravel Session에 저장하여 화면을 다시 열어도 이어서 제공합니다. */
+// 최근 본 제품은 Laravel Session에 저장하여 화면을 다시 열어도 이어서 제공합니다.
 async function rememberRecentViewed(productId) {
   try {
     const response = await window.axios.post(
@@ -1659,7 +1692,7 @@ async function rememberRecentViewed(productId) {
   }
 }
 
-/** 최근 본 제품 칩을 선택하면 해당 제품의 최신 상세정보를 다시 조회합니다. */
+// 최근 본 제품 칩을 선택하면 해당 제품의 최신 상세정보를 다시 조회합니다.
 async function openRecentItem(item, user, setError) {
   const product = products.value.find(
     (candidate) => Number(candidate.id) === Number(item.id),
@@ -1671,7 +1704,7 @@ async function openRecentItem(item, user, setError) {
   await openDetailDialog(product, user, setError);
 }
 
-/** 레시피는 제품 상세 안에 있으므로 제품 보기 동작은 상세 상단으로 초점을 돌립니다. */
+// 레시피는 제품 상세 안에 있으므로 제품 보기 동작은 상세 상단으로 초점을 돌립니다.
 function focusProductInfo() {
   document
     .querySelector('.product-detail-dialog .detail-scroll-area')
@@ -1681,7 +1714,7 @@ function focusProductInfo() {
     });
 }
 
-/** 활성 레시피를 다른 제품으로 복사할 대상 선택창을 엽니다. */
+// 활성 레시피를 다른 제품으로 복사할 대상 선택창을 엽니다.
 function openRecipeCopyDialog() {
   if (!selectedProduct.value || selectedProduct.value.deleted_at) {
     appShellRef.value?.setError?.('삭제된 제품입니다. 복구 후 레시피를 관리해주세요.');
@@ -1694,7 +1727,7 @@ function openRecipeCopyDialog() {
   recipeCopyDialog.value = true;
 }
 
-/** 복사 대상을 선택한 뒤 취소하면 선택 내용이 사라짐을 한 번 확인합니다. */
+// 복사 대상을 선택한 뒤 취소하면 선택 내용이 사라짐을 한 번 확인합니다.
 function requestCloseRecipeCopyDialog() {
   if (productActionLoading.value === 'recipe-copy') {
     return;
@@ -1713,7 +1746,7 @@ function requestCloseRecipeCopyDialog() {
   recipeCopyDialog.value = false;
 }
 
-/** 레시피 복사 전에 대상 제품과 작업 내용을 확인합니다. */
+// 레시피 복사 전에 대상 제품과 작업 내용을 확인합니다.
 function requestRecipeCopy(setError, setSuccess) {
   if (!recipeCopyTargetId.value) return;
 
@@ -1730,7 +1763,7 @@ function requestRecipeCopy(setError, setSuccess) {
   );
 }
 
-/** 선택한 제품에 독립된 새 레시피를 복사합니다. */
+// 선택한 제품에 독립된 새 레시피를 복사합니다.
 async function copyRecipe(setError, setSuccess) {
   const sourceRecipe = activeSelectedRecipe.value;
   if (!sourceRecipe || !recipeCopyTargetId.value || productActionLoading.value) return;
@@ -1754,7 +1787,7 @@ async function copyRecipe(setError, setSuccess) {
   }
 }
 
-/** 레시피 전체 등록/수정 화면을 엽니다. */
+// 레시피 전체 등록/수정 화면을 엽니다.
 function openRecipeDialog() {
   if (!selectedProduct.value) return;
 
@@ -1772,7 +1805,7 @@ function openRecipeDialog() {
   recipeDialog.value = true;
 }
 
-/** 상세 카드에서 선택한 재료/공정/기본 내용만 빠르게 수정합니다. */
+// 상세 카드에서 선택한 재료/공정/기본 내용만 빠르게 수정합니다.
 function openRecipePartDialog(part) {
   if (selectedProduct.value?.deleted_at) {
     appShellRef.value?.setError?.('삭제된 제품입니다. 복구 후 레시피를 관리해주세요.');
@@ -1790,27 +1823,27 @@ function openRecipePartDialog(part) {
   recipeDialog.value = true;
 }
 
-/** 부분 수정 모드에서 실제 재료 배열 인덱스를 계산합니다. */
+// 부분 수정 모드에서 실제 재료 배열 인덱스를 계산합니다.
 function actualIngredientIndex(index) {
   return recipeEditMode.value === 'ingredient' ? recipeEditIndex.value : index;
 }
 
-/** 부분 수정 모드에서 실제 공정 배열 인덱스를 계산합니다. */
+// 부분 수정 모드에서 실제 공정 배열 인덱스를 계산합니다.
 function actualStepIndex(index) {
   return recipeEditMode.value === 'step' ? recipeEditIndex.value : index;
 }
 
-/** 레시피에 빈 재료 입력 행을 추가합니다. */
+// 레시피에 빈 재료 입력 행을 추가합니다.
 function addRecipeIngredient() {
   recipe.ingredients.push(createIngredientRow());
 }
 
-/** 지정한 재료 입력 행을 현재 편집 목록에서 제거합니다. */
+// 지정한 재료 입력 행을 현재 편집 목록에서 제거합니다.
 function removeRecipeIngredient(index) {
   recipe.ingredients.splice(index, 1);
 }
 
-/** 입력된 재료를 제거할 때만 확인창을 표시합니다. */
+// 입력된 재료를 제거할 때만 확인창을 표시합니다.
 function requestRemoveRecipeIngredient(index) {
   const item = recipe.ingredients[index];
   if (!item) return;
@@ -1823,17 +1856,17 @@ function requestRemoveRecipeIngredient(index) {
   openConfirm('recipe-remove-ingredient', '재료를 삭제하시겠습니까?', `‘${item.name || `재료 ${index + 1}`}’ 항목을 현재 편집 내용에서 삭제합니다.`, '삭제', { index });
 }
 
-/** 레시피에 빈 공정 입력 행을 추가합니다. */
+// 레시피에 빈 공정 입력 행을 추가합니다.
 function addRecipeStep() {
   recipe.steps.push(createStepRow());
 }
 
-/** 지정한 공정 입력 행을 현재 편집 목록에서 제거합니다. */
+// 지정한 공정 입력 행을 현재 편집 목록에서 제거합니다.
 function removeRecipeStep(index) {
   recipe.steps.splice(index, 1);
 }
 
-/** 입력된 공정을 제거할 때만 확인창을 표시합니다. */
+// 입력된 공정을 제거할 때만 확인창을 표시합니다.
 function requestRemoveRecipeStep(index) {
   const step = recipe.steps[index];
   if (!step) return;
@@ -1846,7 +1879,7 @@ function requestRemoveRecipeStep(index) {
   openConfirm('recipe-remove-step', '공정을 삭제하시겠습니까?', `공정 ${index + 1}의 입력 내용을 삭제합니다.`, '삭제', { index });
 }
 
-/** 공정 순서를 현재 편집 목록 안에서 한 칸 이동합니다. */
+// 공정 순서를 현재 편집 목록 안에서 한 칸 이동합니다.
 function moveRecipeStep(index, direction) {
   const target = index + direction;
   if (target < 0 || target >= recipe.steps.length) return;
@@ -1854,7 +1887,7 @@ function moveRecipeStep(index, direction) {
   recipe.steps.splice(target, 0, step);
 }
 
-/** 미저장 레시피 변경사항을 확인한 뒤 닫기 흐름을 결정합니다. */
+// 미저장 레시피 변경사항을 확인한 뒤 닫기 흐름을 결정합니다.
 function requestCloseRecipeDialog() {
   if (productActionLoading.value === 'recipe') return;
 
@@ -1871,7 +1904,7 @@ function requestCloseRecipeDialog() {
   );
 }
 
-/** 레시피 저장 전에 공통 확인창을 표시합니다. */
+// 레시피 저장 전에 공통 확인창을 표시합니다.
 function requestRecipeSave(setError, setSuccess) {
   if (!canSaveRecipe.value) return;
 
@@ -1884,14 +1917,14 @@ function requestRecipeSave(setError, setSuccess) {
   );
 }
 
-/** 레시피 다이얼로그를 닫되 퇴장 중 상태 변경으로 인한 깜빡임을 막습니다. */
+// 레시피 다이얼로그를 닫되 퇴장 중 상태 변경으로 인한 깜빡임을 막습니다.
 function closeRecipeDialog() {
   // 퇴장 애니메이션 중 편집 모드를 바꾸면 다른 레시피 화면이 순간적으로 보일 수 있습니다.
   // 실제 상태 초기화는 @after-leave에서 처리합니다.
   recipeDialog.value = false;
 }
 
-/** 레시피 다이얼로그가 완전히 닫힌 뒤 편집 상태를 초기화합니다. */
+// 레시피 다이얼로그가 완전히 닫힌 뒤 편집 상태를 초기화합니다.
 function resetRecipeDialogState() {
   editingRecipeId.value = null;
   recipeEditMode.value = 'full';
@@ -1899,7 +1932,7 @@ function resetRecipeDialogState() {
   recipeInitialSnapshot.value = '';
 }
 
-/** 레시피 등록 또는 수정 내용을 서버에 저장합니다. */
+// 레시피 등록 또는 수정 내용을 서버에 저장합니다.
 async function saveRecipe(setError, setSuccess) {
   if (!selectedProduct.value || !canSaveRecipe.value) return;
 
@@ -1954,7 +1987,7 @@ async function saveRecipe(setError, setSuccess) {
   }
 }
 
-/** 실제로 값이 입력된 재료 행만 저장 대상으로 반환합니다. */
+// 실제로 값이 입력된 재료 행만 저장 대상으로 반환합니다.
 function meaningfulIngredients() {
   return recipe.ingredients.filter((item) => (
     item.name.trim()
@@ -1963,12 +1996,12 @@ function meaningfulIngredients() {
   ));
 }
 
-/** 실제로 내용이 입력된 공정 행만 저장 대상으로 반환합니다. */
+// 실제로 내용이 입력된 공정 행만 저장 대상으로 반환합니다.
 function meaningfulSteps() {
   return recipe.steps.filter((step) => step.description.trim());
 }
 
-/** 레시피 편집 상태를 비교 가능한 문자열로 만듭니다. */
+// 레시피 편집 상태를 비교 가능한 문자열로 만듭니다.
 function recipeSnapshot() {
   return JSON.stringify({
     name: recipe.name,
@@ -1978,12 +2011,12 @@ function recipeSnapshot() {
   });
 }
 
-/** 레시피 관리 이력의 작업자 이름을 표시합니다. */
+// 레시피 관리 이력의 작업자 이름을 표시합니다.
 function recipeHistoryActor(entry) {
   return entry?.user?.name ?? '-';
 }
 
-/** 레시피 관리 이력의 작업 일시를 표시합니다. */
+// 레시피 관리 이력의 작업 일시를 표시합니다.
 function recipeHistoryAt(entry, fallbackAt = null) {
   const value = entry?.at ?? fallbackAt;
   if (!value) return '-';
@@ -2001,7 +2034,7 @@ function recipeHistoryAt(entry, fallbackAt = null) {
   }).format(date);
 }
 
-/** DB decimal 문자열에서 의미 없는 뒤쪽 0을 제거해 입력 당시 형태에 가깝게 표시합니다. */
+// DB decimal 문자열에서 의미 없는 뒤쪽 0을 제거해 입력 당시 형태에 가깝게 표시합니다.
 function formatRecipeQuantity(value) {
   if (value === null || value === undefined || value === '') return null;
 
@@ -2009,7 +2042,7 @@ function formatRecipeQuantity(value) {
   return text.includes('.') ? text.replace(/\.?0+$/, '') : text;
 }
 
-/** 기존 값 또는 빈 값으로 재료 입력 행을 생성합니다. */
+// 기존 값 또는 빈 값으로 재료 입력 행을 생성합니다.
 function createIngredientRow(ingredient = {}) {
   recipeRowKey += 1;
   const unit = String(ingredient.unit ?? '').trim();
@@ -2023,7 +2056,7 @@ function createIngredientRow(ingredient = {}) {
   };
 }
 
-/** 단위 선택값을 실제 저장할 unit 문자열에 반영합니다. */
+// 단위 선택값을 실제 저장할 unit 문자열에 반영합니다.
 function applyUnitChoice(ingredient) {
   if (ingredient.unitChoice === CUSTOM_UNIT) {
     if (DEFAULT_UNITS.includes(ingredient.unit)) ingredient.unit = '';
@@ -2033,7 +2066,7 @@ function applyUnitChoice(ingredient) {
   ingredient.unit = ingredient.unitChoice ?? '';
 }
 
-/** 직접입력 단위에서 기본 단위 선택 모드로 되돌립니다. */
+// 직접입력 단위에서 기본 단위 선택 모드로 되돌립니다.
 function useUnitSelect(ingredient) {
   ingredient.unitChoice = ingredient.unit && DEFAULT_UNITS.includes(ingredient.unit)
     ? ingredient.unit
@@ -2041,7 +2074,7 @@ function useUnitSelect(ingredient) {
   ingredient.unit = ingredient.unitChoice;
 }
 
-/** 기존 값 또는 빈 값으로 공정 입력 행을 생성합니다. */
+// 기존 값 또는 빈 값으로 공정 입력 행을 생성합니다.
 function createStepRow(step = {}) {
   recipeRowKey += 1;
   return {
@@ -2050,7 +2083,7 @@ function createStepRow(step = {}) {
   };
 }
 
-/** 서버 레시피 데이터를 편집 폼 구조로 변환합니다. */
+// 서버 레시피 데이터를 편집 폼 구조로 변환합니다.
 function createRecipeForm(existingRecipe) {
   return {
     name: existingRecipe.name ?? '',
@@ -2064,7 +2097,7 @@ function createRecipeForm(existingRecipe) {
   };
 }
 
-/** 새 레시피 등록에 사용할 빈 폼을 생성합니다. */
+// 새 레시피 등록에 사용할 빈 폼을 생성합니다.
 function createEmptyRecipe() {
   return {
     name: '',
@@ -2074,7 +2107,7 @@ function createEmptyRecipe() {
   };
 }
 
-/** 목록과 현재 상세정보를 서버의 최신 상태로 맞춥니다. */
+// 목록과 현재 상세정보를 서버의 최신 상태로 맞춥니다.
 async function refreshSelectedProduct(setError, failureMessage) {
   const productId = selectedProduct.value?.id;
 
@@ -2090,7 +2123,7 @@ async function refreshSelectedProduct(setError, failureMessage) {
   }
 }
 
-/** 작업 완료 후 제품 목록을 다시 조회하고 실패 시 별도 안내합니다. */
+// 작업 완료 후 제품 목록을 다시 조회하고 실패 시 별도 안내합니다.
 async function refreshListAfterAction(setError, failureMessage) {
   try {
     await load();
@@ -2099,7 +2132,7 @@ async function refreshListAfterAction(setError, failureMessage) {
   }
 }
 
-/** 직원관리와 동일하게 페이지 변경 전후 페이지네이션의 화면 위치를 유지합니다. */
+// 직원관리와 동일하게 페이지 변경 전후 페이지네이션의 화면 위치를 유지합니다.
 async function handlePageChange(nextPage) {
   const oldTop = paginationRef.value?.getBoundingClientRect().top ?? null;
 
@@ -2121,7 +2154,7 @@ async function handlePageChange(nextPage) {
   }
 }
 
-/** 제품 검색과 필터를 기본값으로 초기화합니다. */
+// 제품 검색과 필터를 기본값으로 초기화합니다.
 function resetFilters() {
   searchQuery.value = '';
   categoryFilter.value = 'all';
@@ -2131,7 +2164,7 @@ function resetFilters() {
   currentPage.value = 1;
 }
 
-/** 제품 화면의 영속 변경 확인을 하나의 상태와 공통 다이얼로그로 관리합니다. */
+// 제품 화면의 영속 변경 확인을 하나의 상태와 공통 다이얼로그로 관리합니다.
 function openConfirm(action, title, message, confirmText = '예', payload = null) {
   if (productActionLoading.value) return;
 
@@ -2143,7 +2176,7 @@ function openConfirm(action, title, message, confirmText = '예', payload = null
   confirmDialog.open = true;
 }
 
-/** 요청 처리 중에는 확인창이 임의로 닫히지 않도록 하고, 완료 후에만 강제로 초기화합니다. */
+// 요청 처리 중에는 확인창이 임의로 닫히지 않도록 하고, 완료 후에만 강제로 초기화합니다.
 function clearConfirmDialog(force = false) {
   if (productActionLoading.value && !force) {
     return;
@@ -2157,19 +2190,19 @@ function clearConfirmDialog(force = false) {
   confirmDialog.payload = null;
 }
 
-/** 삭제·복구 완료 후 상세 상태를 안전하게 정리합니다. */
+// 삭제·복구 완료 후 상세 상태를 안전하게 정리합니다.
 function closeDetailDialogAfterAction() {
   detailDialog.value = false;
   editDialog.value = false;
   recipeDialog.value = false;
 }
 
-/** 판매 유형 코드를 사용자용 한글 이름으로 변환합니다. */
+// 판매 유형 코드를 사용자용 한글 이름으로 변환합니다.
 function salesTypeName(value) {
   return value === 'limited' ? '기간 한정' : '상시';
 }
 
-/** 서버 오류 응답에서 사용자에게 보여줄 메시지를 안전하게 추출합니다. */
+// 서버 오류 응답에서 사용자에게 보여줄 메시지를 안전하게 추출합니다.
 function errorMessage(error, fallback) {
   return error.response?.data?.message ?? fallback;
 }

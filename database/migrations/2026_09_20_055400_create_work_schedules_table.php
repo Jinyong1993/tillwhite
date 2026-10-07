@@ -221,9 +221,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->restrictOnDelete();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -252,9 +250,7 @@ return new class extends Migration
                 'work_date',
             ]);
 
-            /**
-             * 직원별 월간 근무표 조회용 인덱스
-             */
+            // * 직원별 월간 근무표 조회용 인덱스
             $table->index([
                 'user_id',
                 'work_date',
@@ -262,9 +258,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 월간 근무표 테이블 삭제
-     */
+    // * 월간 근무표 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('work_schedules');

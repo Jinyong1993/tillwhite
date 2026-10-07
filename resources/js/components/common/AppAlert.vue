@@ -22,8 +22,10 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, watch } from 'vue';
-
+import {
+    onBeforeUnmount,
+    watch,
+} from 'vue';
 /**
  * 공통 알림의 메시지와 Vuetify 표시 방식을 전달받습니다.
  * 닫기 기능은 모든 화면에서 동일하게 제공하므로 별도 속성으로 노출하지 않습니다.
@@ -45,7 +47,7 @@ const props = defineProps({
   },
 });
 
-/** 부모의 v-model 메시지를 비우기 위한 이벤트입니다. */
+// 부모의 v-model 메시지를 비우기 위한 이벤트입니다.
 const emit = defineEmits([
   'update:modelValue',
 ]);
@@ -53,7 +55,7 @@ const emit = defineEmits([
 
 let autoCloseTimer = null;
 
-/** 성공·일반 안내는 업무를 가리지 않도록 5초 뒤 자동으로 닫고 오류·경고는 직접 확인하게 둡니다. */
+// 성공·일반 안내는 업무를 가리지 않도록 5초 뒤 자동으로 닫고 오류·경고는 직접 확인하게 둡니다.
 watch(() => props.modelValue, (message) => {
   if (autoCloseTimer) clearTimeout(autoCloseTimer);
   autoCloseTimer = null;
@@ -67,7 +69,7 @@ onBeforeUnmount(() => {
   if (autoCloseTimer) clearTimeout(autoCloseTimer);
 });
 
-/** 사용자가 닫기 버튼을 누르면 현재 공통 알림을 종료합니다. */
+// 사용자가 닫기 버튼을 누르면 현재 공통 알림을 종료합니다.
 function close() {
   emit('update:modelValue', '');
 }

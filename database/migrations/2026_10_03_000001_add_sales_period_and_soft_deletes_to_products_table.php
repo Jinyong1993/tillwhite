@@ -31,9 +31,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 추가한 컬럼을 제거하여 이전 스키마로 되돌립니다.
-     */
+    // * 추가한 컬럼을 제거하여 이전 스키마로 되돌립니다.
     public function down(): void
     {
         Schema::table('products', function (Blueprint $table) {

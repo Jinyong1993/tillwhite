@@ -238,7 +238,10 @@
                 />
               </template>
 
-              <v-list density="compact" min-width="230">
+              <v-list
+                  density="compact"
+                  min-width="230"
+              >
                 <v-list-item
                   prepend-icon="mdi-package-variant-plus"
                   title="새 제품 만들기"
@@ -313,12 +316,30 @@
 
           <!-- 등록/수정/삭제의 작업자와 일시를 같은 규칙으로 항상 표시합니다. -->
           <div class="detail-grid">
-            <InfoItem label="등록자" :value="historyActor(product.management_history?.created)" />
-            <InfoItem label="등록일" :value="historyAt(product.management_history?.created, product.created_at)" />
-            <InfoItem label="수정자" :value="historyActor(product.management_history?.updated)" />
-            <InfoItem label="수정일" :value="historyAt(product.management_history?.updated, product.updated_at)" />
-            <InfoItem label="삭제자" :value="product.deleted_at ? historyActor(product.management_history?.deleted) : '-'" />
-            <InfoItem label="삭제일" :value="product.deleted_at ? historyAt(product.management_history?.deleted, product.deleted_at) : '-'" />
+            <InfoItem
+                label="등록자"
+                :value="historyActor(product.management_history?.created)"
+            />
+            <InfoItem
+                label="등록일"
+                :value="historyAt(product.management_history?.created, product.created_at)"
+            />
+            <InfoItem
+                label="수정자"
+                :value="historyActor(product.management_history?.updated)"
+            />
+            <InfoItem
+                label="수정일"
+                :value="historyAt(product.management_history?.updated, product.updated_at)"
+            />
+            <InfoItem
+                label="삭제자"
+                :value="product.deleted_at ? historyActor(product.management_history?.deleted) : '-'"
+            />
+            <InfoItem
+                label="삭제일"
+                :value="product.deleted_at ? historyAt(product.management_history?.deleted, product.deleted_at) : '-'"
+            />
           </div>
 
           <details
@@ -573,12 +594,12 @@ const currentPrice = computed(() => {
   return props.product?.prices?.[0]?.price ?? null;
 });
 
-/** 현재 제품에서 실제로 사용 중인 활성 레시피 한 건을 반환합니다. */
+// 현재 제품에서 실제로 사용 중인 활성 레시피 한 건을 반환합니다.
 const activeRecipe = computed(() => {
   return (props.product?.recipes ?? []).find((recipe) => !recipe.deleted_at) ?? null;
 });
 
-/** 삭제된 레시피는 최신 삭제 건부터 보여 과거 기록을 찾기 쉽게 합니다. */
+// 삭제된 레시피는 최신 삭제 건부터 보여 과거 기록을 찾기 쉽게 합니다.
 const deletedRecipes = computed(() => {
   return (props.product?.recipes ?? [])
     .filter((recipe) => Boolean(recipe.deleted_at))
@@ -683,7 +704,7 @@ function submitStatus() {
   emit('toggle');
 }
 
-/** 권한이 필요한 제품 관리 동작은 버튼을 숨기지 않고 클릭 시 이유를 안내합니다. */
+// 권한이 필요한 제품 관리 동작은 버튼을 숨기지 않고 클릭 시 이유를 안내합니다.
 function requestManageAction(action) {
   if (!props.canManage) {
     emit('permission-denied', '제품을 관리할 권한이 없습니다.');
@@ -693,7 +714,7 @@ function requestManageAction(action) {
   emit(action);
 }
 
-/** 활성 레시피 수정 진입 전에 관리 권한을 확인합니다. */
+// 활성 레시피 수정 진입 전에 관리 권한을 확인합니다.
 function requestRecipeEdit() {
   if (!props.canManageRecipe) {
     emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
@@ -705,7 +726,7 @@ function requestRecipeEdit() {
   emit('recipe');
 }
 
-/** 새 제품 만들기 역시 레시피 관리 권한을 확인한 뒤 상위 화면으로 전달합니다. */
+// 새 제품 만들기 역시 레시피 관리 권한을 확인한 뒤 상위 화면으로 전달합니다.
 function requestRecipeCreateProduct() {
   if (!props.canManageRecipe) {
     emit('permission-denied', '레시피를 관리할 권한이 없습니다.');
@@ -715,7 +736,7 @@ function requestRecipeCreateProduct() {
   emit('recipe-create-product');
 }
 
-/** 레시피 복사 역시 같은 권한 안내 규칙을 사용합니다. */
+// 레시피 복사 역시 같은 권한 안내 규칙을 사용합니다.
 function requestRecipeCopy() {
   if (!props.canManageRecipe) {
     emit('permission-denied', '레시피를 복사할 권한이 없습니다.');
@@ -798,17 +819,17 @@ function auditActionText(action) {
   return { create: '등록', update: '수정', delete: '삭제', restore: '복구' }[action] ?? '-';
 }
 
-/** 관리 이력의 작업자 이름을 표시하고 누락 시 하이픈을 사용합니다. */
+// 관리 이력의 작업자 이름을 표시하고 누락 시 하이픈을 사용합니다.
 function historyActor(entry) {
   return entry?.user?.name ?? '-';
 }
 
-/** 관리 이력 일시와 모델 일시를 공통 형식으로 표시합니다. */
+// 관리 이력 일시와 모델 일시를 공통 형식으로 표시합니다.
 function historyAt(entry, fallbackAt = null) {
   return formatDateTime(entry?.at ?? fallbackAt);
 }
 
-/** 날짜·시간 값을 사용자 화면용 형식으로 변환합니다. */
+// 날짜·시간 값을 사용자 화면용 형식으로 변환합니다.
 function formatDateTime(value) {
   if (!value) {
     return '-';

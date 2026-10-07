@@ -57,7 +57,7 @@ class AuditTrailService
             ->all();
     }
 
-    /** 감사 로그 한 건을 화면에서 사용할 공통 이력 구조로 변환합니다. */
+    // 감사 로그 한 건을 화면에서 사용할 공통 이력 구조로 변환합니다.
     private function entry($log): ?array
     {
         if (! $log) {

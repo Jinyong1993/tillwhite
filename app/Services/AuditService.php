@@ -69,9 +69,7 @@ class AuditService
         string $description
     ): void {
         AuditLog::create([
-            /**
-             * 실제 작업을 수행한 사용자
-             */
+            // * 실제 작업을 수행한 사용자
             'user_id' => $user->id,
 
             /**
@@ -90,14 +88,10 @@ class AuditService
              */
             'action' => $action,
 
-            /**
-             * 변경 대상 데이터의 종류
-             */
+            // * 변경 대상 데이터의 종류
             'target_type' => $targetType,
 
-            /**
-             * 변경 대상 데이터의 ID
-             */
+            // * 변경 대상 데이터의 ID
             'target_id' => $targetId,
 
             /**

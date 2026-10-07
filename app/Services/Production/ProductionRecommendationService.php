@@ -99,7 +99,7 @@ class ProductionRecommendationService
         ];
     }
 
-    /** 추천을 실제로 참고한 시점의 계산 결과를 변경되지 않는 스냅샷으로 저장합니다. */
+    // 추천을 실제로 참고한 시점의 계산 결과를 변경되지 않는 스냅샷으로 저장합니다.
     public function snapshot(
         int $storeId,
         int $productId,

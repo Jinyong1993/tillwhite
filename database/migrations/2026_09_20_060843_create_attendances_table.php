@@ -203,9 +203,7 @@ return new class extends Migration
              */
             $table->decimal('check_in_latitude', 10, 7)->nullable();
 
-            /**
-             * 출근 당시 GPS 경도
-             */
+            // * 출근 당시 GPS 경도
             $table->decimal('check_in_longitude', 10, 7)->nullable();
 
             /**
@@ -236,9 +234,7 @@ return new class extends Migration
              */
             $table->decimal('check_out_latitude', 10, 7)->nullable();
 
-            /**
-             * 퇴근 당시 GPS 경도
-             */
+            // * 퇴근 당시 GPS 경도
             $table->decimal('check_out_longitude', 10, 7)->nullable();
 
             /**
@@ -480,9 +476,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->restrictOnDelete();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -497,25 +491,19 @@ return new class extends Migration
                 'attendances_work_schedule_unique'
             );
 
-            /**
-             * 직원별 월간 출결 조회용 인덱스
-             */
+            // * 직원별 월간 출결 조회용 인덱스
             $table->index([
                 'user_id',
                 'scheduled_start_at',
             ]);
 
-            /**
-             * 점포별 출결 조회용 인덱스
-             */
+            // * 점포별 출결 조회용 인덱스
             $table->index([
                 'store_id',
                 'scheduled_start_at',
             ]);
 
-            /**
-             * 출결 상태별 조회용 인덱스
-             */
+            // * 출결 상태별 조회용 인덱스
             $table->index([
                 'status',
                 'scheduled_start_at',
@@ -523,9 +511,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 출결 테이블 삭제
-     */
+    // * 출결 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('attendances');

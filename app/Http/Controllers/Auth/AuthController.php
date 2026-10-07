@@ -116,9 +116,7 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * 사용자 로그아웃 처리
-     */
+    // * 사용자 로그아웃 처리
     public function logout(Request $request)
     {
         // Laravel 인증 세션에서 로그아웃

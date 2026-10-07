@@ -1,6 +1,13 @@
 <template>
-  <v-dialog v-model="open" max-width="620" persistent>
-    <v-card rounded="lg" class="app-dialog-card">
+  <v-dialog
+      v-model="open"
+      max-width="620"
+      persistent
+  >
+    <v-card
+        rounded="lg"
+        class="app-dialog-card"
+    >
       <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
         <div>
           <div>{{ dialogTitle }}</div>
@@ -47,7 +54,11 @@
 
         <template v-if="isReasonMode">
           <div class="flow-input-heading">{{ dialogTitle }} 수량과 사유</div>
-          <ReasonRows v-model="reasonRows" :reason-options="reasonOptions" :max-quantity="remainingAvailable" />
+          <ReasonRows
+              v-model="reasonRows"
+              :reason-options="reasonOptions"
+              :max-quantity="remainingAvailable"
+          />
           <div class="reason-actions">
             <v-btn size="small" variant="text" prepend-icon="mdi-plus" @click="reasonRows.push(emptyReason())">사유 추가</v-btn>
             <v-btn size="small" variant="outlined" @click="setZero">{{ dialogTitle }} 없음</v-btn>
@@ -84,7 +95,13 @@
           </v-alert>
         </template>
 
-        <v-textarea v-model="note" label="메모" variant="outlined" rows="2" class="mt-3" />
+        <v-textarea
+            v-model="note"
+            label="메모"
+            variant="outlined"
+            rows="2"
+            class="mt-3"
+        />
       </v-card-text>
 
       <v-card-actions class="app-dialog-footer px-4 pb-4">
@@ -125,7 +142,11 @@ import {
   ref,
   watch,
 } from 'vue';
-import { VBtn, VNumberInput, VSelect } from 'vuetify/components';
+import {
+    VBtn,
+    VNumberInput,
+    VSelect,
+} from 'vuetify/components';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 
 const props = defineProps({
@@ -242,7 +263,7 @@ const confirmMessage = computed(() => {
   return message;
 });
 
-/** 사유별 수량을 입력하는 반복 UI를 로스·폐기·기타 출고에서 공유합니다. */
+// 사유별 수량을 입력하는 반복 UI를 로스·폐기·기타 출고에서 공유합니다.
 const ReasonRows = defineComponent({
   props: {
     modelValue: {
@@ -303,7 +324,7 @@ const ReasonRows = defineComponent({
   },
 });
 
-/** 사유 행의 기본값을 생성합니다. */
+// 사유 행의 기본값을 생성합니다.
 function emptyReason() {
   return {
     reason_code: '',
@@ -312,12 +333,12 @@ function emptyReason() {
   };
 }
 
-/** 여러 사유 행의 수량 합계를 계산합니다. */
+// 여러 사유 행의 수량 합계를 계산합니다.
 function sumRows(rows) {
   return rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
 }
 
-/** 다이얼로그가 열릴 때 선택 기능에 필요한 입력값만 초기화합니다. */
+// 다이얼로그가 열릴 때 선택 기능에 필요한 입력값만 초기화합니다.
 watch(() => props.modelValue, (value) => {
   if (!value) return;
 
@@ -327,13 +348,13 @@ watch(() => props.modelValue, (value) => {
   note.value = '';
 });
 
-/** 로스·폐기가 없을 때 0개 확인을 한 번의 행동으로 입력합니다. */
+// 로스·폐기가 없을 때 0개 확인을 한 번의 행동으로 입력합니다.
 function setZero() {
   reasonRows.value = [];
   askSave();
 }
 
-/** 사용자가 실제로 입력한 내용이 있는지 확인합니다. */
+// 사용자가 실제로 입력한 내용이 있는지 확인합니다.
 function isDirty() {
   if (props.type === 'carryover') {
     return carryoverQuantity.value !== Number(props.product?.carryover_out || 0) || Boolean(note.value);
@@ -342,7 +363,7 @@ function isDirty() {
   return reasonRows.value.length !== 1 || reasonRows.value.some((row) => row.reason_code || Number(row.quantity || 0) !== 1) || Boolean(note.value);
 }
 
-/** 작성 중인 값이 있으면 확인창을 거친 뒤 닫습니다. */
+// 작성 중인 값이 있으면 확인창을 거친 뒤 닫습니다.
 function requestClose() {
   if (saving.value) return;
 
@@ -354,13 +375,13 @@ function requestClose() {
   forceClose();
 }
 
-/** 작성 취소를 확인한 뒤 현재 업무 다이얼로그를 닫습니다. */
+// 작성 취소를 확인한 뒤 현재 업무 다이얼로그를 닫습니다.
 function forceClose() {
   confirmClose.value = false;
   open.value = false;
 }
 
-/** 사유 필수값과 수량 범위를 확인한 뒤 저장 확인창을 엽니다. */
+// 사유 필수값과 수량 범위를 확인한 뒤 저장 확인창을 엽니다.
 function askSave() {
   if (isReasonMode.value && reasonRows.value.length > 0 && reasonRows.value.some((row) => !row.reason_code || !row.quantity)) {
     emit('error', '추가한 사유와 수량을 모두 입력해주세요.');
@@ -375,7 +396,7 @@ function askSave() {
   confirmSave.value = true;
 }
 
-/** 선택한 한 가지 업무만 서버에 저장하여 다른 수량 기록을 덮어쓰지 않습니다. */
+// 선택한 한 가지 업무만 서버에 저장하여 다른 수량 기록을 덮어쓰지 않습니다.
 async function save() {
   saving.value = true;
 
@@ -408,33 +429,135 @@ async function save() {
 </script>
 
 <style scoped>
-.flow-overview { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-bottom:10px; }
-.flow-overview>div { padding:9px 7px; border-radius:9px; background:rgba(var(--v-theme-on-surface),.04); text-align:center; }
-.flow-overview span,.flow-overview strong { display:block; }
-.flow-overview span { font-size:.63rem; color:rgba(var(--v-theme-on-surface),.55); }
-.flow-overview strong { margin-top:2px; font-size:.82rem; font-weight:650; }
-.saved-flow-details { margin:12px 0; }
-.saved-flow-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:32px; padding:5px 2px; border-bottom:1px solid rgba(var(--v-border-color),.5); font-size:.72rem; }
-.saved-flow-row strong { font-variant-numeric:tabular-nums; }
-.flow-guide { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; padding:10px 12px; border-radius:10px; background:rgba(var(--v-theme-on-surface),.04); }
-.flow-guide div { flex:none; }
-.flow-guide span,.flow-guide strong { display:block; }
-.flow-guide span { font-size:.66rem; color:rgba(var(--v-theme-on-surface),.56); }
-.flow-guide strong { margin-top:1px; font-size:1rem; font-weight:700; font-variant-numeric:tabular-nums; }
-.flow-guide p { margin:0; font-size:.68rem; line-height:1.45; color:rgba(var(--v-theme-on-surface),.62); text-align:right; }
-.flow-summary { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:14px; }
-.flow-summary>div { padding:7px 9px; border:1px solid rgba(var(--v-border-color),.5); border-radius:8px; }
-.flow-summary span,.flow-summary strong { display:block; }
-.flow-summary span { font-size:.63rem; color:rgba(var(--v-theme-on-surface),.52); }
-.flow-summary strong { margin-top:1px; font-size:.78rem; font-weight:600; }
-.flow-input-heading { margin-bottom:7px; font-size:.74rem; font-weight:600; }
-.reason-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:0; }
-.reason-row { display:grid; grid-template-columns:minmax(0,1fr) 96px auto; gap:6px; align-items:start; }
-:deep(.v-field) { font-size:.78rem; }
-:deep(.v-input) { margin-bottom:2px; }
+.flow-overview {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:7px;
+    margin-bottom:10px;
+}
+.flow-overview>div {
+    padding:9px 7px;
+    border-radius:9px;
+    background:rgba(var(--v-theme-on-surface),.04);
+    text-align:center;
+}
+.flow-overview span,.flow-overview strong {
+    display:block;
+}
+.flow-overview span {
+    font-size:.63rem;
+    color:rgba(var(--v-theme-on-surface),.55);
+}
+.flow-overview strong {
+    margin-top:2px;
+    font-size:.82rem;
+    font-weight:650;
+}
+.saved-flow-details {
+    margin:12px 0;
+}
+.saved-flow-row {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    min-height:32px;
+    padding:5px 2px;
+    border-bottom:1px solid rgba(var(--v-border-color),.5);
+    font-size:.72rem;
+}
+.saved-flow-row strong {
+    font-variant-numeric:tabular-nums;
+}
+.flow-guide {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:12px;
+    padding:10px 12px;
+    border-radius:10px;
+    background:rgba(var(--v-theme-on-surface),.04);
+}
+.flow-guide div {
+    flex:none;
+}
+.flow-guide span,.flow-guide strong {
+    display:block;
+}
+.flow-guide span {
+    font-size:.66rem;
+    color:rgba(var(--v-theme-on-surface),.56);
+}
+.flow-guide strong {
+    margin-top:1px;
+    font-size:1rem;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+}
+.flow-guide p {
+    margin:0;
+    font-size:.68rem;
+    line-height:1.45;
+    color:rgba(var(--v-theme-on-surface),.62);
+    text-align:right;
+}
+.flow-summary {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:6px;
+    margin-bottom:14px;
+}
+.flow-summary>div {
+    padding:7px 9px;
+    border:1px solid rgba(var(--v-border-color),.5);
+    border-radius:8px;
+}
+.flow-summary span,.flow-summary strong {
+    display:block;
+}
+.flow-summary span {
+    font-size:.63rem;
+    color:rgba(var(--v-theme-on-surface),.52);
+}
+.flow-summary strong {
+    margin-top:1px;
+    font-size:.78rem;
+    font-weight:600;
+}
+.flow-input-heading {
+    margin-bottom:7px;
+    font-size:.74rem;
+    font-weight:600;
+}
+.reason-actions {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-top:0;
+}
+.reason-row {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 96px auto;
+    gap:6px;
+    align-items:start;
+}
+:deep(.v-field) {
+    font-size:.78rem;
+}
+:deep(.v-input) {
+    margin-bottom:2px;
+}
 @media(max-width:520px) {
-  .flow-guide { align-items:flex-start; }
-  .flow-guide p { max-width:68%; }
-  .reason-row { grid-template-columns:minmax(0,1fr) 84px auto; }
+  .flow-guide {
+      align-items:flex-start;
+  }
+  .flow-guide p {
+      max-width:68%;
+  }
+  .reason-row {
+      grid-template-columns:minmax(0,1fr) 84px auto;
+  }
 }
 </style>

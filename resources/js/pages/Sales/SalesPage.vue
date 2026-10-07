@@ -52,7 +52,10 @@
         v-model="dialog"
         max-width="400"
       >
-        <v-card title="간편 매출 등록" class="app-dialog-card">
+        <v-card
+            title="간편 매출 등록"
+            class="app-dialog-card"
+        >
           <v-card-text>
             <!--
               현재 데모에서는 복수 제품을 한 번에 입력하지 않고
@@ -130,7 +133,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import {
+    computed,
+    onMounted,
+    ref,
+} from 'vue';
 import AppShell from '../../components/layout/AppShell.vue';
 
 // 현재 페이지 제목

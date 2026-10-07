@@ -23,9 +23,7 @@ return new class extends Migration
     {
         Schema::create('recipes', function (Blueprint $table) {
 
-            /**
-             * 레시피 고유 ID
-             */
+            // * 레시피 고유 ID
             $table->id();
 
             /**
@@ -149,9 +147,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->restrictOnDelete();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -185,9 +181,7 @@ return new class extends Migration
                 'is_active',
             ]);
 
-            /**
-             * 제품별 레시피 조회용 인덱스
-             */
+            // * 제품별 레시피 조회용 인덱스
             $table->index([
                 'product_id',
                 'is_active',
@@ -195,9 +189,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 레시피 테이블 삭제
-     */
+    // * 레시피 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('recipes');

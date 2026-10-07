@@ -24,7 +24,10 @@
     max-width="420"
     @update:model-value="handleModelValue"
   >
-    <v-card rounded="lg" class="app-dialog-card">
+    <v-card
+        rounded="lg"
+        class="app-dialog-card"
+    >
       <!-- 확인창 제목 -->
       <v-card-title
         class="app-dialog-header d-flex align-center justify-space-between"
@@ -210,6 +213,11 @@ function handleModelValue(value) {
 }
 </script>
 <style scoped>
-.v-card-text { white-space: pre-line; }
-.confirm-message { white-space: pre-line; overflow-wrap: anywhere; }
+.v-card-text {
+    white-space: pre-line;
+}
+.confirm-message {
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
 </style>

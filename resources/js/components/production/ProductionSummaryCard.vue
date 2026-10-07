@@ -152,9 +152,7 @@ const summary = ref({
   loss_quantity: 0,
 });
 
-/**
- * 현황 조회 상태
- */
+// * 현황 조회 상태
 const loading = ref(true);
 const errorMessage = ref('');
 

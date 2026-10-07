@@ -36,25 +36,19 @@ class Attendance extends Model
         ];
     }
 
-    /**
-     * 출퇴근 기록의 대상 직원
-     */
+    // * 출퇴근 기록의 대상 직원
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-    /**
-     * 출퇴근 기록과 연결된 근무 스케줄
-     */
+    // * 출퇴근 기록과 연결된 근무 스케줄
     public function workSchedule(): BelongsTo
     {
         return $this->belongsTo(WorkSchedule::class);
     }
 
-    /**
-     * 출퇴근 기록이 발생한 점포
-     */
+    // * 출퇴근 기록이 발생한 점포
     public function store(): BelongsTo
     {
         return $this->belongsTo(Store::class);

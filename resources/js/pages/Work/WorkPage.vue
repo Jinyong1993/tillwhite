@@ -241,7 +241,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import {
+    onMounted,
+    ref,
+} from 'vue';
 import AppShell from '../../components/layout/AppShell.vue';
 
 // 현재 페이지 제목

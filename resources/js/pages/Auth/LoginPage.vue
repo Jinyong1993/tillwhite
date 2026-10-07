@@ -87,8 +87,10 @@
 
 <script setup>
 import { ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-
+import {
+    useRoute,
+    useRouter,
+} from 'vue-router';
 import AppAlert from '../../components/common/AppAlert.vue';
 import AppPageCard from '../../components/layout/AppPageCard.vue';
 import AppPageContainer from '../../components/layout/AppPageContainer.vue';

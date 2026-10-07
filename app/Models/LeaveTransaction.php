@@ -29,9 +29,7 @@ class LeaveTransaction extends Model
         ];
     }
 
-    /**
-     * 휴가 발생/사용 내역의 대상 직원
-     */
+    // * 휴가 발생/사용 내역의 대상 직원
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

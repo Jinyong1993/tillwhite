@@ -533,9 +533,7 @@ class ProductionRecordController extends Controller
             $validated['work_date']
         );
 
-        /**
-         * 기존 생산 기록에 저장된 작업자 조회
-         */
+        // * 기존 생산 기록에 저장된 작업자 조회
         $worker = User::findOrFail(
             $productionRecord->worker_id
         );

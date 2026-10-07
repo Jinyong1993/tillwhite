@@ -3,8 +3,22 @@
     <header class="tab-heading"><h3>통계</h3><p>기간을 정해 생산·이월·로스·폐기 흐름과 제품별 결과를 비교합니다.</p></header>
 
     <div class="period-fields">
-      <v-text-field v-model="from" type="date" label="시작일" variant="outlined" density="compact" hide-details />
-      <v-text-field v-model="to" type="date" label="종료일" variant="outlined" density="compact" hide-details />
+      <v-text-field
+          v-model="from"
+          type="date"
+          label="시작일"
+          variant="outlined"
+          density="compact"
+          hide-details
+      />
+      <v-text-field
+          v-model="to"
+          type="date"
+          label="종료일"
+          variant="outlined"
+          density="compact"
+          hide-details
+      />
       <v-btn variant="flat" :loading="loading" :disabled="loading" @click="load">조회</v-btn>
     </div>
 
@@ -35,8 +49,15 @@
       <div v-else class="statistics-empty"><v-icon icon="mdi-chart-donut" size="22"/><div><strong>{{ activeDonutLabel }} 기록이 없습니다.</strong><span>선택한 기간에 기록된 {{ activeDonutLabel }} 수량이 없습니다.</span></div></div>
     </section>
 
-    <v-dialog v-model="metricOpen" max-width="620" persistent>
-      <v-card rounded="lg" class="app-dialog-card">
+    <v-dialog
+        v-model="metricOpen"
+        max-width="620"
+        persistent
+    >
+      <v-card
+          rounded="lg"
+          class="app-dialog-card"
+      >
         <v-card-title class="app-dialog-header">{{ activeMetricTitle }} 통계</v-card-title>
         <v-card-text class="app-dialog-body">
           <div class="metric-dialog-summary"><div><span>기간 합계</span><strong>{{ metricTotalText }}</strong></div><div><span>일평균</span><strong>{{ metricAverageText }}</strong></div><div><span>발생 제품</span><strong>{{ metricProducts.length }}개</strong></div></div>
@@ -50,7 +71,11 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+    computed,
+    ref,
+    watch,
+} from 'vue';
 import { addLocalDays } from '../../utils/localDate';
 const props=defineProps({storeId:Number,workDate:String}); const emit=defineEmits(['error']);
 const from=ref(addLocalDays(props.workDate,-29)),to=ref(props.workDate),series=ref([]),totals=ref({}),previousTotals=ref({}),productTotals=ref([]),loading=ref(false),donutMetric=ref('production'),flowUnit=ref('day'),metricOpen=ref(false),metricKey=ref('production');
@@ -70,9 +95,14 @@ const metricInsight=computed(()=>{if(!metricProducts.value.length)return{title:`
 const comparisonText=computed(()=>{const current=totals.value[metricKey.value];const previous=previousTotals.value[metricKey.value];if(current==null||previous==null)return '이전 기간과 비교할 데이터가 없습니다.';if(metricKey.value==='waste_rate'){const diff=Number(current)-Number(previous);return `직전 동일 기간 대비 ${diff===0?'변화 없음':`${diff>0?'+':''}${diff.toFixed(1)}%p`}`;}if(Number(previous)===0)return Number(current)===0?'직전 동일 기간과 동일합니다.':'직전 동일 기간에는 기록이 없어 증감률을 계산하지 않습니다.';const diff=(Number(current)-Number(previous))/Number(previous)*100;return `직전 동일 기간 대비 ${diff>0?'+':''}${diff.toFixed(1)}%`;});
 watch([()=>props.storeId,()=>props.workDate],()=>{from.value=addLocalDays(props.workDate,-29);to.value=props.workDate;load();},{immediate:true});
 async function load(){if(!props.storeId||loading.value)return;if(from.value>to.value){emit('error','시작일은 종료일보다 늦을 수 없습니다.');return;}loading.value=true;try{const {data}=await window.axios.get('/tillwhite/api/production-management/statistics',{params:{store_id:props.storeId,from:from.value,to:to.value}});series.value=data.series||[];totals.value=data.totals||{};productTotals.value=data.product_totals||[];previousTotals.value=data.previous_totals||{};}catch(error){emit('error',error.response?.data?.message||'통계를 불러오지 못했습니다.');}finally{loading.value=false;}}
-function openMetric(key){metricKey.value=key;metricOpen.value=true;}
+function openMetric(key) {
+    metricKey.value = key;
+    metricOpen.value = true;
+}
 function metricValue(row){if(metricKey.value==='waste_rate'){const p=Number(row.production||0);return p?`${(Number(row.waste||0)/p*100).toFixed(1)}%`:'-';}return `${Number(row[metricKey.value]||0)}개`;}
-function mixColor(i){return palette[i%palette.length];}
+function mixColor(i) {
+    return palette[i % palette.length];
+}
 function groupSeries(rows,unit){const groups=new Map();for(const row of rows){const d=new Date(`${row.date}T00:00:00`);let key,label;if(unit==='day'){key=row.date;label=`${d.getMonth()+1}/${d.getDate()}`;}else if(unit==='week'){const copy=new Date(d);const day=(copy.getDay()+6)%7;copy.setDate(copy.getDate()-day);key=copy.toLocaleDateString('sv-SE');label=`${copy.getMonth()+1}/${copy.getDate()} 주`;}else if(unit==='month'){key=row.date.slice(0,7);label=`${Number(key.slice(5))}월`;}else{key=row.date.slice(0,4);label=`${key}년`;}if(!groups.has(key))groups.set(key,{label,production:0,carryover:0,loss:0,waste:0});const g=groups.get(key);for(const k of ['production','carryover','loss','waste'])g[k]+=Number(row[k]||0);}return [...groups.values()].map(g=>({...g,waste_rate:g.production?Number((g.waste/g.production*100).toFixed(1)):null}));}
 </script>
 

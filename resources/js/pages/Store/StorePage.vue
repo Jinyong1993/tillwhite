@@ -35,7 +35,10 @@
         v-model="dialog"
         max-width="400"
       >
-        <v-card title="점포 등록" class="app-dialog-card">
+        <v-card
+            title="점포 등록"
+            class="app-dialog-card"
+        >
           <v-card-text class="app-dialog-body">
             <!--
               점포를 구분하기 위한 고유 코드입니다.
@@ -113,7 +116,10 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import {
+    onMounted,
+    ref,
+} from 'vue';
 import AppShell from '../../components/layout/AppShell.vue';
 
 // 현재 페이지 제목

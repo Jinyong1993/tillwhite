@@ -22,9 +22,7 @@ return new class extends Migration
     {
         Schema::create('sale_refunds', function (Blueprint $table) {
 
-            /**
-             * 환불 고유 ID
-             */
+            // * 환불 고유 ID
             $table->id();
 
             /**
@@ -137,14 +135,10 @@ return new class extends Migration
                 ->constrained('users')
                 ->restrictOnDelete();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
-            /**
-             * 특정 판매의 환불 이력 조회용 인덱스
-             */
+            // * 특정 판매의 환불 이력 조회용 인덱스
             $table->index([
                 'sale_id',
                 'refund_date',
@@ -174,9 +168,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 판매 환불 테이블 삭제
-     */
+    // * 판매 환불 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('sale_refunds');

@@ -144,9 +144,7 @@ return new class extends Migration
              */
             $table->text('note')->nullable();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -169,9 +167,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 점포 / 부서별 근무표 자동생성 설정 테이블 삭제
-     */
+    // * 점포 / 부서별 근무표 자동생성 설정 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('work_schedule_settings');

@@ -108,9 +108,7 @@ return new class extends Migration
              */
             $table->boolean('is_active')->default(true);
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -125,9 +123,7 @@ return new class extends Migration
                 'work_schedule_rules_user_work_code_unique'
             );
 
-            /**
-             * 직원별 자동 배정 규칙 조회용 인덱스
-             */
+            // * 직원별 자동 배정 규칙 조회용 인덱스
             $table->index([
                 'user_id',
                 'is_active',
@@ -135,9 +131,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 직원별 근무 자동 배정 규칙 테이블 삭제
-     */
+    // * 직원별 근무 자동 배정 규칙 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('work_schedule_rules');

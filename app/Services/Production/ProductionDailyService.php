@@ -182,7 +182,7 @@ class ProductionDailyService
         ];
     }
 
-    /** 전달된 기록 묶음의 quantity 합계를 안전하게 계산합니다. */
+    // 전달된 기록 묶음의 quantity 합계를 안전하게 계산합니다.
     private function sum(?Collection $records): int
     {
         return (int) ($records?->sum('quantity') ?? 0);

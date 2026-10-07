@@ -7,7 +7,7 @@ const collator = new Intl.Collator('ko-KR', {
   sensitivity: 'base',
 });
 
-/** 이름의 첫 글자를 한글·영문·숫자·기타 그룹으로 분류해 자연 정렬 우선순위를 만듭니다. */
+// 이름의 첫 글자를 한글·영문·숫자·기타 그룹으로 분류해 자연 정렬 우선순위를 만듭니다.
 function textGroup(value) {
   const first = String(value ?? '').trim().charAt(0);
 

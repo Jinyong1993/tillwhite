@@ -29,9 +29,7 @@ class AuditLog extends Model
         ];
     }
 
-    /**
-     * 감사 로그를 발생시킨 사용자
-     */
+    // * 감사 로그를 발생시킨 사용자
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

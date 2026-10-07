@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /** 레시피 삭제/복구 상태와 삭제 원인을 안전하게 구분할 컬럼을 추가합니다. */
+    // 레시피 삭제/복구 상태와 삭제 원인을 안전하게 구분할 컬럼을 추가합니다.
     public function up(): void
     {
         Schema::table('recipes', function (Blueprint $table) {
@@ -23,7 +23,7 @@ return new class extends Migration
         });
     }
 
-    /** 추가한 Soft Delete 관련 컬럼을 제거합니다. */
+    // 추가한 Soft Delete 관련 컬럼을 제거합니다.
     public function down(): void
     {
         Schema::table('recipes', function (Blueprint $table) {

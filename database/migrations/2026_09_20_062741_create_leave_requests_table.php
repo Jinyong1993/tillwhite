@@ -22,9 +22,7 @@ return new class extends Migration
     {
         Schema::create('leave_requests', function (Blueprint $table) {
 
-            /**
-             * 휴무/연차 신청 고유 ID
-             */
+            // * 휴무/연차 신청 고유 ID
             $table->id();
 
             /**
@@ -240,9 +238,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 휴무 및 연차 신청 테이블 삭제
-     */
+    // * 휴무 및 연차 신청 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('leave_requests');

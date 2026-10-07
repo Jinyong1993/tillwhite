@@ -18,9 +18,7 @@ use Illuminate\Support\Facades\Hash;
  */
 class UserFactory extends Factory
 {
-    /**
-     * 이 Factory가 생성할 모델
-     */
+    // * 이 Factory가 생성할 모델
     protected $model = User::class;
 
     /**
@@ -54,9 +52,7 @@ class UserFactory extends Factory
              */
             'employee_code' => fake()->unique()->numerify('TEST#####'),
 
-            /**
-             * 직원 이름
-             */
+            // * 직원 이름
             'name' => fake()->name(),
 
             /**
@@ -75,9 +71,7 @@ class UserFactory extends Factory
              */
             'password_changed_at' => null,
 
-            /**
-             * 직원 연락처 및 생년월일
-             */
+            // * 직원 연락처 및 생년월일
             'phone' => null,
             'birth_date' => null,
 
@@ -121,19 +115,13 @@ class UserFactory extends Factory
              */
             'employment_status' => 'active',
 
-            /**
-             * 입사일
-             */
+            // * 입사일
             'hired_at' => now()->toDateString(),
 
-            /**
-             * 퇴사하지 않은 상태이므로 NULL입니다.
-             */
+            // * 퇴사하지 않은 상태이므로 NULL입니다.
             'resigned_at' => null,
 
-            /**
-             * 시스템 계정 활성화 여부
-             */
+            // * 시스템 계정 활성화 여부
             'is_active' => true,
 
             /**

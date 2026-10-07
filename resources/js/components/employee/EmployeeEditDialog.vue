@@ -5,11 +5,17 @@
     persistent
     @update:model-value="handleDialogChange"
   >
-    <v-card rounded="lg" class="employee-edit-dialog">
+    <v-card
+        rounded="lg"
+        class="employee-edit-dialog"
+    >
       <!-- 직원 등록 다이얼로그와 같은 입력형 헤더 계층을 사용합니다. -->
       <div class="edit-header">
         <div class="edit-header-icon">
-          <v-icon icon="mdi-account-edit-outline" size="22" />
+          <v-icon
+              icon="mdi-account-edit-outline"
+              size="22"
+          />
         </div>
 
         <div class="min-width-0">
@@ -60,7 +66,13 @@
               prepend-inner-icon="mdi-cake-variant-outline"
               :max="today"
             />
-            <v-text-field v-model="form.hired_at" label="입사일" type="date" variant="outlined" prepend-inner-icon="mdi-calendar-check-outline" />
+            <v-text-field
+                v-model="form.hired_at"
+                label="입사일"
+                type="date"
+                variant="outlined"
+                prepend-inner-icon="mdi-calendar-check-outline"
+            />
           </div>
         </section>
 
@@ -106,7 +118,10 @@
               prepend-inner-icon="mdi-store-outline"
             />
             <div v-else class="head-office-info">
-              <v-icon icon="mdi-office-building-marker-outline" size="20" />
+              <v-icon
+                  icon="mdi-office-building-marker-outline"
+                  size="20"
+              />
               <div>
                 <strong>본사 소속</strong>
                 <div class="text-caption text-medium-emphasis">
@@ -170,7 +185,11 @@
   </v-dialog>
 
   <!-- 수정한 내용이 남아 있을 때 실수로 닫는 것을 방지합니다. -->
-  <v-dialog v-model="discardDialog" max-width="360" persistent>
+  <v-dialog
+      v-model="discardDialog"
+      max-width="360"
+      persistent
+  >
     <v-card rounded="lg">
       <v-card-title class="pa-5 pb-2">수정을 취소하시겠습니까?</v-card-title>
       <v-card-text class="px-5 pb-5 app-supporting-text">수정한 내용이 저장되지 않습니다.</v-card-text>
@@ -185,8 +204,12 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
-
+import {
+    computed,
+    reactive,
+    ref,
+    watch,
+} from 'vue';
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   employee: { type: Object, default: null },
@@ -225,7 +248,7 @@ const form = reactive({
 });
 const initialForm = ref('');
 
-/** 현재 부서에서 실제로 선택 가능한 역할만 표시합니다. */
+// 현재 부서에서 실제로 선택 가능한 역할만 표시합니다.
 const availableRoles = computed(() => {
   const allowed = {
     kitchen: ['staff', 'kitchen_head'],
@@ -235,13 +258,13 @@ const availableRoles = computed(() => {
   return props.roles.filter((role) => (allowed[form.department] ?? []).includes(role.code));
 });
 
-/** 직원 수정 폼의 현재 상태를 비교용 문자열로 만듭니다. */
+// 직원 수정 폼의 현재 상태를 비교용 문자열로 만듭니다.
 function snapshot() {
   return JSON.stringify({ ...form });
 }
 const hasChanges = computed(() => Boolean(initialForm.value) && snapshot() !== initialForm.value);
 
-/** 상세조회에서 받은 최신 직원 값을 수정 양식에 복사합니다. */
+// 상세조회에서 받은 최신 직원 값을 수정 양식에 복사합니다.
 watch(() => [props.modelValue, props.employee], () => {
   if (!props.modelValue || !props.employee) {
     return;
@@ -262,7 +285,7 @@ watch(() => [props.modelValue, props.employee], () => {
   discardDialog.value = false;
 }, { immediate: true });
 
-/** 본사로 변경하면 점포를 자동 제거하고, 부서와 맞지 않는 역할도 초기화합니다. */
+// 본사로 변경하면 점포를 자동 제거하고, 부서와 맞지 않는 역할도 초기화합니다.
 watch(() => form.department, (value) => {
   if (value === 'head_office') {
     form.store_id = null;
@@ -273,7 +296,7 @@ watch(() => form.department, (value) => {
   }
 });
 
-/** 수정 내용이 있으면 확인창을 거쳐 닫도록 처리합니다. */
+// 수정 내용이 있으면 확인창을 거쳐 닫도록 처리합니다.
 function requestClose() {
   if (props.loading) {
     return;
@@ -286,12 +309,12 @@ function requestClose() {
 
   emit('close');
 }
-/** 직원 수정 내용을 버리고 원래 상태로 닫습니다. */
+// 직원 수정 내용을 버리고 원래 상태로 닫습니다.
 function discardChanges() {
   discardDialog.value = false;
   emit('close');
 }
-/** 다이얼로그 외부 닫기 요청도 작성 내용 확인 절차를 거치도록 전달합니다. */
+// 다이얼로그 외부 닫기 요청도 작성 내용 확인 절차를 거치도록 전달합니다.
 function handleDialogChange(value) {
   if (!value) {
     requestClose();

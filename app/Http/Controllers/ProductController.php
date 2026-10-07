@@ -17,9 +17,7 @@ use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
-    /**
-     * 권한 검사와 감사 로그 서비스를 주입받습니다.
-     */
+    // * 권한 검사와 감사 로그 서비스를 주입받습니다.
     public function __construct(
         private AccessService $access,
         private AuditService $audit,
@@ -84,9 +82,7 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * 제품 상세정보를 최신 서버 상태로 조회합니다.
-     */
+    // * 제품 상세정보를 최신 서버 상태로 조회합니다.
     public function show(Request $request, Product $product)
     {
         $user = $request->user();
@@ -148,7 +144,7 @@ class ProductController extends Controller
         return response()->json(['items' => $items]);
     }
 
-    /** 최근 본 제품을 최대 5개까지 중복 없이 Laravel Session에 저장합니다. */
+    // 최근 본 제품을 최대 5개까지 중복 없이 Laravel Session에 저장합니다.
     public function rememberRecentViewed(Request $request)
     {
         $user = $request->user();
@@ -216,9 +212,7 @@ class ProductController extends Controller
             ->all();
     }
 
-    /**
-     * 현재 로그인 세션에 저장된 제품 등록 draft를 조회합니다.
-     */
+    // * 현재 로그인 세션에 저장된 제품 등록 draft를 조회합니다.
     public function draft(Request $request)
     {
         $user = $request->user();
@@ -337,9 +331,7 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * 현재 로그인 세션의 제품 등록 draft를 삭제합니다.
-     */
+    // * 현재 로그인 세션의 제품 등록 draft를 삭제합니다.
     public function deleteDraft(Request $request)
     {
         $user = $request->user();
@@ -512,9 +504,7 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * 제품의 현재 취급 여부를 변경합니다.
-     */
+    // * 제품의 현재 취급 여부를 변경합니다.
     public function toggle(Request $request, Product $product)
     {
         $user = $request->user();
@@ -603,9 +593,7 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * Soft Delete된 제품을 복구합니다.
-     */
+    // * Soft Delete된 제품을 복구합니다.
     public function restore(Request $request, Product $product)
     {
         $user = $request->user();
@@ -980,7 +968,7 @@ class ProductController extends Controller
         ], 201);
     }
 
-    /** 레시피를 직접 Soft Delete합니다. */
+    // 레시피를 직접 Soft Delete합니다.
     public function destroyRecipe(Request $request, Product $product, Recipe $recipe)
     {
         $user = $request->user();
@@ -1002,7 +990,7 @@ class ProductController extends Controller
         return response()->json(['message' => '레시피를 삭제했습니다.']);
     }
 
-    /** 직접 삭제된 레시피를 복구합니다. */
+    // 직접 삭제된 레시피를 복구합니다.
     public function restoreRecipe(Request $request, Product $product, Recipe $recipe)
     {
         $user = $request->user();
@@ -1123,9 +1111,7 @@ class ProductController extends Controller
         ], 201);
     }
 
-    /**
-     * 제품 카테고리를 등록합니다.
-     */
+    // * 제품 카테고리를 등록합니다.
     public function categoryStore(Request $request)
     {
         $user = $request->user();
@@ -1188,9 +1174,7 @@ class ProductController extends Controller
         ], 201);
     }
 
-    /**
-     * 제품 카테고리 이름을 수정합니다.
-     */
+    // * 제품 카테고리 이름을 수정합니다.
     public function categoryUpdate(Request $request, ProductCategory $category)
     {
         $user = $request->user();
@@ -1342,9 +1326,7 @@ class ProductController extends Controller
         ]);
     }
 
-    /**
-     * 제품 등록/수정에 공통으로 사용하는 입력값 검증입니다.
-     */
+    // * 제품 등록/수정에 공통으로 사용하는 입력값 검증입니다.
     private function validateProduct(Request $request, ?Product $product = null): array
     {
         $validated = $request->validate([
@@ -1384,9 +1366,7 @@ class ProductController extends Controller
         return $validated;
     }
 
-    /**
-     * 선택한 카테고리가 실제 선택 점포의 카테고리인지 확인합니다.
-     */
+    // * 선택한 카테고리가 실제 선택 점포의 카테고리인지 확인합니다.
     private function assertCategoryBelongsToStore(int $categoryId, int $storeId): void
     {
         $exists = ProductCategory::query()
@@ -1402,9 +1382,7 @@ class ProductController extends Controller
         }
     }
 
-    /**
-     * 현재 사용자가 제품을 조회할 수 있는 점포 범위인지 확인합니다.
-     */
+    // * 현재 사용자가 제품을 조회할 수 있는 점포 범위인지 확인합니다.
     private function assertProductVisibleToUser($user, Product $product): void
     {
         if ($user->role?->code === 'super_admin' || $user->isHeadOffice()) {
@@ -1418,9 +1396,7 @@ class ProductController extends Controller
         );
     }
 
-    /**
-     * 현재 사용자가 제품을 실제 변경할 수 있는 범위인지 확인합니다.
-     */
+    // * 현재 사용자가 제품을 실제 변경할 수 있는 범위인지 확인합니다.
     private function assertProductManageableByUser($user, Product $product): void
     {
         // 제품 관리는 부서가 아니라 점포 범위로 제한합니다.

@@ -22,9 +22,7 @@ return new class extends Migration
     {
         Schema::create('sale_items', function (Blueprint $table) {
 
-            /**
-             * 판매 상세 고유 ID
-             */
+            // * 판매 상세 고유 ID
             $table->id();
 
             /**
@@ -194,9 +192,7 @@ return new class extends Migration
             $table->text('note')
                 ->nullable();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -220,9 +216,7 @@ return new class extends Migration
                 'product_id',
             ]);
 
-            /**
-             * 프로모션별 판매 실적 조회용 인덱스
-             */
+            // * 프로모션별 판매 실적 조회용 인덱스
             $table->index([
                 'promotion_id',
                 'product_id',
@@ -230,9 +224,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 제품별 판매 상세 테이블 삭제
-     */
+    // * 제품별 판매 상세 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('sale_items');

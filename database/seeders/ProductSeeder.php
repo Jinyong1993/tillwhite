@@ -84,9 +84,7 @@ class ProductSeeder extends Seeder
         }
     }
 
-    /**
-     * 제품 데이터에서 사용할 카테고리를 점포별로 준비합니다.
-     */
+    // * 제품 데이터에서 사용할 카테고리를 점포별로 준비합니다.
     private function categoriesForStore(int $storeId): array
     {
         $definitions = [
@@ -115,9 +113,7 @@ class ProductSeeder extends Seeder
         return $result;
     }
 
-    /**
-     * 카테고리와 담당 부서가 실제 매장 운영상 자연스럽도록 구성한 30개 샘플입니다.
-     */
+    // * 카테고리와 담당 부서가 실제 매장 운영상 자연스럽도록 구성한 30개 샘플입니다.
     private function sampleProducts(): array
     {
         $regular = fn (

@@ -1305,7 +1305,7 @@ class AdminController extends Controller
         return response()->json(['message' => $changed ? '직원 정보가 수정되었습니다.' : '변경된 직원 정보가 없습니다.']);
     }
 
-    /** 상세 화면의 상태 칩에서 재직 상태만 빠르게 변경합니다. */
+    // 상세 화면의 상태 칩에서 재직 상태만 빠르게 변경합니다.
     public function employeeStatus(Request $request, User $user)
     {
         $actor = $request->user();
@@ -1339,7 +1339,7 @@ class AdminController extends Controller
         return response()->json(['message' => '직원 재직 상태를 변경했습니다.']);
     }
 
-    /** 직원 로그인 비밀번호를 관리자가 새 비밀번호로 초기화합니다. */
+    // 직원 로그인 비밀번호를 관리자가 새 비밀번호로 초기화합니다.
     public function employeePasswordReset(Request $request, User $user)
     {
         $actor = $request->user();
@@ -1392,7 +1392,7 @@ class AdminController extends Controller
         return response()->json(['message' => '직원 비밀번호를 초기화했습니다.']);
     }
 
-    /** 직원을 영구 삭제하지 않고 deleted_at만 기록하여 복구 가능 상태로 전환합니다. */
+    // 직원을 영구 삭제하지 않고 deleted_at만 기록하여 복구 가능 상태로 전환합니다.
     public function employeeDelete(Request $request, User $user)
     {
         $actor = $request->user();
@@ -1439,7 +1439,7 @@ class AdminController extends Controller
         return response()->json(['message' => '직원을 삭제했습니다.']);
     }
 
-    /** Soft Delete된 직원을 복구합니다. 기존 재직/계정 상태는 변경하지 않습니다. */
+    // Soft Delete된 직원을 복구합니다. 기존 재직/계정 상태는 변경하지 않습니다.
     public function employeeRestore(Request $request, User $user)
     {
         $actor = $request->user();
@@ -1475,7 +1475,7 @@ class AdminController extends Controller
         return response()->json(['message' => '직원을 복구했습니다.']);
     }
 
-    /** 직원 변경 이력 비교에 필요한 업무 필드만 안전하게 추출합니다. */
+    // 직원 변경 이력 비교에 필요한 업무 필드만 안전하게 추출합니다.
     private function employeeAuditSnapshot(User $user): array
     {
         return [
@@ -1495,7 +1495,7 @@ class AdminController extends Controller
         ];
     }
 
-    /** 선택한 역할이 직원의 부서 규칙과 일치하는지 서버에서 최종 검증합니다. */
+    // 선택한 역할이 직원의 부서 규칙과 일치하는지 서버에서 최종 검증합니다.
     private function ensureEmployeeRoleMatchesDepartment(
         ?string $department,
         Role $role
@@ -1626,9 +1626,7 @@ class AdminController extends Controller
             ]
         );
 
-        /**
-         * 시스템 설정 변경 내용을 감사 로그(audit log)에 기록합니다.
-         */
+        // * 시스템 설정 변경 내용을 감사 로그(audit log)에 기록합니다.
         $this->audit->log(
             $user,
             'system',
@@ -1691,9 +1689,7 @@ class AdminController extends Controller
          */
         $role->permissions()->sync($permissionIds);
 
-        /**
-         * 역할별 권한 변경 내용을 감사 로그(audit log)에 기록합니다.
-         */
+        // * 역할별 권한 변경 내용을 감사 로그(audit log)에 기록합니다.
         $this->audit->log(
             $user,
             'system',

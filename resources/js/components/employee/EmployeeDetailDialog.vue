@@ -69,7 +69,10 @@
                 />
               </template>
 
-              <v-list density="compact" min-width="190">
+              <v-list
+                  density="compact"
+                  min-width="190"
+              >
                 <v-list-item
                   prepend-icon="mdi-lock-reset"
                   title="비밀번호 초기화"
@@ -464,7 +467,7 @@ const emit = defineEmits([
 const statusDialog = ref(false);
 const nextStatus = ref('active');
 
-/** 권한이 없는 관리 버튼도 동일한 외형을 유지하고 클릭 시 이유를 안내합니다. */
+// 권한이 없는 관리 버튼도 동일한 외형을 유지하고 클릭 시 이유를 안내합니다.
 function requestManageAction(action) {
   if (!props.canManage) {
     emit('permission-denied', '직원 정보를 관리할 권한이 없습니다.');
@@ -474,35 +477,33 @@ function requestManageAction(action) {
   emit(action);
 }
 
-/** 재직 상태 변경 권한과 현재 상태를 확인한 뒤 상태 변경창을 엽니다. */
+// 재직 상태 변경 권한과 현재 상태를 확인한 뒤 상태 변경창을 엽니다.
 function openStatusDialog() {
   if (!props.employee || props.employee.deleted_at || !props.canManage) return;
   nextStatus.value = props.employee.employment_status;
   statusDialog.value = true;
 }
 
-/** 실제로 상태가 달라진 경우에만 부모에 변경 요청을 전달합니다. */
+// 실제로 상태가 달라진 경우에만 부모에 변경 요청을 전달합니다.
 function submitStatus() {
   if (nextStatus.value === props.employee?.employment_status) return;
   emit('status-change', nextStatus.value);
   statusDialog.value = false;
 }
 
-/** v-dialog의 열림 상태를 부모와 동기화하고 닫힘 이벤트를 전달합니다. */
+// v-dialog의 열림 상태를 부모와 동기화하고 닫힘 이벤트를 전달합니다.
 function handleDialogChange(value) {
   emit('update:modelValue', value);
   if (!value) emit('close');
 }
 
-/** 직원 상세 다이얼로그를 닫고 부모의 정리 로직을 호출합니다. */
+// 직원 상세 다이얼로그를 닫고 부모의 정리 로직을 호출합니다.
 function close() {
   emit('update:modelValue', false);
   emit('close');
 }
 
-/**
- * 값이 없는 경우 하이픈(-)을 표시합니다.
- */
+// * 값이 없는 경우 하이픈(-)을 표시합니다.
 function displayValue(value) {
   if (value === null || value === undefined || value === '') {
     return '-';
@@ -587,9 +588,7 @@ function accountStatus(value) {
   return '-';
 }
 
-/**
- * 날짜 값을 YYYY.MM.DD 형식으로 표시합니다.
- */
+// * 날짜 값을 YYYY.MM.DD 형식으로 표시합니다.
 function formatDate(value) {
   if (!value) {
     return '-';
@@ -614,17 +613,17 @@ function auditActionText(action) {
   return { create: '등록', update: '수정', delete: '삭제', restore: '복구' }[action] ?? '-';
 }
 
-/** 등록·수정·삭제 작업자 이름을 표시하며 누락 시 하이픈을 사용합니다. */
+// 등록·수정·삭제 작업자 이름을 표시하며 누락 시 하이픈을 사용합니다.
 function historyActor(entry) {
   return entry?.user?.name ?? '-';
 }
 
-/** 관리 이력 일시를 공통 날짜·시간 형식으로 표시합니다. */
+// 관리 이력 일시를 공통 날짜·시간 형식으로 표시합니다.
 function historyAt(entry, fallbackAt = null) {
   return formatDateTime(entry?.at ?? fallbackAt);
 }
 
-/** 날짜·시간 값을 사용자 화면용 형식으로 변환합니다. */
+// 날짜·시간 값을 사용자 화면용 형식으로 변환합니다.
 function formatDateTime(value) {
   if (!value) {
     return '-';

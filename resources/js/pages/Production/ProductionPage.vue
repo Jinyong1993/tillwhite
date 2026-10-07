@@ -1,5 +1,8 @@
 <template>
-  <AppShell ref="appShellRef" :title="pageTitle">
+  <AppShell
+      ref="appShellRef"
+      :title="pageTitle"
+  >
     <template #default="{ can, setError }">
       <section class="store-context mb-3">
         <div class="store-context-copy">
@@ -31,7 +34,12 @@
 
       <div v-if="ready">
         <v-divider class="production-divider" />
-        <v-tabs v-model="tab" grow density="compact" class="production-tabs">
+        <v-tabs
+            v-model="tab"
+            grow
+            density="compact"
+            class="production-tabs"
+        >
           <v-tab value="list">목록</v-tab>
           <v-tab value="calendar">캘린더</v-tab>
           <v-tab value="analysis">분석</v-tab>
@@ -39,7 +47,10 @@
         </v-tabs>
         <v-divider class="production-divider" />
 
-        <v-window v-model="tab" class="mt-2">
+        <v-window
+            v-model="tab"
+            class="mt-2"
+        >
           <v-window-item value="list">
             <ProductionDailyTab
               :daily="daily"
@@ -88,13 +99,21 @@
         </v-window>
       </div>
 
-      <AppAlert v-model="successMessage" type="success" />
+      <AppAlert
+          v-model="successMessage"
+          type="success"
+      />
     </template>
   </AppShell>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import {
+    computed,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+} from 'vue';
 import { useRouter } from 'vue-router';
 import AppAlert from '../../components/common/AppAlert.vue';
 import AppErrorState from '../../components/common/AppErrorState.vue';
@@ -105,8 +124,10 @@ import ProductionDailyTab from '../../components/production/ProductionDailyTab.v
 import ProductionStatisticsTab from '../../components/production/ProductionStatisticsTab.vue';
 import { useAppLoading } from '../../composables/useAppLoading';
 import { useSession } from '../../composables/useSession';
-import { addLocalDays, toLocalDateString } from '../../utils/localDate';
-
+import {
+    addLocalDays,
+    toLocalDateString,
+} from '../../utils/localDate';
 const router = useRouter();
 const { completePageLoading, cancelLoading } = useAppLoading();
 const { clear } = useSession();
@@ -134,12 +155,12 @@ const currentStoreName = computed(() => (
   || '-'
 ));
 
-/** 점포와 날짜 조합을 캐시 키로 변환합니다. */
+// 점포와 날짜 조합을 캐시 키로 변환합니다.
 function cacheKey(date, targetStoreId) {
   return `${targetStoreId || 'auto'}:${date}`;
 }
 
-/** API 오류를 사용자가 이해할 수 있는 공통 조회 메시지로 변환합니다. */
+// API 오류를 사용자가 이해할 수 있는 공통 조회 메시지로 변환합니다.
 function getLoadErrorMessage(error) {
   if (error.code === 'ECONNABORTED') {
     return '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.';
@@ -151,7 +172,7 @@ function getLoadErrorMessage(error) {
       : error.message || '생산·폐기 정보를 불러오지 못했습니다.');
 }
 
-/** 선택 날짜의 옵션과 일일 데이터를 조회합니다. 이미 확인한 날짜는 캐시를 우선 사용합니다. */
+// 선택 날짜의 옵션과 일일 데이터를 조회합니다. 이미 확인한 날짜는 캐시를 우선 사용합니다.
 async function loadPage({ force = false, date = workDate.value } = {}) {
   activeRequest?.abort();
 
@@ -231,7 +252,7 @@ async function loadPage({ force = false, date = workDate.value } = {}) {
   }
 }
 
-/** 현재 날짜 양옆 데이터를 조용히 미리 받아 날짜 이동 체감 속도를 높입니다. */
+// 현재 날짜 양옆 데이터를 조용히 미리 받아 날짜 이동 체감 속도를 높입니다.
 function prefetchAdjacentDates(date, targetStoreId) {
   for (const offset of [-1, 1]) {
     const adjacentDate = addLocalDays(date, offset);
@@ -257,7 +278,7 @@ function prefetchAdjacentDates(date, targetStoreId) {
   }
 }
 
-/** 점포를 변경하면 다른 점포의 동일 날짜 데이터를 새로 조회합니다. */
+// 점포를 변경하면 다른 점포의 동일 날짜 데이터를 새로 조회합니다.
 async function changeStore(value) {
   if (!value || value === storeId.value) return;
 
@@ -265,7 +286,7 @@ async function changeStore(value) {
   await loadPage({ force: true });
 }
 
-/** 날짜 표시는 즉시 바꾸고, 캐시 또는 최신 서버 데이터로 내용을 갱신합니다. */
+// 날짜 표시는 즉시 바꾸고, 캐시 또는 최신 서버 데이터로 내용을 갱신합니다.
 async function changeDate(value) {
   if (!value || value === workDate.value) return true;
 
@@ -273,7 +294,7 @@ async function changeDate(value) {
   return loadPage({ date: value });
 }
 
-/** 저장 응답에 포함된 서버 재계산 결과를 즉시 반영한 뒤 캐시도 같은 값으로 맞춥니다. */
+// 저장 응답에 포함된 서버 재계산 결과를 즉시 반영한 뒤 캐시도 같은 값으로 맞춥니다.
 function replaceDaily(value) {
   if (!value) return;
 
@@ -282,7 +303,7 @@ function replaceDaily(value) {
   dailyCache.set(key, value);
 }
 
-/** 저장 후 현재 날짜 캐시만 무효화하여 변경된 값을 서버에서 다시 확인합니다. */
+// 저장 후 현재 날짜 캐시만 무효화하여 변경된 값을 서버에서 다시 확인합니다.
 async function reloadCurrentDate() {
   const key = cacheKey(workDate.value, storeId.value);
   dailyCache.delete(key);
@@ -290,7 +311,7 @@ async function reloadCurrentDate() {
   await loadPage({ force: true });
 }
 
-/** 캘린더 날짜 이동이 성공한 뒤에만 목록 탭 전환을 완료하도록 콜백으로 결과를 알립니다. */
+// 캘린더 날짜 이동이 성공한 뒤에만 목록 탭 전환을 완료하도록 콜백으로 결과를 알립니다.
 async function jumpToDate(value, done) {
   const success = await changeDate(value);
 
@@ -301,12 +322,12 @@ async function jumpToDate(value, done) {
   done?.(success);
 }
 
-/** 서버 저장 성공 메시지는 프로젝트 공통 알림으로 표시합니다. */
+// 서버 저장 성공 메시지는 프로젝트 공통 알림으로 표시합니다.
 function showSuccess(message) {
   successMessage.value = message;
 }
 
-/** 최초 데이터 준비가 끝난 뒤 메뉴 이동에서 시작된 공통 로딩 오버레이를 종료합니다. */
+// 최초 데이터 준비가 끝난 뒤 메뉴 이동에서 시작된 공통 로딩 오버레이를 종료합니다.
 async function initializePage() {
   try {
     await loadPage();
@@ -315,7 +336,7 @@ async function initializePage() {
   }
 }
 
-/** 화면을 떠날 때 진행 중 요청이 이후 화면 상태를 변경하지 못하도록 취소합니다. */
+// 화면을 떠날 때 진행 중 요청이 이후 화면 상태를 변경하지 못하도록 취소합니다.
 function disposePage() {
   disposed = true;
   activeRequest?.abort();
@@ -337,21 +358,77 @@ onBeforeUnmount(disposePage);
   border-radius:10px;
   background:rgba(var(--v-theme-on-surface),.018);
 }
-.store-context-copy { min-width:0; display:flex; flex-direction:column; gap:1px; }
-.store-context-label { flex:none; font-size:.68rem; font-weight:600; color:rgba(var(--v-theme-on-surface),.56); }
-.store-context-copy small { font-size:.62rem; color:rgba(var(--v-theme-on-surface),.42); }
-.store-name { margin-left:auto; font-size:.92rem; font-weight:700; letter-spacing:-.02em; }
-.store-select { flex:0 1 190px; max-width:190px; }
-.store-select :deep(.v-field__input) { justify-content:flex-end; min-height:34px; padding-inline:4px; font-size:.92rem; font-weight:700; text-align:right; }
-.store-read-only { font-size:.68rem; color:rgba(var(--v-theme-on-surface),.56); text-align:right; }
-.production-divider { width:calc(100% + 32px); margin-inline:-16px; }
-.production-tabs { min-height:42px; }
-.production-tabs :deep(.v-tab) { min-width:0; padding-inline:4px; font-size:.78rem; font-weight:500; letter-spacing:-.01em; text-transform:none; }
-.production-tabs :deep(.v-tab--selected) { font-weight:700; }
-.production-tabs :deep(.v-tab__slider) { height:2px; }
+.store-context-copy {
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+}
+.store-context-label {
+    flex:none;
+    font-size:.68rem;
+    font-weight:600;
+    color:rgba(var(--v-theme-on-surface),.56);
+}
+.store-context-copy small {
+    font-size:.62rem;
+    color:rgba(var(--v-theme-on-surface),.42);
+}
+.store-name {
+    margin-left:auto;
+    font-size:.92rem;
+    font-weight:700;
+    letter-spacing:-.02em;
+}
+.store-select {
+    flex:0 1 190px;
+    max-width:190px;
+}
+.store-select :deep(.v-field__input) {
+    justify-content:flex-end;
+    min-height:34px;
+    padding-inline:4px;
+    font-size:.92rem;
+    font-weight:700;
+    text-align:right;
+}
+.store-read-only {
+    font-size:.68rem;
+    color:rgba(var(--v-theme-on-surface),.56);
+    text-align:right;
+}
+.production-divider {
+    width:calc(100% + 32px);
+    margin-inline:-16px;
+}
+.production-tabs {
+    min-height:42px;
+}
+.production-tabs :deep(.v-tab) {
+    min-width:0;
+    padding-inline:4px;
+    font-size:.78rem;
+    font-weight:500;
+    letter-spacing:-.01em;
+    text-transform:none;
+}
+.production-tabs :deep(.v-tab--selected) {
+    font-weight:700;
+}
+.production-tabs :deep(.v-tab__slider) {
+    height:2px;
+}
 @media(max-width:600px) {
-  .store-context { min-height:48px; padding:7px 10px; }
-  .store-context-copy small { display:none; }
-  .store-select { flex-basis:150px; max-width:150px; }
+  .store-context {
+      min-height:48px;
+      padding:7px 10px;
+  }
+  .store-context-copy small {
+      display:none;
+  }
+  .store-select {
+      flex-basis:150px;
+      max-width:150px;
+  }
 }
 </style>

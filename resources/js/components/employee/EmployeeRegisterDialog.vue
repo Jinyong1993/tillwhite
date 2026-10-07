@@ -494,9 +494,7 @@ import AppAlert from '../common/AppAlert.vue';
  * 부모 화면(EmployeePage)에서 관리합니다.
  */
 const props = defineProps({
-  /**
-   * 다이얼로그 열림/닫힘 상태입니다.
-   */
+  // * 다이얼로그 열림/닫힘 상태입니다.
   modelValue: {
     type: Boolean,
     default: false,
@@ -594,9 +592,7 @@ const isProcessing = computed(
   () => props.loadingAction !== null,
 );
 
-/**
- * 초기 비밀번호 표시 여부입니다.
- */
+// * 초기 비밀번호 표시 여부입니다.
 const showPassword = ref(false);
 
 /**
@@ -608,14 +604,10 @@ const showPassword = ref(false);
 const invalidField = ref('');
 const validationMessage = ref('');
 
-/**
- * 입력 영역 스크롤 위치를 제어하기 위한 참조입니다.
- */
+// * 입력 영역 스크롤 위치를 제어하기 위한 참조입니다.
 const scrollAreaRef = ref(null);
 
-/**
- * 각 입력칸으로 이동하기 위한 참조입니다.
- */
+// * 각 입력칸으로 이동하기 위한 참조입니다.
 const employeeCodeRef = ref(null);
 const nameRef = ref(null);
 const phoneRef = ref(null);
@@ -627,9 +619,7 @@ const positionRef = ref(null);
 const roleRef = ref(null);
 const hiredAtRef = ref(null);
 
-/**
- * 직원이 소속될 수 있는 부서(department) 목록입니다.
- */
+// * 직원이 소속될 수 있는 부서(department) 목록입니다.
 const departments = [
   {
     title: '주방',
@@ -737,9 +727,7 @@ function isEmpty(value) {
   );
 }
 
-/**
- * 현재 표시 중인 입력 오류를 제거합니다.
- */
+// * 현재 표시 중인 입력 오류를 제거합니다.
 function clearValidation() {
   invalidField.value = '';
   validationMessage.value = '';
@@ -839,9 +827,7 @@ function updateDepartment(value) {
   emit('update:form', nextForm);
 }
 
-/**
- * 오류가 발생한 입력칸의 화면 참조를 반환합니다.
- */
+// * 오류가 발생한 입력칸의 화면 참조를 반환합니다.
 function getFieldRef(field) {
   const refs = {
     name: nameRef,
@@ -888,9 +874,7 @@ async function focusInvalidField(field) {
   });
 }
 
-/**
- * 첫 번째 입력 오류를 화면에 표시합니다.
- */
+// * 첫 번째 입력 오류를 화면에 표시합니다.
 function showValidationError(field, message) {
   invalidField.value = field;
   validationMessage.value = message;
@@ -931,9 +915,7 @@ function validateAndSubmit() {
   const positionId = props.form.position_id;
   const roleId = props.form.role_id;
 
-  /**
-   * 1. 이름(name)
-   */
+  // * 1. 이름(name)
   if (isEmpty(name)) {
     showValidationError(
       'name',
@@ -952,9 +934,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 2. 휴대폰 번호(phone)
-   */
+  // * 2. 휴대폰 번호(phone)
   if (isEmpty(phone)) {
     showValidationError(
       'phone',
@@ -982,9 +962,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 3. 생년월일(birth_date)
-   */
+  // * 3. 생년월일(birth_date)
   if (isEmpty(birthDate)) {
     showValidationError(
       'birth_date',
@@ -1003,9 +981,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 4. 입사일(hired_at)
-   */
+  // * 4. 입사일(hired_at)
   if (isEmpty(hiredAt)) {
     showValidationError(
       'hired_at',
@@ -1015,9 +991,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 5. 사원번호(employee_code)
-   */
+  // * 5. 사원번호(employee_code)
   if (isEmpty(employeeCode)) {
     showValidationError(
       'employee_code',
@@ -1045,9 +1019,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 6. 초기 비밀번호(password)
-   */
+  // * 6. 초기 비밀번호(password)
   if (isEmpty(password)) {
     showValidationError(
       'password',
@@ -1075,9 +1047,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 7. 소속 부서(department)
-   */
+  // * 7. 소속 부서(department)
   if (isEmpty(department)) {
     showValidationError(
       'department',
@@ -1120,9 +1090,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /**
-   * 9. 직급(position_id)
-   */
+  // * 9. 직급(position_id)
   if (isEmpty(positionId)) {
     showValidationError(
       'position_id',

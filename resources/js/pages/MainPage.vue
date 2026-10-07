@@ -181,14 +181,10 @@ import UserInfoCard from '../components/user/UserInfoCard.vue';
 import { useAppLoading } from '../composables/useAppLoading';
 import { useSession } from '../composables/useSession';
 
-/**
- * 현재 화면의 주소 정보(Route)
- */
+// * 현재 화면의 주소 정보(Route)
 const route = useRoute();
 
-/**
- * 현재 주소 변경에 사용하는 Vue Router
- */
+// * 현재 주소 변경에 사용하는 Vue Router
 const router = useRouter();
 
 /**
@@ -204,21 +200,15 @@ const {
   completePageLoading,
 } = useAppLoading();
 
-/**
- * 현재 로그인 사용자의 권한 확인 기능
- */
+// * 현재 로그인 사용자의 권한 확인 기능
 const {
   can,
 } = useSession();
 
-/**
- * 현재 페이지 제목
- */
+// * 현재 페이지 제목
 const pageTitle = '메인';
 
-/**
- * AppShell 사용자 정보 준비 여부
- */
+// * AppShell 사용자 정보 준비 여부
 const sessionIsReady = ref(false);
 
 /**
@@ -250,9 +240,7 @@ const accessDeniedMessage = computed(() => {
     : '';
 });
 
-/**
- * 접근 거부 안내 메시지를 URL에서 제거합니다.
- */
+// * 접근 거부 안내 메시지를 URL에서 제거합니다.
 async function clearAccessDeniedMessage() {
   if (!route.query.accessDenied) {
     return;
@@ -299,9 +287,7 @@ async function tryCompletePageLoading() {
   await completePageLoading();
 }
 
-/**
- * AppShell 사용자 정보 준비 완료 처리
- */
+// * AppShell 사용자 정보 준비 완료 처리
 async function handleSessionReady() {
   sessionIsReady.value = true;
 

@@ -102,9 +102,7 @@ class AccessService
             return $query->whereRaw('1 = 0');
         }
 
-        /**
-         * 자신의 점포 데이터로 조회 범위를 제한합니다.
-         */
+        // * 자신의 점포 데이터로 조회 범위를 제한합니다.
         $query->where('store_id', $user->store_id);
 
         /**

@@ -85,7 +85,11 @@
         rounded="lg"
       >
         <v-card-text class="text-center py-8">
-          <v-icon icon="mdi-account-search-outline" size="36" class="mb-3 text-medium-emphasis" />
+          <v-icon
+              icon="mdi-account-search-outline"
+              size="36"
+              class="mb-3 text-medium-emphasis"
+          />
           <div class="font-weight-medium">검색 결과가 없습니다.</div>
           <div class="text-caption text-medium-emphasis mt-1">다른 이름이나 연락처로 검색해보세요.</div>
           <v-btn
@@ -280,9 +284,7 @@ import EmployeePasswordResetDialog from '../../components/employee/EmployeePassw
 import EmployeeRegisterDialog from '../../components/employee/EmployeeRegisterDialog.vue';
 import { useAppLoading } from '../../composables/useAppLoading';
 
-/**
- * 현재 페이지 제목입니다.
- */
+// * 현재 페이지 제목입니다.
 const pageTitle = '직원 관리';
 
 /**
@@ -311,9 +313,7 @@ const {
   completePageLoading,
 } = useAppLoading();
 
-/**
- * 직원 등록 창(registerDialog)의 열림/닫힘 상태입니다.
- */
+// * 직원 등록 창(registerDialog)의 열림/닫힘 상태입니다.
 const registerDialog = ref(false);
 
 /**
@@ -384,7 +384,7 @@ const detailDialog = ref(false);
  */
 const selectedEmployee = ref(null);
 
-/** 직원 정보 수정 / 비밀번호 초기화 / 삭제 / 복구 UI 상태입니다. */
+// 직원 정보 수정 / 비밀번호 초기화 / 삭제 / 복구 UI 상태입니다.
 const editDialog = ref(false);
 const passwordResetDialog = ref(false);
 const employeeActionLoading = ref(null);
@@ -397,7 +397,7 @@ const employeeConfirm = reactive({
   payload: null,
 });
 
-/** 직원 관리 확인창의 상태와 보관 payload를 초기화합니다. */
+// 직원 관리 확인창의 상태와 보관 payload를 초기화합니다.
 function clearEmployeeConfirm() {
   if (employeeActionLoading.value) return;
   employeeConfirm.open = false;
@@ -408,9 +408,7 @@ function clearEmployeeConfirm() {
   employeeConfirm.payload = null;
 }
 
-/**
- * 직원 관리 화면에서 사용하는 서버 데이터입니다.
- */
+// * 직원 관리 화면에서 사용하는 서버 데이터입니다.
 const data = ref({
   employees: [],
   stores: [],
@@ -557,7 +555,7 @@ const itemsPerPageOptions = [
   { title: '30명', value: 30 },
 ];
 
-/** 이름, 사번, 연락처를 한 검색창에서 즉시 검색합니다. */
+// 이름, 사번, 연락처를 한 검색창에서 즉시 검색합니다.
 const filteredEmployees = computed(() => {
   const keyword = String(searchQuery.value ?? '').trim().toLocaleLowerCase('ko-KR');
 
@@ -589,7 +587,7 @@ const paginatedEmployees = computed(() => {
 const pageStart = computed(() => filteredEmployees.value.length === 0 ? 0 : ((currentPage.value - 1) * itemsPerPage.value) + 1);
 const pageEnd = computed(() => Math.min(currentPage.value * itemsPerPage.value, filteredEmployees.value.length));
 
-/** 직원 검색어와 상태 필터를 기본값으로 되돌립니다. */
+// 직원 검색어와 상태 필터를 기본값으로 되돌립니다.
 function resetEmployeeFilters() {
   searchQuery.value = '';
   statusFilter.value = 'all';
@@ -606,9 +604,7 @@ watch(totalPages, (pages) => {
   }
 });
 
-/**
- * 신규 직원 등록 양식(form)입니다.
- */
+// * 신규 직원 등록 양식(form)입니다.
 const form = ref(createEmptyForm());
 
 /**
@@ -788,9 +784,7 @@ function errorMessage(error, fallback) {
   return error.response?.data?.message ?? fallback;
 }
 
-/**
- * 직원 등록 관련 공통 확인창을 엽니다.
- */
+// * 직원 등록 관련 공통 확인창을 엽니다.
 function openConfirmDialog(
   action,
   title,
@@ -1039,9 +1033,7 @@ function requestDeleteDraft() {
   );
 }
 
-/**
- * 임시저장 확인창을 표시합니다.
- */
+// * 임시저장 확인창을 표시합니다.
 function requestSaveDraft() {
   openConfirmDialog(
     'draft',
@@ -1375,19 +1367,19 @@ function closeDetailDialog() {
 
 }
 
-/** 직원 상세에서 수정 다이얼로그를 엽니다. */
+// 직원 상세에서 수정 다이얼로그를 엽니다.
 function openEditDialog() {
   if (!selectedEmployee.value || selectedEmployee.value.deleted_at) return;
   editDialog.value = true;
 }
 
-/** 직원 상세에서 비밀번호 초기화 다이얼로그를 엽니다. */
+// 직원 상세에서 비밀번호 초기화 다이얼로그를 엽니다.
 function openPasswordResetDialog() {
   if (!selectedEmployee.value || selectedEmployee.value.deleted_at) return;
   passwordResetDialog.value = true;
 }
 
-/** 직원 카드에서 상태를 바꿀 수 있는지 화면 표시용으로 판단합니다. */
+// 직원 카드에서 상태를 바꿀 수 있는지 화면 표시용으로 판단합니다.
 function canManageEmployeeCard(employee, can) {
   return Boolean(
     employee
@@ -1416,7 +1408,7 @@ function requestCardEmployeeStatus(employee, status) {
   employeeConfirm.open = true;
 }
 
-/** 삭제/복구 확인창의 문구와 실행 작업을 설정합니다. */
+// 삭제/복구 확인창의 문구와 실행 작업을 설정합니다.
 async function changeEmployeeStatus(status, setError, setSuccess) {
   if (!selectedEmployee.value || employeeActionLoading.value) return;
   employeeActionLoading.value = 'status';
@@ -1431,7 +1423,7 @@ async function changeEmployeeStatus(status, setError, setSuccess) {
   }
 }
 
-/** 직원 삭제·복구 등 영속 변경 전에 공통 확인창을 구성합니다. */
+// 직원 삭제·복구 등 영속 변경 전에 공통 확인창을 구성합니다.
 function requestEmployeeAction(action) {
   if (!selectedEmployee.value || employeeActionLoading.value) return;
   employeeConfirm.action = action;
@@ -1460,7 +1452,7 @@ function requestEmployeeEditSave(payload, setError, setSuccess) {
   employeeConfirm.open = true;
 }
 
-/** 직원 수정 요청과 이후 목록/상세 재조회는 서로 분리해서 처리합니다. */
+// 직원 수정 요청과 이후 목록/상세 재조회는 서로 분리해서 처리합니다.
 async function saveEmployeeEdit(payload, setError, setSuccess) {
   if (!selectedEmployee.value || employeeActionLoading.value) {
     return;
@@ -1494,7 +1486,7 @@ async function saveEmployeeEdit(payload, setError, setSuccess) {
   );
 }
 
-/** 새 비밀번호는 이 요청에서만 사용하며 목록/상세 데이터에는 저장하지 않습니다. */
+// 새 비밀번호는 이 요청에서만 사용하며 목록/상세 데이터에는 저장하지 않습니다.
 async function saveEmployeePassword(payload, setError, setSuccess) {
   if (!selectedEmployee.value || employeeActionLoading.value) {
     return;
@@ -1527,7 +1519,7 @@ async function saveEmployeePassword(payload, setError, setSuccess) {
   );
 }
 
-/** 확인창에서 선택한 Soft Delete 또는 복구 작업을 실행합니다. */
+// 확인창에서 선택한 Soft Delete 또는 복구 작업을 실행합니다.
 async function executeEmployeeAction(setError, setSuccess) {
   if (
     !selectedEmployee.value
@@ -1612,7 +1604,7 @@ async function executeEmployeeAction(setError, setSuccess) {
   }
 }
 
-/** 변경 성공 후 목록과 현재 상세정보를 최신 서버 상태로 맞춥니다. */
+// 변경 성공 후 목록과 현재 상세정보를 최신 서버 상태로 맞춥니다.
 async function refreshEmployeeData(setError, failureMessage) {
   const employeeId = selectedEmployee.value?.id;
   try {
@@ -1826,9 +1818,15 @@ onMounted(() => {
   grid-template-areas: "search search" "status page-size";
   gap: 10px;
 }
-.employee-search-field { grid-area: search; }
-.employee-status-filter { grid-area: status; }
-.employee-page-size { grid-area: page-size; }
+.employee-search-field {
+    grid-area: search;
+}
+.employee-status-filter {
+    grid-area: status;
+}
+.employee-page-size {
+    grid-area: page-size;
+}
 
 /* 직원 카드와 비슷한 옅은 경계만 사용하고 포커스 시에도 과한 흰색 테두리를 만들지 않습니다. */
 .employee-toolbar :deep(.v-field) {

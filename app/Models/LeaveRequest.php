@@ -33,9 +33,7 @@ class LeaveRequest extends Model
         ];
     }
 
-    /**
-     * 휴가를 신청한 직원
-     */
+    // * 휴가를 신청한 직원
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

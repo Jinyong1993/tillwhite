@@ -23,9 +23,7 @@ return new class extends Migration
     {
         Schema::create('employee_assignments', function (Blueprint $table) {
 
-            /**
-             * 인사발령 이력 고유 ID
-             */
+            // * 인사발령 이력 고유 ID
             $table->id();
 
             /**
@@ -165,9 +163,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->restrictOnDelete();
 
-            /**
-             * 데이터 생성 일시 / 마지막 수정 일시
-             */
+            // * 데이터 생성 일시 / 마지막 수정 일시
             $table->timestamps();
 
             /**
@@ -179,9 +175,7 @@ return new class extends Migration
                 'effective_from',
             ]);
 
-            /**
-             * 직원별 인사발령 이력 조회용 인덱스
-             */
+            // * 직원별 인사발령 이력 조회용 인덱스
             $table->index([
                 'user_id',
                 'effective_from',
@@ -200,9 +194,7 @@ return new class extends Migration
         });
     }
 
-    /**
-     * 직원 인사발령 이력 테이블 삭제
-     */
+    // * 직원 인사발령 이력 테이블 삭제
     public function down(): void
     {
         Schema::dropIfExists('employee_assignments');
