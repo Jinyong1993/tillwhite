@@ -28,8 +28,12 @@ class ProductionDailyService
     public function build(int $storeId, string $date, bool $includeDetails = false): array
     {
         $productsQuery = Product::query()->with('category');
+
         if ($includeDetails) {
-            $productsQuery->with(['recipes.ingredients', 'recipes.steps']);
+            $productsQuery->with([
+                'recipes.ingredients',
+                'recipes.steps',
+            ]);
         }
 
         $products = $productsQuery
@@ -41,12 +45,21 @@ class ProductionDailyService
             ->get();
 
         $target = Carbon::parse($date);
+
         $productHistories = DB::table('product_master_histories')
             ->whereIn('product_id', $products->pluck('id'))
-            ->where('effective_from', '<=', $target->copy()->endOfDay())
+            ->where(
+                'effective_from',
+                '<=',
+                $target->copy()->endOfDay()
+            )
             ->where(function ($query) use ($target) {
                 $query->whereNull('effective_to')
-                    ->orWhere('effective_to', '>=', $target->copy()->startOfDay());
+                    ->orWhere(
+                        'effective_to',
+                        '>=',
+                        $target->copy()->startOfDay()
+                    );
             })
             ->orderByDesc('effective_from')
             ->get()
@@ -54,25 +67,54 @@ class ProductionDailyService
             ->keyBy('product_id');
 
         $categoryHistories = DB::table('product_category_histories')
-            ->whereIn('product_category_id', $products->pluck('product_category_id'))
-            ->where('effective_from', '<=', $target->copy()->endOfDay())
+            ->whereIn(
+                'product_category_id',
+                $products->pluck('product_category_id')
+            )
+            ->where(
+                'effective_from',
+                '<=',
+                $target->copy()->endOfDay()
+            )
             ->where(function ($query) use ($target) {
                 $query->whereNull('effective_to')
-                    ->orWhere('effective_to', '>=', $target->copy()->startOfDay());
+                    ->orWhere(
+                        'effective_to',
+                        '>=',
+                        $target->copy()->startOfDay()
+                    );
             })
             ->orderByDesc('effective_from')
             ->get()
             ->unique('product_category_id')
             ->keyBy('product_category_id');
 
-        $batches = ProductionBatch::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
+        $batches = ProductionBatch::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->get()
+            ->groupBy('product_id');
+
         // 작업자는 생산 기록에 연결된 실제 사용자 정보를 일괄 조회해 N+1 쿼리를 방지합니다.
         $batchWorkerMap = DB::table('production_batch_workers')
-            ->join('users', 'users.id', '=', 'production_batch_workers.user_id')
-            ->whereIn('production_batch_workers.production_batch_id', $batches->flatten()->pluck('id'))
-            ->select('production_batch_workers.production_batch_id', 'users.id', 'users.name')
+            ->join(
+                'users',
+                'users.id',
+                '=',
+                'production_batch_workers.user_id'
+            )
+            ->whereIn(
+                'production_batch_workers.production_batch_id',
+                $batches->flatten()->pluck('id')
+            )
+            ->select(
+                'production_batch_workers.production_batch_id',
+                'users.id',
+                'users.name'
+            )
             ->get()
             ->groupBy('production_batch_id');
+
         // 화면의 실적은 원 생산일 귀속 기준, 당일 재고 차감은 실제 업무 발생일 기준으로 분리합니다.
         $losses = ProductionLoss::query()
             ->with('reasons')
@@ -80,136 +122,444 @@ class ProductionDailyService
             ->whereDate('attribution_date', $date)
             ->get()
             ->groupBy('product_id');
+
         $operationalLosses = ProductionLoss::query()
             ->with('reasons')
             ->where('store_id', $storeId)
             ->whereDate('work_date', $date)
             ->get()
             ->groupBy('product_id');
+
         $attributedWastes = ProductionWaste::query()
             ->with('reasons')
             ->where('store_id', $storeId)
             ->whereDate('attribution_date', $date)
             ->get()
             ->groupBy('product_id');
+
         $operationalWastes = ProductionWaste::query()
             ->with('reasons')
             ->where('store_id', $storeId)
             ->whereDate('work_date', $date)
             ->get()
             ->groupBy('product_id');
-        $outflows = ProductionOtherOutflow::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
-        $incoming = ProductStockMovement::query()->where('store_id', $storeId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->get()->groupBy('product_id');
-        $outgoing = ProductStockMovement::query()->where('store_id', $storeId)->whereDate('work_date', $date)->where('movement_type', 'carryover_out')->get()->groupBy('product_id');
-        $confirmations = ProductionConfirmation::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->keyBy('product_id');
 
-        $rows = $products->map(function (Product $product) use ($batches, $losses, $operationalLosses, $attributedWastes, $operationalWastes, $outflows, $incoming, $outgoing, $confirmations, $productHistories, $categoryHistories, $date, $storeId, $batchWorkerMap) {
-            $history = $productHistories->get($product->id);
-            $historicalCategoryId = $history?->product_category_id ?? $product->product_category_id;
-            $categoryHistory = $categoryHistories->get($historicalCategoryId);
-            $isActive = $history
-                ? (bool) $history->is_active && !(bool) $history->is_deleted
-                : (bool) $product->is_active && $product->deleted_at === null;
+        $outflows = ProductionOtherOutflow::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->get()
+            ->groupBy('product_id');
 
-            $production = $this->sum($batches->get($product->id));
-            $carryIn = $this->sum($incoming->get($product->id));
-            $loss = $this->sum($losses->get($product->id));
-            $operationalLoss = $this->sum($operationalLosses->get($product->id));
-            $waste = $this->sum($attributedWastes->get($product->id));
-            $operationalWaste = $this->sum($operationalWastes->get($product->id));
-            $other = $this->sum($outflows->get($product->id));
-            $carryOut = $this->sum($outgoing->get($product->id));
-            $confirmation = $confirmations->get($product->id);
-            $wasteRate = $this->wasteRate($waste, $production);
-            $stockSources = $this->stockSourcesForDate($storeId, $product->id, $date);
+        $incoming = ProductStockMovement::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->where('movement_type', 'carryover_in')
+            ->get()
+            ->groupBy('product_id');
 
-            // 실제 기록이 존재하는데 과거 확인 플래그만 비어 있는 경우도 완료로 복구합니다.
-            // 0개 확인은 기록 행이 없으므로 반드시 ProductionConfirmation의 명시적 플래그를 사용합니다.
-            $productionConfirmed = (bool) ($confirmation?->production_confirmed ?? false) || ($batches->get($product->id)?->isNotEmpty() ?? false);
-            $lossConfirmed = (bool) ($confirmation?->loss_confirmed ?? false) || ($losses->get($product->id)?->isNotEmpty() ?? false);
-            $wasteConfirmed = (bool) ($confirmation?->waste_confirmed ?? false) || ($operationalWastes->get($product->id)?->isNotEmpty() ?? false);
-            $dispositionConfirmed = (bool) ($confirmation?->disposition_confirmed ?? false)
-                || ($outgoing->get($product->id)?->isNotEmpty() ?? false)
-                || ($outflows->get($product->id)?->isNotEmpty() ?? false);
+        $outgoing = ProductStockMovement::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->where('movement_type', 'carryover_out')
+            ->get()
+            ->groupBy('product_id');
 
-            return [
-                'id' => $product->id,
-                'name' => $history?->name ?? $product->name,
-                'category_id' => $historicalCategoryId,
-                'category_name' => $categoryHistory?->name ?? $product->category?->name ?? '-',
-                'recipe' => $product->relationLoaded('recipes') ? $product->recipes->sortByDesc('id')->first()?->toArray() : null,
-                'is_active' => $isActive,
-                'production' => $production,
-                'batches' => ($batches->get($product->id) ?? collect())->map(fn ($batch) => [
-                    'id' => $batch->id,
-                    'quantity' => $batch->quantity,
-                    'note' => $batch->note,
-                    'lock_version' => $batch->lock_version,
-                    'workers' => ($batchWorkerMap->get($batch->id) ?? collect())->map(fn ($worker) => ['id' => $worker->id, 'name' => $worker->name])->values(),
-                    'recipe_deviated' => $batch->recipe_deviated,
-                    'recipe_deviation_note' => $batch->recipe_deviation_note,
-                    'created_at' => $batch->created_at,
-                ])->values(),
-                'loss_details' => ($losses->get($product->id) ?? collect())->flatMap(fn ($loss) => $loss->reasons->map(fn ($reason) => [
-                    'reason_code' => $reason->reason_code,
-                    'reason_text' => $reason->reason_text,
-                    'quantity' => (int) $reason->quantity,
-                    'origin_production_date' => $loss->attribution_date?->toDateString() ?? $date,
-                    'stock_lot_id' => $loss->stock_lot_id,
-                ]))->values(),
-                'waste_details' => ($attributedWastes->get($product->id) ?? collect())->flatMap(fn ($wasteRow) => $wasteRow->reasons->map(fn ($reason) => [
-                    'reason_code' => $reason->reason_code,
-                    'reason_text' => $reason->reason_text,
-                    'quantity' => (int) $reason->quantity,
-                    'origin_production_date' => $wasteRow->attribution_date?->toDateString() ?? $date,
-                    'stock_lot_id' => $wasteRow->stock_lot_id,
-                ]))->values(),
-                'operational_loss_details' => ($operationalLosses->get($product->id) ?? collect())->flatMap(fn ($lossRow) => $lossRow->reasons->map(fn ($reason) => [
-                    'reason_code' => $reason->reason_code,
-                    'reason_text' => $reason->reason_text,
-                    'quantity' => (int) $reason->quantity,
-                    'origin_production_date' => $lossRow->attribution_date?->toDateString() ?? $date,
-                    'stock_lot_id' => $lossRow->stock_lot_id,
-                ]))->values(),
-                'operational_waste_details' => ($operationalWastes->get($product->id) ?? collect())->flatMap(fn ($wasteRow) => $wasteRow->reasons->map(fn ($reason) => [
-                    'reason_code' => $reason->reason_code,
-                    'reason_text' => $reason->reason_text,
-                    'quantity' => (int) $reason->quantity,
-                    'origin_production_date' => $wasteRow->attribution_date?->toDateString() ?? $date,
-                    'stock_lot_id' => $wasteRow->stock_lot_id,
-                ]))->values(),
-                'carryover_in' => $carryIn,
-                // 목록과 당일 요약은 실제 처리일 기준 수량을 사용합니다.
-                'loss' => $operationalLoss,
-                'operational_loss' => $operationalLoss,
-                'attributed_loss' => $loss,
-                'waste' => $operationalWaste,
-                'operational_waste' => $operationalWaste,
-                // 폐기율과 생산 성과는 원 생산일에 귀속된 폐기만 사용합니다.
-                'attributed_waste' => $waste,
-                'other_outflow' => $other,
-                // 기타 출고도 로스·폐기와 동일하게 재고 출처별 수정 내역을 제공합니다.
-                // 수정 다이얼로그가 기존 수량을 복원하지 못하면 서버의 교체 저장 검증과 달라집니다.
-                'other_outflow_details' => ($outflows->get($product->id) ?? collect())->map(fn ($outflow) => [
-                    'reason_code' => $outflow->reason_code,
-                    'reason_text' => $outflow->reason_text,
-                    'quantity' => (int) $outflow->quantity,
-                    'origin_production_date' => collect($stockSources)
-                        ->firstWhere('stock_lot_id', $outflow->stock_lot_id)['origin_production_date'] ?? $date,
-                    'stock_lot_id' => $outflow->stock_lot_id,
-                ])->values(),
-                'carryover_out' => $carryOut,
-                'stock_sources' => $stockSources,
-                'waste_rate' => $wasteRate,
-                'production_confirmed' => $productionConfirmed,
-                'loss_confirmed' => $lossConfirmed,
-                'waste_confirmed' => $wasteConfirmed,
-                'disposition_confirmed' => $dispositionConfirmed,
-                'zero_production_reason' => $confirmation?->zero_production_reason,
-                'zero_production_reason_text' => $confirmation?->zero_production_reason_text,
-                'complete' => ! $isActive || ($productionConfirmed && $lossConfirmed && $wasteConfirmed && $dispositionConfirmed),
-            ];
-        })->filter(function (array $row) {
+        $confirmations = ProductionConfirmation::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->get()
+            ->keyBy('product_id');
+
+        $rows = $products->map(
+            function (Product $product) use (
+                $batches,
+                $losses,
+                $operationalLosses,
+                $attributedWastes,
+                $operationalWastes,
+                $outflows,
+                $incoming,
+                $outgoing,
+                $confirmations,
+                $productHistories,
+                $categoryHistories,
+                $date,
+                $storeId,
+                $batchWorkerMap
+            ) {
+                $history = $productHistories->get($product->id);
+
+                $historicalCategoryId =
+                    $history?->product_category_id
+                    ?? $product->product_category_id;
+
+                $categoryHistory = $categoryHistories->get(
+                    $historicalCategoryId
+                );
+
+                $isActive = $history
+                    ? (bool) $history->is_active
+                        && !(bool) $history->is_deleted
+                    : (bool) $product->is_active
+                        && $product->deleted_at === null;
+
+                $production = $this->sum(
+                    $batches->get($product->id)
+                );
+
+                $carryIn = $this->sum(
+                    $incoming->get($product->id)
+                );
+
+                $loss = $this->sum(
+                    $losses->get($product->id)
+                );
+
+                $operationalLoss = $this->sum(
+                    $operationalLosses->get($product->id)
+                );
+
+                $waste = $this->sum(
+                    $attributedWastes->get($product->id)
+                );
+
+                $operationalWaste = $this->sum(
+                    $operationalWastes->get($product->id)
+                );
+
+                $other = $this->sum(
+                    $outflows->get($product->id)
+                );
+
+                $carryOut = $this->sum(
+                    $outgoing->get($product->id)
+                );
+
+                $confirmation = $confirmations->get($product->id);
+
+                $wasteRate = $this->wasteRate(
+                    $waste,
+                    $production
+                );
+
+                $stockSources = $this->stockSourcesForDate(
+                    $storeId,
+                    $product->id,
+                    $date
+                );
+
+                // 실제 기록이 존재하는데 과거 확인 플래그만 비어 있는 경우도 완료로 복구합니다.
+                // 0개 확인은 기록 행이 없으므로 반드시 ProductionConfirmation의 명시적 플래그를 사용합니다.
+                $productionConfirmed =
+                    (bool) ($confirmation?->production_confirmed ?? false)
+                    || (
+                        $batches
+                            ->get($product->id)
+                            ?->isNotEmpty()
+                        ?? false
+                    );
+
+                // 실제 로스가 발생한 업무 날짜의 기록을 기준으로 확인 상태를 복구합니다.
+                $lossConfirmed =
+                    (bool) ($confirmation?->loss_confirmed ?? false)
+                    || (
+                        $operationalLosses
+                            ->get($product->id)
+                            ?->isNotEmpty()
+                        ?? false
+                    );
+
+                $wasteConfirmed =
+                    (bool) ($confirmation?->waste_confirmed ?? false)
+                    || (
+                        $operationalWastes
+                            ->get($product->id)
+                            ?->isNotEmpty()
+                        ?? false
+                    );
+
+                $dispositionConfirmed =
+                    (bool) ($confirmation?->disposition_confirmed ?? false)
+                    || (
+                        $outgoing
+                            ->get($product->id)
+                            ?->isNotEmpty()
+                        ?? false
+                    )
+                    || (
+                        $outflows
+                            ->get($product->id)
+                            ?->isNotEmpty()
+                        ?? false
+                    );
+
+                return [
+                    'id' => $product->id,
+
+                    'name' =>
+                        $history?->name
+                        ?? $product->name,
+
+                    'category_id' => $historicalCategoryId,
+
+                    'category_name' =>
+                        $categoryHistory?->name
+                        ?? $product->category?->name
+                        ?? '-',
+
+                    'recipe' =>
+                        $product->relationLoaded('recipes')
+                            ? $product->recipes
+                                ->sortByDesc('id')
+                                ->first()?->toArray()
+                            : null,
+
+                    'is_active' => $isActive,
+
+                    'production' => $production,
+
+                    'batches' =>
+                        (
+                            $batches->get($product->id)
+                            ?? collect()
+                        )
+                        ->map(
+                            fn ($batch) => [
+                                'id' => $batch->id,
+                                'quantity' => $batch->quantity,
+                                'note' => $batch->note,
+                                'lock_version' => $batch->lock_version,
+
+                                'workers' =>
+                                    (
+                                        $batchWorkerMap->get($batch->id)
+                                        ?? collect()
+                                    )
+                                    ->map(
+                                        fn ($worker) => [
+                                            'id' => $worker->id,
+                                            'name' => $worker->name,
+                                        ]
+                                    )
+                                    ->values(),
+
+                                'recipe_deviated' =>
+                                    $batch->recipe_deviated,
+
+                                'recipe_deviation_note' =>
+                                    $batch->recipe_deviation_note,
+
+                                'created_at' =>
+                                    $batch->created_at,
+                            ]
+                        )
+                        ->values(),
+
+                    'loss_details' =>
+                        (
+                            $losses->get($product->id)
+                            ?? collect()
+                        )
+                        ->flatMap(
+                            fn ($loss) =>
+                                $loss->reasons->map(
+                                    fn ($reason) => [
+                                        'reason_code' =>
+                                            $reason->reason_code,
+
+                                        'reason_text' =>
+                                            $reason->reason_text,
+
+                                        'quantity' =>
+                                            (int) $reason->quantity,
+
+                                        'origin_production_date' =>
+                                            $loss->attribution_date
+                                                ?->toDateString()
+                                            ?? $date,
+
+                                        'stock_lot_id' =>
+                                            $loss->stock_lot_id,
+                                    ]
+                                )
+                        )
+                        ->values(),
+
+                    'waste_details' =>
+                        (
+                            $attributedWastes->get($product->id)
+                            ?? collect()
+                        )
+                        ->flatMap(
+                            fn ($wasteRow) =>
+                                $wasteRow->reasons->map(
+                                    fn ($reason) => [
+                                        'reason_code' =>
+                                            $reason->reason_code,
+
+                                        'reason_text' =>
+                                            $reason->reason_text,
+
+                                        'quantity' =>
+                                            (int) $reason->quantity,
+
+                                        'origin_production_date' =>
+                                            $wasteRow->attribution_date
+                                                ?->toDateString()
+                                            ?? $date,
+
+                                        'stock_lot_id' =>
+                                            $wasteRow->stock_lot_id,
+                                    ]
+                                )
+                        )
+                        ->values(),
+
+                    'operational_loss_details' =>
+                        (
+                            $operationalLosses->get($product->id)
+                            ?? collect()
+                        )
+                        ->flatMap(
+                            fn ($lossRow) =>
+                                $lossRow->reasons->map(
+                                    fn ($reason) => [
+                                        'reason_code' =>
+                                            $reason->reason_code,
+
+                                        'reason_text' =>
+                                            $reason->reason_text,
+
+                                        'quantity' =>
+                                            (int) $reason->quantity,
+
+                                        'origin_production_date' =>
+                                            $lossRow->attribution_date
+                                                ?->toDateString()
+                                            ?? $date,
+
+                                        'stock_lot_id' =>
+                                            $lossRow->stock_lot_id,
+                                    ]
+                                )
+                        )
+                        ->values(),
+
+                    'operational_waste_details' =>
+                        (
+                            $operationalWastes->get($product->id)
+                            ?? collect()
+                        )
+                        ->flatMap(
+                            fn ($wasteRow) =>
+                                $wasteRow->reasons->map(
+                                    fn ($reason) => [
+                                        'reason_code' =>
+                                            $reason->reason_code,
+
+                                        'reason_text' =>
+                                            $reason->reason_text,
+
+                                        'quantity' =>
+                                            (int) $reason->quantity,
+
+                                        'origin_production_date' =>
+                                            $wasteRow->attribution_date
+                                                ?->toDateString()
+                                            ?? $date,
+
+                                        'stock_lot_id' =>
+                                            $wasteRow->stock_lot_id,
+                                    ]
+                                )
+                        )
+                        ->values(),
+
+                    'carryover_in' => $carryIn,
+
+                    // 목록과 당일 요약은 실제 처리일 기준 수량을 사용합니다.
+                    'loss' => $operationalLoss,
+
+                    'operational_loss' => $operationalLoss,
+
+                    'attributed_loss' => $loss,
+
+                    'waste' => $operationalWaste,
+
+                    'operational_waste' => $operationalWaste,
+
+                    // 폐기율과 생산 성과는 원 생산일에 귀속된 폐기만 사용합니다.
+                    'attributed_waste' => $waste,
+
+                    'other_outflow' => $other,
+
+                    // 기타 출고도 로스·폐기와 동일하게 재고 출처별 수정 내역을 제공합니다.
+                    // 수정 다이얼로그가 기존 수량을 복원하지 못하면 서버의 교체 저장 검증과 달라집니다.
+                    'other_outflow_details' =>
+                        (
+                            $outflows->get($product->id)
+                            ?? collect()
+                        )
+                        ->map(
+                            fn ($outflow) => [
+                                'reason_code' =>
+                                    $outflow->reason_code,
+
+                                'reason_text' =>
+                                    $outflow->reason_text,
+
+                                'quantity' =>
+                                    (int) $outflow->quantity,
+
+                                'origin_production_date' =>
+                                    collect($stockSources)
+                                        ->firstWhere(
+                                            'stock_lot_id',
+                                            $outflow->stock_lot_id
+                                        )['origin_production_date']
+                                        ?? $date,
+
+                                'stock_lot_id' =>
+                                    $outflow->stock_lot_id,
+                            ]
+                        )
+                        ->values(),
+
+                    'carryover_out' => $carryOut,
+
+                    'stock_sources' => $stockSources,
+
+                    'waste_rate' => $wasteRate,
+
+                    'production_confirmed' =>
+                        $productionConfirmed,
+
+                    'loss_confirmed' =>
+                        $lossConfirmed,
+
+                    'waste_confirmed' =>
+                        $wasteConfirmed,
+
+                    'disposition_confirmed' =>
+                        $dispositionConfirmed,
+
+                    'zero_production_reason' =>
+                        $confirmation?->zero_production_reason,
+
+                    'zero_production_reason_text' =>
+                        $confirmation?->zero_production_reason_text,
+
+                    'complete' =>
+                        ! $isActive
+                        || (
+                            $productionConfirmed
+                            && $lossConfirmed
+                            && $wasteConfirmed
+                            && $dispositionConfirmed
+                        ),
+                ];
+            }
+        )->filter(function (array $row) {
             if ($row['is_active']) {
                 return true;
             }
@@ -224,44 +574,84 @@ class ProductionDailyService
         })->values();
 
         $activeRows = $rows->where('is_active', true);
+
         $totals = [
-            'production' => $activeRows->sum('production'),
-            'carryover' => $activeRows->sum('carryover_in'),
-            'carryover_out' => $activeRows->sum('carryover_out'),
-            'loss' => $activeRows->sum('operational_loss'),
-            'waste' => $activeRows->sum('operational_waste'),
-            'attributed_loss' => $activeRows->sum('attributed_loss'),
-            'attributed_waste' => $activeRows->sum('attributed_waste'),
-            'other_outflow' => $activeRows->sum('other_outflow'),
+            'production' =>
+                $activeRows->sum('production'),
+
+            'carryover' =>
+                $activeRows->sum('carryover_in'),
+
+            'carryover_out' =>
+                $activeRows->sum('carryover_out'),
+
+            'loss' =>
+                $activeRows->sum('operational_loss'),
+
+            'waste' =>
+                $activeRows->sum('operational_waste'),
+
+            'attributed_loss' =>
+                $activeRows->sum('attributed_loss'),
+
+            'attributed_waste' =>
+                $activeRows->sum('attributed_waste'),
+
+            'other_outflow' =>
+                $activeRows->sum('other_outflow'),
         ];
+
         $totals['waste_rate'] = $this->wasteRate(
             (int) $totals['attributed_waste'],
             (int) $totals['production'],
         );
 
-        $closure = ProductionDailyClosure::query()->where('store_id', $storeId)->whereDate('work_date', $date)->first();
-        $dailyStatus = StoreDailyStatus::query()->where('store_id', $storeId)->whereDate('work_date', $date)->first();
-        $closureStatus = $dailyStatus?->status === 'closed' ? 'store_closed' : $closure?->status ?? 'in_progress';
+        $closure = ProductionDailyClosure::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->first();
 
-        if ($closureStatus === 'in_progress' && Carbon::parse($date)->lt(Carbon::today('Asia/Seoul')) && $confirmations->isNotEmpty()) {
+        $dailyStatus = StoreDailyStatus::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->first();
+
+        $closureStatus =
+            $dailyStatus?->status === 'closed'
+                ? 'store_closed'
+                : $closure?->status ?? 'in_progress';
+
+        if (
+            $closureStatus === 'in_progress'
+            && Carbon::parse($date)->lt(Carbon::today('Asia/Seoul'))
+            && $confirmations->isNotEmpty()
+        ) {
             $closureStatus = 'needs_confirmation';
         }
 
         return [
             'rows' => $rows,
             'totals' => $totals,
-            'complete_count' => $activeRows->where('complete', true)->count(),
-            'required_count' => $activeRows->count(),
-            'closure_status' => $closureStatus,
+            'complete_count' =>
+                $activeRows
+                    ->where('complete', true)
+                    ->count(),
+            'required_count' =>
+                $activeRows->count(),
+            'closure_status' =>
+                $closureStatus,
         ];
     }
 
     /**
      * 선택 날짜에 실제 사용할 수 있는 재고를 원 생산일별로 반환합니다.
-     * 당일 생산과 이월 재고를 분리해 로스·폐기가 다른 생산일 재고를 중복 사용하지 않게 합니다.
+     *
+     * 당일 생산과 이월 재고를 구분하며, 각 재고 기록의 차감 수량을
+     * 일괄 집계하여 재고 기록 수에 비례하는 반복 조회를 방지합니다.
      */
     private function stockSourcesForDate(int $storeId, int $productId, string $date): array
     {
+        // 당일 입고된 이월 재고 ID를 조회합니다.
         $incomingLotIds = ProductStockMovement::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
@@ -269,11 +659,13 @@ class ProductionDailyService
             ->where('movement_type', 'carryover_in')
             ->pluck('stock_lot_id');
 
+        // 기존과 동일한 조건과 정렬로 당일 생산 및 이월 재고를 선택합니다.
         $lots = ProductStockLot::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
             ->where(function ($query) use ($date, $incomingLotIds) {
                 $query->whereDate('origin_production_date', $date);
+
                 if ($incomingLotIds->isNotEmpty()) {
                     $query->orWhereIn('id', $incomingLotIds);
                 }
@@ -281,50 +673,98 @@ class ProductionDailyService
             ->orderBy('origin_production_date')
             ->get();
 
-        return $lots->map(function (ProductStockLot $lot) use ($storeId, $productId, $date) {
-            $incomingQuantity = (int) ProductStockMovement::query()
-                ->where('stock_lot_id', $lot->id)
-                ->whereDate('work_date', $date)
+        if ($lots->isEmpty()) {
+            return [];
+        }
+
+        $lotIds = $lots->pluck('id');
+
+        /**
+         * 재고별 입고·이월 출고 수량을 한 번에 집계합니다.
+         * 기존 계산과 동일하게 재고 ID, 작업 날짜 및 이동 유형으로 구분합니다.
+         */
+        $movementTotals = ProductStockMovement::query()
+            ->whereIn('stock_lot_id', $lotIds)
+            ->whereDate('work_date', $date)
+            ->whereIn('movement_type', ['carryover_in', 'carryover_out'])
+            ->select('stock_lot_id', 'movement_type')
+            ->selectRaw('SUM(quantity) AS total_quantity')
+            ->groupBy('stock_lot_id', 'movement_type')
+            ->get()
+            ->groupBy('stock_lot_id');
+
+        /**
+         * 로스·폐기·기타 출고는 기존 조건을 유지하면서
+         * 재고별 수량을 각각 한 번의 조회로 집계합니다.
+         */
+        $lossTotals = ProductionLoss::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereIn('stock_lot_id', $lotIds)
+            ->whereDate('work_date', $date)
+            ->select('stock_lot_id')
+            ->selectRaw('SUM(quantity) AS total_quantity')
+            ->groupBy('stock_lot_id')
+            ->pluck('total_quantity', 'stock_lot_id');
+
+        $wasteTotals = ProductionWaste::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereIn('stock_lot_id', $lotIds)
+            ->whereDate('work_date', $date)
+            ->select('stock_lot_id')
+            ->selectRaw('SUM(quantity) AS total_quantity')
+            ->groupBy('stock_lot_id')
+            ->pluck('total_quantity', 'stock_lot_id');
+
+        $outflowTotals = ProductionOtherOutflow::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereIn('stock_lot_id', $lotIds)
+            ->whereDate('work_date', $date)
+            ->select('stock_lot_id')
+            ->selectRaw('SUM(quantity) AS total_quantity')
+            ->groupBy('stock_lot_id')
+            ->pluck('total_quantity', 'stock_lot_id');
+
+        // 기존 반환 키와 계산식을 변경하지 않습니다.
+        return $lots->map(function (ProductStockLot $lot) use (
+            $date,
+            $movementTotals,
+            $lossTotals,
+            $wasteTotals,
+            $outflowTotals
+        ) {
+            $movements = $movementTotals->get($lot->id, collect());
+
+            $incomingQuantity = (int) $movements
                 ->where('movement_type', 'carryover_in')
-                ->sum('quantity');
-            $baseQuantity = $lot->origin_production_date->toDateString() === $date
+                ->sum('total_quantity');
+
+            $carryover = (int) $movements
+                ->where('movement_type', 'carryover_out')
+                ->sum('total_quantity');
+
+            $originDate = $lot->origin_production_date->toDateString();
+
+            $baseQuantity = $originDate === $date
                 ? (int) $lot->initial_quantity
                 : $incomingQuantity;
 
-            $loss = (int) ProductionLoss::query()
-                ->where('store_id', $storeId)
-                ->where('product_id', $productId)
-                ->where('stock_lot_id', $lot->id)
-                ->whereDate('work_date', $date)
-                ->sum('quantity');
-            $waste = (int) ProductionWaste::query()
-                ->where('store_id', $storeId)
-                ->where('product_id', $productId)
-                ->where('stock_lot_id', $lot->id)
-                ->whereDate('work_date', $date)
-                ->sum('quantity');
-            $outflow = (int) ProductionOtherOutflow::query()
-                ->where('store_id', $storeId)
-                ->where('product_id', $productId)
-                ->where('stock_lot_id', $lot->id)
-                ->whereDate('work_date', $date)
-                ->sum('quantity');
-            $carryover = (int) ProductStockMovement::query()
-                ->where('stock_lot_id', $lot->id)
-                ->whereDate('work_date', $date)
-                ->where('movement_type', 'carryover_out')
-                ->sum('quantity');
+            $loss = (int) ($lossTotals->get($lot->id) ?? 0);
+            $waste = (int) ($wasteTotals->get($lot->id) ?? 0);
+            $outflow = (int) ($outflowTotals->get($lot->id) ?? 0);
+
+            // 실제 차감 차이를 보존하고 화면용 잔여 수량만 0 이상으로 제한합니다.
+            $unallocated = $baseQuantity - $loss - $waste - $outflow - $carryover;
 
             return [
                 'stock_lot_id' => $lot->id,
-                'source' => $lot->origin_production_date->toDateString() === $date ? 'today' : 'carryover',
-                'origin_production_date' => $lot->origin_production_date->toDateString(),
+                'source' => $originDate === $date ? 'today' : 'carryover',
+                'origin_production_date' => $originDate,
                 'base_quantity' => $baseQuantity,
-                // 기존 데이터가 초과 차감된 경우에도 실제 차이를 보존합니다.
-                // 화면에는 음수 대신 0을 보여주되, 수정 검증에서는 원래 차이를 사용해야
-                // 같은 유형의 기록을 되돌릴 때 가용 수량이 부풀려지지 않습니다.
-                'unallocated_quantity' => $baseQuantity - $loss - $waste - $outflow - $carryover,
-                'remaining_quantity' => max(0, $baseQuantity - $loss - $waste - $outflow - $carryover),
+                'unallocated_quantity' => $unallocated,
+                'remaining_quantity' => max(0, $unallocated),
             ];
         })->values()->all();
     }

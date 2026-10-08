@@ -198,43 +198,156 @@
             </thead>
             <tbody>
               <template v-for="row in group.rows" :key="row.id">
-                <tr :class="{ 'row-inactive': !row.is_active, 'row-needs-check': !row.complete && row.is_active }">
+                <tr
+                  :class="{
+                    'row-inactive': !row.is_active,
+                    'row-needs-check': !row.complete && row.is_active
+                  }"
+                >
+                  <!-- 제품명 및 상세 펼치기 -->
                   <td>
                     <div class="product-name-cell">
                       <button
-                          type="button"
-                          class="row-detail-toggle"
-                          :aria-label="`${row.name} 상세 ${isRowExpanded(row.id) ? '닫기' : '보기'}`"
-                          @click="toggleRowDetail(row.id)"
+                        type="button"
+                        class="row-detail-toggle"
+                        :aria-label="`${row.name} 상세 ${isRowExpanded(row.id) ? '닫기' : '보기'}`"
+                        @click="toggleRowDetail(row.id)"
                       >
-                        <v-icon :icon="isRowExpanded(row.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="16" />
+                        <v-icon
+                          :icon="isRowExpanded(row.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                          size="16"
+                        />
                       </button>
-                      <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
+
+                      <button
+                        type="button"
+                        class="product-name"
+                        :title="row.name"
+                        @click="openProduct(row)"
+                      >
+                        {{ row.name }}
+                      </button>
                     </div>
                   </td>
-                  <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
+
+                  <!-- 생산: 기존 확인 상태와 입력 동작 유지 -->
                   <td>
-                    <button type="button" class="table-value carryover-value" :class="{ pending: !row.disposition_confirmed }" @click="openFlow(row, 'carryover')">
-                      <template v-if="row.disposition_confirmed">
-                        <span v-if="row.carryover_in">재고 {{ row.carryover_in }}</span>
-                        <span v-if="row.carryover_out">예정 {{ row.carryover_out }}</span>
-                        <span v-if="!row.carryover_in && !row.carryover_out">0</span>
-                      </template>
-                      <template v-else>-</template>
+                    <button
+                      type="button"
+                      class="table-value production-value"
+                      :class="{ pending: !row.production_confirmed }"
+                      @click="openProduction(row)"
+                    >
+                      {{ row.production_confirmed ? row.production : '-' }}
                     </button>
                   </td>
-                  <td><button type="button" class="table-value" :class="{ pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
-                  <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
-                  <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</button></td>
+
+                  <!-- 이월: 넘어온 수량과 다음 날 이월 예정 수량을 각각 표시 -->
+                  <td>
+                    <button
+                      type="button"
+                      class="table-value carryover-value"
+                      :class="{ pending: !row.disposition_confirmed }"
+                      @click="openFlow(row, 'carryover')"
+                    >
+                      <template
+                        v-if="
+                          Number(row.carryover_in || 0) > 0 ||
+                          Number(row.carryover_out || 0) > 0
+                        "
+                      >
+                        <span v-if="Number(row.carryover_in || 0) > 0">
+                          재고 {{ row.carryover_in }}
+                        </span>
+
+                        <span v-if="Number(row.carryover_out || 0) > 0">
+                          예정 {{ row.carryover_out }}
+                        </span>
+                      </template>
+
+                      <template v-else>
+                        {{ row.disposition_confirmed ? '0' : '-' }}
+                      </template>
+                    </button>
+                  </td>
+
+                  <!-- 로스: 기존 처리일 기준 및 확인 상태 유지 -->
+                  <td>
+                    <button
+                      type="button"
+                      class="table-value"
+                      :class="{ pending: !row.loss_confirmed }"
+                      @click="openFlow(row, 'loss')"
+                    >
+                      {{ row.loss_confirmed ? row.loss : '-' }}
+                    </button>
+                  </td>
+
+                  <!-- 폐기: 실제 폐기일이 아닌 원 생산일에 귀속된 수량 표시 -->
+                  <td>
+                    <button
+                      type="button"
+                      class="table-value waste-value"
+                      :class="{
+                        pending:
+                          !row.waste_confirmed &&
+                          Number(row.attributed_waste || 0) === 0
+                      }"
+                      @click="openFlow(row, 'waste')"
+                    >
+                      {{
+                        row.waste_confirmed ||
+                        Number(row.attributed_waste || 0) > 0
+                          ? Number(row.attributed_waste || 0)
+                          : '-'
+                      }}
+                    </button>
+                  </td>
+
+                  <!-- 폐기율: 서버에서 계산한 원 생산일 기준 값 유지 -->
+                  <td>
+                    <button
+                      type="button"
+                      class="table-value rate-value"
+                      @click="openWasteRate(row)"
+                    >
+                      {{ row.waste_rate == null ? '-' : `${row.waste_rate}%` }}
+                    </button>
+                  </td>
                 </tr>
-                <tr v-if="isRowExpanded(row.id)" class="product-detail-row">
+
+                <!-- 제품별 상세: 실제 재고 처리 기록은 변경하지 않음 -->
+                <tr
+                  v-if="isRowExpanded(row.id)"
+                  class="product-detail-row"
+                >
                   <td colspan="6">
                     <div class="product-row-detail">
-                      <div><span>이월 재고</span><strong>{{ row.carryover_in }}개</strong></div>
-                      <div><span>이월 예정</span><strong>{{ row.carryover_out }}개</strong></div>
-                      <div><span>해당 날짜 폐기</span><strong>{{ row.operational_waste }}개</strong></div>
-                      <div><span>이월 재고 폐기</span><strong>{{ carryoverWaste(row) }}개</strong></div>
-                      <button type="button" class="product-row-flow stock-flow-trigger" @click="openStockFlow(row)">
+                      <div>
+                        <span>이월 재고</span>
+                        <strong>{{ row.carryover_in }}개</strong>
+                      </div>
+
+                      <div>
+                        <span>이월 예정</span>
+                        <strong>{{ row.carryover_out }}개</strong>
+                      </div>
+
+                      <div>
+                        <span>해당 날짜 폐기</span>
+                        <strong>{{ row.operational_waste }}개</strong>
+                      </div>
+
+                      <div>
+                        <span>이월 재고 폐기</span>
+                        <strong>{{ carryoverWaste(row) }}개</strong>
+                      </div>
+
+                      <button
+                        type="button"
+                        class="product-row-flow stock-flow-trigger"
+                        @click="openStockFlow(row)"
+                      >
                         <span>재고 흐름 · 상세 보기</span>
                         <strong>{{ stockFlowText(row) }}</strong>
                       </button>
@@ -242,13 +355,55 @@
                   </td>
                 </tr>
               </template>
+
+              <!-- 카테고리 소계: 생산·이월·로스·폐기를 제품별 표시 기준과 동일하게 집계 -->
               <tr class="subtotal-row">
                 <td>소계</td>
-                <td>{{ sum(group.rows, 'production') }}</td>
-                <td>{{ sum(group.rows, 'carryover_in') }}</td>
-                <td>{{ sum(group.rows, 'loss') }}</td>
-                <td>{{ sum(group.rows, 'waste') }}</td>
-                <td>{{ groupWasteRate(group.rows) }}</td>
+
+                <!-- 생산: 해당 날짜 생산 수량 합계 -->
+                <td>
+                  {{ sum(group.rows, 'production') }}
+                </td>
+
+                <!--
+                  카테고리 소계의 이월 수량을 표시합니다.
+                  재고와 예정이 모두 존재하면 각각 별도의 줄에 표시하여
+                  옆의 로스 열을 침범하지 않도록 합니다.
+                  기존 집계 기준과 0 표시 조건은 유지합니다.
+                -->
+                <td>
+                  <div v-if="sum(group.rows, 'carryover_in') > 0">
+                    재고 {{ sum(group.rows, 'carryover_in') }}
+                  </div>
+
+                  <div v-if="sum(group.rows, 'carryover_out') > 0">
+                    예정 {{ sum(group.rows, 'carryover_out') }}
+                  </div>
+
+                  <span
+                    v-if="
+                      sum(group.rows, 'carryover_in') === 0 &&
+                      sum(group.rows, 'carryover_out') === 0
+                    "
+                  >
+                    0
+                  </span>
+                </td>
+
+                <!-- 로스: 기존 기준 유지 -->
+                <td>
+                  {{ sum(group.rows, 'loss') }}
+                </td>
+
+                <!-- 폐기: 실제 처리일이 아닌 원 생산일 기준 합계 -->
+                <td>
+                  {{ sum(group.rows, 'attributed_waste') }}
+                </td>
+
+                <!-- 폐기율: 카테고리 생산량 대비 귀속 폐기량 -->
+                <td>
+                  {{ groupWasteRate(group.rows) }}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -499,28 +654,87 @@
         <div class="close-progress-copy">
           확인 {{ closeCompleteCount }} / {{ closeRows.length }} · 확인 필요 {{ closeIncompleteCount }}개
         </div>
-        <div v-if="closeRows.length" ref="closeListRef" class="close-check-list mt-3">
-          <article v-for="row in pagedCloseRows" :key="row.id" class="close-check-item">
+        <div
+          v-if="closeRows.length"
+          ref="closeListRef"
+          class="close-check-list mt-3"
+        >
+          <article
+            v-for="row in pagedCloseRows"
+            :key="row.id"
+            class="close-check-item"
+          >
             <div class="close-check-copy">
               <strong>{{ row.name }}</strong>
               <span>{{ row.complete ? '확인 완료' : missingReasonText(row) }}</span>
             </div>
+
             <div class="close-product-values">
-              <button class="production" type="button" @click="openProduction(row)">
-                <span>생산</span><strong>{{ row.production_confirmed ? `${row.production}개` : '-' }}</strong>
+              <!-- 생산은 기존 확인 상태와 입력 동작을 유지합니다. -->
+              <button
+                class="production"
+                type="button"
+                @click="openProduction(row)"
+              >
+                <span>생산</span>
+                <strong>
+                  {{ row.production_confirmed ? `${row.production}` : '-' }}
+                </strong>
               </button>
-              <button type="button" @click="openFlow(row, 'carryover')">
-                <span>이월</span><strong v-if="row.disposition_confirmed">재고 {{ row.carryover_in }} · 예정 {{ row.carryover_out }}</strong><strong v-else>-</strong>
+
+              <!-- 이월: 기존 재고와 다음 날 이월 예정 수량의 합계만 표시 -->
+              <button
+                type="button"
+                @click="openFlow(row, 'carryover')"
+              >
+                <span>이월</span>
+                <strong>
+                  {{
+                    Number(row.carryover_in || 0) > 0 ||
+                    Number(row.carryover_out || 0) > 0
+                      ? Number(row.carryover_in || 0) +
+                        Number(row.carryover_out || 0)
+                      : row.disposition_confirmed ? 0 : '-'
+                  }}
+                </strong>
               </button>
-              <button type="button" @click="openFlow(row, 'loss')">
-                <span>로스</span><strong>{{ row.loss_confirmed ? `${row.loss}개` : '-' }}</strong>
+
+              <!-- 로스는 기존 수량과 확인 상태를 유지합니다. -->
+              <button
+                type="button"
+                @click="openFlow(row, 'loss')"
+              >
+                <span>로스</span>
+                <strong>
+                  {{ row.loss_confirmed ? `${row.loss}` : '-' }}
+                </strong>
               </button>
-              <button class="waste" type="button" @click="openFlow(row, 'waste')">
-                <span>폐기</span><strong>{{ row.waste_confirmed ? `${row.waste}개` : '-' }}</strong>
+
+              <!-- 폐기는 원 생산일 귀속 수량을 표시하고 실제 폐기 입력 기능은 유지합니다. -->
+              <button
+                class="waste"
+                type="button"
+                @click="openFlow(row, 'waste')"
+              >
+                <span>폐기</span>
+                <strong>
+                  {{
+                    row.waste_confirmed || Number(row.attributed_waste || 0) > 0
+                      ? `${Number(row.attributed_waste || 0)}`
+                      : '-'
+                  }}
+                </strong>
               </button>
             </div>
+
             <div class="close-check-actions">
-              <v-btn size="small" variant="text" @click="openProduct(row)">제품 정보</v-btn>
+              <v-btn
+                size="small"
+                variant="text"
+                @click="openProduct(row)"
+              >
+                제품 정보
+              </v-btn>
             </div>
           </article>
         </div>
@@ -717,32 +931,71 @@ const missingSummaryText = computed(() => (
 ));
 const detailMetricTitle = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.title || '상세');
 const detailMetricValue = computed(() => metrics.value.find((metric) => metric.key === detailMetricKey.value)?.value ?? '-');
+/**
+ * 요약 상세 다이얼로그의 제품별 수량, 폐기율, 비중, 확인 상태 및 사유를 구성합니다.
+ * 폐기는 원 생산일 귀속 수량을 사용하며, 기존 필터와 정렬 기준은 유지합니다.
+ */
 const detailRows = computed(() => {
-  const key = detailMetricKey.value === 'carryover' ? 'carryover_in' : detailMetricKey.value;
-  const total = detailMetricKey.value === 'waste_rate'
-    ? activeRows.value.reduce((sum, row) => sum + Number(row.attributed_waste || 0), 0)
-    : activeRows.value.reduce((sum, row) => sum + Number(row[key] || 0), 0);
+  const metricKey = detailMetricKey.value;
 
-  return activeRows.value.map((row) => {
-    const rawValue = detailMetricKey.value === 'waste_rate' ? Number(row.waste_rate || 0) : Number(row[key] || 0);
-    const shareBase = detailMetricKey.value === 'waste_rate' ? Number(row.attributed_waste || 0) : rawValue;
-    return {
-      id: row.id,
-      name: row.name,
-      source: row,
-      rawValue,
-      value: detailMetricKey.value === 'waste_rate' ? `${rawValue}%` : rawValue,
-      share: total > 0 && shareBase > 0 ? `전체의 ${(shareBase / total * 100).toFixed(1)}%` : '기록 확인',
-      confirmed: Boolean(row[detailConfirmationField.value]),
-      reasonSummary: detailMetricKey.value === 'waste_rate'
-        ? reasonSummary(row.waste_details, '폐기 사유')
-        : detailMetricKey.value === 'waste'
-          ? reasonSummary(row.waste_details, '폐기 사유')
-          : detailMetricKey.value === 'loss'
-            ? reasonSummary(row.loss_details, '로스 사유')
-            : '',
-    };
-  }).filter((row) => row.rawValue > 0).sort((a, b) => b.rawValue - a.rawValue);
+  // 이월은 유입 재고, 폐기는 원 생산일 귀속 폐기량을 참조합니다.
+  const key =
+    metricKey === 'carryover'
+      ? 'carryover_in'
+      : metricKey === 'waste'
+        ? 'attributed_waste'
+        : metricKey;
+
+  // 폐기율의 전체 대비 비중은 제품별 귀속 폐기 수량의 합계를 기준으로 계산합니다.
+  const total =
+    metricKey === 'waste_rate'
+      ? activeRows.value.reduce(
+          (sum, row) => sum + Number(row.attributed_waste || 0),
+          0
+        )
+      : activeRows.value.reduce(
+          (sum, row) => sum + Number(row[key] || 0),
+          0
+        );
+
+  return activeRows.value
+    .map((row) => {
+      // 폐기율은 서버 계산값을 사용하고 나머지 항목은 해당 수량을 사용합니다.
+      const rawValue =
+        metricKey === 'waste_rate'
+          ? Number(row.waste_rate || 0)
+          : Number(row[key] || 0);
+
+      // 폐기율 상세에서는 비율 자체가 아닌 귀속 폐기 수량으로 비중을 계산합니다.
+      const shareBase =
+        metricKey === 'waste_rate'
+          ? Number(row.attributed_waste || 0)
+          : rawValue;
+
+      return {
+        id: row.id,
+        name: row.name,
+        source: row,
+        rawValue,
+        value:
+          metricKey === 'waste_rate'
+            ? `${rawValue}%`
+            : rawValue,
+        share:
+          total > 0 && shareBase > 0
+            ? `전체의 ${((shareBase / total) * 100).toFixed(1)}%`
+            : '기록 확인',
+        confirmed: Boolean(row[detailConfirmationField.value]),
+        reasonSummary:
+          metricKey === 'waste_rate' || metricKey === 'waste'
+            ? reasonSummary(row.waste_details, '폐기 사유')
+            : metricKey === 'loss'
+              ? reasonSummary(row.loss_details, '로스 사유')
+              : '',
+      };
+    })
+    .filter((row) => row.rawValue > 0)
+    .sort((a, b) => b.rawValue - a.rawValue);
 });
 const detailRecordedCount = computed(() => detailRows.value.length);
 const detailConfirmationField = computed(() => ({
@@ -763,29 +1016,98 @@ const detailEmptyText = computed(() => detailConfirmedCount.value === activeRows
   ? '모든 제품이 없음(0)으로 확인된 상태입니다.'
   : `아직 확인하지 않은 제품이 ${activeRows.value.length - detailConfirmedCount.value}개 있습니다.`);
 
-const metrics = computed(() => [ {
-  key:'production', title:'생산', value: props.daily.totals?.production || 0
-}, {
-  key:'carryover', title:'이월', value: `${Number(props.daily.totals?.carryover || 0) + Number(props.daily.totals?.carryover_out || 0)}`
-}, {
-  key:'loss', title:'로스', value: props.daily.totals?.loss || 0
-}, {
-  key:'waste', title:'폐기', value: props.daily.totals?.waste || 0
-}, {
-  key:'waste_rate', title:'폐기율', value: props.daily.totals?.waste_rate == null ? '-' : `${props.daily.totals.waste_rate}%`
-}, ]);
+/**
+ * 요약 카드에 표시할 생산·이월·로스·폐기·폐기율을 구성합니다.
+ *
+ * - 생산·이월·로스: 기존 서버 집계 기준을 유지합니다.
+ * - 폐기: 실제 폐기 처리일이 아닌 원 생산일에 귀속된 수량을 표시합니다.
+ * - 폐기율: 서버에서 계산한 원 생산일 기준 폐기율을 유지합니다.
+ *
+ * 이월 재고를 다음 날 폐기하더라도 해당 폐기 수량은
+ * 원래 생산한 날짜의 요약에 반영됩니다.
+ */
+const metrics = computed(() => [
+  {
+    key: 'production',
+    title: '생산',
+    value: props.daily.totals?.production || 0,
+  },
+  {
+    key: 'carryover',
+    title: '이월',
+    value: `${
+      Number(props.daily.totals?.carryover || 0) +
+      Number(props.daily.totals?.carryover_out || 0)
+    }`,
+  },
+  {
+    key: 'loss',
+    title: '로스',
+    value: props.daily.totals?.loss || 0,
+  },
+  {
+    key: 'waste',
+    title: '폐기',
 
-// 마감 다이얼로그는 목록의 이전 상태가 아니라 서버에서 다시 받은 최종 점검 수치를 사용합니다.
+    // 제품별 원 생산일 귀속 폐기 수량을 합산합니다.
+    // 실제 폐기 처리일 기준인 totals.waste는 사용하지 않습니다.
+    value: sum(activeRows.value, 'attributed_waste'),
+  },
+  {
+    key: 'waste_rate',
+    title: '폐기율',
+    value:
+      props.daily.totals?.waste_rate == null
+        ? '-'
+        : `${props.daily.totals.waste_rate}%`,
+  },
+]);
+
+// 마감 다이얼로그는 서버에서 다시 받은 최종 점검 데이터를 우선 사용하며, 폐기는 원 생산일 기준으로 집계합니다.
 const closeMetrics = computed(() => {
-  const source = closePreview.value?.daily?.totals || props.daily.totals || {};
+  const daily = closePreview.value?.daily || props.daily;
+  const source = daily?.totals || {};
+  const rows = daily?.rows || [];
+
+  // 실제 폐기일 기준인 source.waste 대신 원 생산일에 귀속된 제품별 폐기 수량을 합산합니다.
+  const attributedWaste = sum(rows.filter((row) => row.is_active), 'attributed_waste');
+
   return [
-    { key: 'production', title: '생산', value: source.production || 0 },
-    { key: 'carryover', title: '이월', value: `${Number(source.carryover || 0) + Number(source.carryover_out || 0)}` },
-    { key: 'loss', title: '로스', value: source.loss || 0 },
-    { key: 'waste', title: '폐기', value: source.waste || 0 },
-    { key: 'waste_rate', title: '폐기율', value: source.waste_rate == null ? '-' : `${source.waste_rate}%` },
+    {
+      key: 'production',
+      title: '생산',
+      value: source.production || 0,
+    },
+    {
+      key: 'carryover',
+      title: '이월',
+      value: `${
+        Number(source.carryover || 0) +
+        Number(source.carryover_out || 0)
+      }`,
+    },
+    {
+      key: 'loss',
+      title: '로스',
+      value: source.loss || 0,
+    },
+    {
+      key: 'waste',
+      title: '폐기',
+      value: attributedWaste,
+    },
+    {
+      key: 'waste_rate',
+      title: '폐기율',
+      value:
+        source.waste_rate == null
+          ? '-'
+          : `${source.waste_rate}%`,
+    },
   ];
 });
+
+// 제품 검색과 미확인 항목, 기록 상태 및 로스·폐기 발생 조건을 적용합니다.
 const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
   const q = search.value?.trim().toLocaleLowerCase('ko-KR');
 
@@ -800,21 +1122,28 @@ const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
       loss: 'loss_confirmed',
       waste: 'waste_confirmed',
     }[missingType.value];
-    if (field && row[field]) return false;
+
+    if (field && row[field]) {
+      return false;
+    }
   }
 
   if (filter.value === 'missing') {
     return !row.complete;
   }
 
+  // 로스는 기존 기준을 유지하고 폐기는 원 생산일에 귀속된 수량으로 판단합니다.
   if (filter.value === 'occurred') {
-    return row.loss > 0 || row.waste > 0;
+    return Number(row.loss || 0) > 0 || Number(row.attributed_waste || 0) > 0;
   }
 
   return true;
 }));
 
-const nextMissingRow = computed(() => activeRows.value.find((row) => !row.complete) || null);
+// 다음 미확인 제품은 기존처럼 활성 제품 중 가장 먼저 발견된 제품을 선택합니다.
+const nextMissingRow = computed(() =>
+  activeRows.value.find((row) => !row.complete) || null
+);
 
 const filterResultLabel = computed(() => {
   if (search.value?.trim()) return `검색 결과 ${filteredRows.value.length}개`;
@@ -854,31 +1183,82 @@ const progressText = computed(() => {
     : `전체 ${required}개 제품의 기록이 확인되었습니다.`;
 });
 
+// 제품 상세정보는 실제 재고 처리 수량과 원 생산일 기준 폐기율을 구분해 표시합니다.
 const selectedProductMetrics = computed(() => {
   const row = selectedProduct.value;
-  if (!row) return [];
+
+  if (!row) {
+    return [];
+  }
+
   return [
-    { label: '생산', value: row.production },
-    { label: '이월 재고', value: row.carryover_in },
-    { label: '이월 예정', value: row.carryover_out },
-    { label: '로스', value: row.loss },
-    { label: '해당 날짜 폐기', value: row.waste },
-    { label: '이월 재고 폐기', value: carryoverWaste(row) },
-    { label: '폐기율', value: row.waste_rate == null ? '-' : `${row.waste_rate}%` },
+    { 
+      label: '생산', 
+      value: row.production 
+    },
+    { 
+      label: '이월 재고', 
+      value: row.carryover_in 
+    },
+    { 
+      label: '이월 예정', 
+      value: row.carryover_out 
+    },
+    { 
+      label: '로스', 
+      value: row.loss 
+    },
+    { 
+      label: '해당 날짜 폐기', 
+      value: row.waste 
+    },
+    { 
+      label: '이월 재고 폐기', 
+      value: carryoverWaste(row) 
+    },
+    {
+      label: '폐기율',
+      value: row.waste_rate == null ? '-' : `${row.waste_rate}%`,
+    },
   ];
 });
 
+// 제품 현황은 원 생산일 귀속 폐기, 실제 폐기, 로스, 이월 재고 순서로 안내합니다.
 const selectedProductAnalysis = computed(() => {
   const row = selectedProduct.value;
-  if (!row) return '-';
-  if (!row.complete) return `확인이 필요한 항목이 있습니다. ${missingReasonText(row)}`;
-  if (row.attributed_waste > 0) return `이 날짜 생산분의 폐기 ${row.attributed_waste}개가 반영되어 폐기율은 ${row.waste_rate ?? 0}%입니다.${row.waste > row.attributed_waste ? ` 오늘 실제 폐기는 ${row.waste}개이며 이월 재고 폐기가 포함되어 있습니다.` : ''}`;
-  if (row.loss > 0) return `로스 ${row.loss}개가 기록되어 있습니다. 사유와 수량을 확인해 주세요.`;
-  if (row.carryover_in > 0) return `이월 재고 ${row.carryover_in}개가 있습니다. 원 생산일별 재고를 확인할 수 있습니다.`;
+
+  if (!row) {
+    return '-';
+  }
+
+  if (!row.complete) {
+    return `확인이 필요한 항목이 있습니다. ${missingReasonText(row)}`;
+  }
+
+  // 원 생산일 귀속 폐기량과 실제 처리일의 폐기량을 구분합니다.
+  if (Number(row.attributed_waste || 0) > 0) {
+    return `이 날짜 생산분의 폐기 ${row.attributed_waste}개가 반영되어 폐기율은 ${row.waste_rate ?? 0}%입니다.${
+      Number(row.operational_waste || 0) > 0
+        ? ` 해당 날짜 실제 폐기는 ${row.operational_waste}개이며, 이월 재고 폐기는 ${carryoverWaste(row)}개입니다.`
+        : ''
+    }`;
+  }
+
+  // 원 생산일 귀속 폐기가 없어도 실제 폐기 기록이 있다면 안내합니다.
+  if (Number(row.operational_waste || 0) > 0) {
+    return `해당 날짜 실제 폐기는 ${row.operational_waste}개이며, 이월 재고 폐기는 ${carryoverWaste(row)}개입니다. 이 날짜 생산분에 귀속된 폐기는 없습니다.`;
+  }
+
+  if (row.loss > 0) {
+    return `로스 ${row.loss}개가 기록되어 있습니다. 사유와 수량을 확인해 주세요.`;
+  }
+
+  if (row.carryover_in > 0) {
+    return `이월 재고 ${row.carryover_in}개가 있습니다. 원 생산일별 재고를 확인할 수 있습니다.`;
+  }
+
   return '특이사항 없이 필수 기록이 모두 확인되었습니다.';
 });
-
-
 
 // 제품 행의 상세 영역을 열고 닫되 다른 입력 기능과는 독립적으로 유지합니다.
 function toggleRowDetail(productId) {
@@ -891,12 +1271,18 @@ function isRowExpanded(productId) {
   return expandedRows.value.has(productId);
 }
 
-// 핵심 재고 흐름만 한 문장으로 조립해 표를 넓히지 않고 상세에서 설명합니다.
-// 오늘 실제 폐기 기록 중 최초 생산일이 다른 수량만 이월 재고 폐기로 집계합니다.
+// 실제 폐기 기록 중 최초 생산일이 조회 날짜와 다른 수량만 이월 재고 폐기로 집계합니다.
 function carryoverWaste(row) {
   return (row.operational_waste_details || [])
-    .filter(item => item.origin_production_date && item.origin_production_date !== props.workDate)
-    .reduce((total, item) => total + Number(item.quantity || 0), 0);
+    .filter((item) =>
+      item.origin_production_date &&
+      item.origin_production_date !== props.workDate
+    )
+    .reduce(
+      (total, item) =>
+        total + Number(item.quantity || 0),
+      0
+    );
 }
 
 function openStockFlow(row) {
@@ -904,36 +1290,102 @@ function openStockFlow(row) {
   stockFlowOpen.value = true;
 }
 
+// 재고 흐름 상세에 생산, 이월 재고, 로스, 폐기 및 이월 예정 기록을 구성합니다.
 const stockFlowEvents = computed(() => {
   const row = stockFlowProduct.value;
-  if (!row) return [];
+
+  if (!row) {
+    return [];
+  }
+
   const items = [];
+
+  // 수량이 0보다 큰 기록만 상세 목록에 추가합니다.
   const add = (title, quantity, origin = null, reason = null) => {
-    if (Number(quantity) > 0) items.push({ key: `${title}-${items.length}`, title, quantity, origin, reason });
+    if (Number(quantity) > 0) {
+      items.push({
+        key: `${title}-${items.length}`,
+        title,
+        quantity,
+        origin,
+        reason,
+      });
+    }
   };
+
+  // 선택 날짜에 생산한 수량을 표시합니다.
   add('오늘 생산', row.production);
+
+  // 최초 생산일이 다른 재고만 이월 재고로 표시합니다.
   for (const source of row.stock_sources || []) {
-    if (source.origin_production_date !== props.workDate) add('이월 재고', source.incoming_quantity || source.quantity || 0, source.origin_production_date);
+    if (source.origin_production_date !== props.workDate) {
+      add(
+        '이월 재고',
+        source.incoming_quantity || source.quantity || 0,
+        source.origin_production_date
+      );
+    }
   }
-  for (const detail of row.operational_loss_details || []) add('로스', detail.quantity, detail.origin_production_date, productionReasonLabel(detail));
+
+  // 실제 처리일 기준 로스 기록과 사유를 표시합니다.
+  for (const detail of row.operational_loss_details || []) {
+    add(
+      '로스',
+      detail.quantity,
+      detail.origin_production_date,
+      productionReasonLabel(detail)
+    );
+  }
+
+  // 실제 폐기 기록을 최초 생산일에 따라 당일 생산분과 이월 재고로 구분합니다.
   for (const detail of row.operational_waste_details || []) {
-    add(detail.origin_production_date !== props.workDate ? '이월 재고 폐기' : '오늘 생산분 폐기', detail.quantity, detail.origin_production_date, productionReasonLabel(detail));
+    add(
+      detail.origin_production_date !== props.workDate
+        ? '이월 재고 폐기'
+        : '오늘 생산분 폐기',
+      detail.quantity,
+      detail.origin_production_date,
+      productionReasonLabel(detail)
+    );
   }
+
+  // 다음 날로 넘길 예정 수량을 표시합니다.
   add('이월 예정', row.carryover_out);
+
   return items;
 });
 
+// 실제 처리일 기준으로 생산, 이월 재고, 로스, 폐기 및 다음 날 이월 흐름을 구성합니다.
 function stockFlowText(row) {
-  const parts = [`오늘 생산 ${Number(row.production || 0)}개`];
-  if (row.carryover_in) parts.push(`이월 재고 ${row.carryover_in}개`);
-  if (row.operational_loss) parts.push(`로스 ${row.operational_loss}개`);
+  const parts = [
+    `오늘 생산 ${Number(row.production || 0)}개`,
+  ];
+
+  if (row.carryover_in) {
+    parts.push(`이월 재고 ${row.carryover_in}개`);
+  }
+
+  if (row.operational_loss) {
+    parts.push(`로스 ${row.operational_loss}개`);
+  }
+
+  // 실제 폐기 수량에서 이월 재고 폐기를 제외해 당일 생산분 폐기를 계산합니다.
   const carryover = carryoverWaste(row);
-  if (row.operational_waste > carryover) parts.push(`오늘 생산분 폐기 ${row.operational_waste - carryover}개`);
-  if (carryover) parts.push(`이월 재고 폐기 ${carryover}개`);
-  if (row.carryover_out) parts.push(`다음날 이월 ${row.carryover_out}개`);
+
+  if (row.operational_waste > carryover) {
+    parts.push(`오늘 생산분 폐기 ${row.operational_waste - carryover}개`);
+  }
+
+  if (carryover) {
+    parts.push(`이월 재고 폐기 ${carryover}개`);
+  }
+
+  if (row.carryover_out) {
+    parts.push(`다음날 이월 ${row.carryover_out}개`);
+  }
+
   return parts.join(' → ');
 }
-
 
 // 마감 최종확인 페이지를 바꾸면 제품 카드 목록의 시작점으로 이동합니다.
 function scrollCloseTop() {
@@ -973,171 +1425,270 @@ function formatWorkDateWithWeekday(date) {
   return `${String(date).replaceAll('-', '.')} ${weekday}`;
 }
 
-// 경고 버튼에서 연도 없이 월/일만 간결하게 표시합니다.
+// 날짜를 연도 없이 월/일 형식으로 표시합니다.
 function shortDateLabel(date) {
   const [, month, day] = String(date).split('-');
+
   return `${Number(month)}월 ${Number(day)}일`;
 }
 
+// 활성 제품 중 모든 필수 기록이 완료된 제품 수를 계산합니다.
 function categoryCompleteCount(rows) {
-  return rows.filter((row) => row.is_active && row.complete).length;
+  return rows.filter(
+    (row) => row.is_active && row.complete
+  ).length;
 }
 
+// 활성 제품 수를 기준으로 카테고리 기록 완료율을 계산합니다.
 function categoryProgress(rows) {
   const active = rows.filter((row) => row.is_active);
-  return active.length ? Math.round(categoryCompleteCount(rows) / active.length * 100) : 100;
+
+  return active.length
+    ? Math.round(
+        (categoryCompleteCount(rows) / active.length) * 100
+      )
+    : 100;
 }
 
+// 카테고리의 전체 제품 수와 미완료 제품 수를 안내합니다.
 function categoryProgressText(rows) {
   const active = rows.filter((row) => row.is_active);
   const remaining = active.length - categoryCompleteCount(rows);
-  return remaining > 0 ? `${active.length}개 제품 · ${remaining}개 기록 미완료` : `${active.length}개 제품 · 확인 완료`;
+
+  return remaining > 0
+    ? `${active.length}개 제품 · ${remaining}개 기록 미완료`
+    : `${active.length}개 제품 · 확인 완료`;
 }
 
+// 카테고리 폐기율은 원 생산일 귀속 폐기량을 생산량으로 나누어 계산합니다.
 function groupWasteRate(rows) {
   const production = sum(rows, 'production');
-  if (!production) return '-';
-  return `${(sum(rows, 'attributed_waste') / production * 100).toFixed(1)}%`;
+
+  if (!production) {
+    return '-';
+  }
+
+  const attributedWaste = sum(rows, 'attributed_waste');
+  const wasteRate = (attributedWaste / production) * 100;
+
+  return `${wasteRate.toFixed(1)}%`;
 }
 
-// 날짜 화살표로 하루씩 이동합니다.
+// 날짜 화살표를 누르면 선택 날짜를 하루 단위로 이동합니다.
 function moveDate(amount) {
   emit('update:workDate', addLocalDays(props.workDate, amount));
 }
-// Vuetify 날짜 선택값을 YYYY-MM-DD로 정규화합니다.
+
+// 날짜 선택값을 YYYY-MM-DD 형식으로 변환하고 날짜 선택창을 닫습니다.
 function selectPickerDate(value) {
-  const date = value instanceof Date ? toLocalDateString(value) : String(value).slice(0,10);
+  const date = value instanceof Date
+    ? toLocalDateString(value)
+    : String(value).slice(0, 10);
+
   emit('update:workDate', date);
-  dateMenu.value=false;
+  dateMenu.value = false;
 }
-// 카테고리 접기 상태를 화면 내부에서만 변경합니다.
+
+// 카테고리의 접기 및 펼치기 상태를 변경합니다.
 function toggleCategory(name) {
   const next = new Set(collapsed.value);
-  next.has(name) ? next.delete(name) : next.add(name);
+
+  if (next.has(name)) {
+    next.delete(name);
+  } else {
+    next.add(name);
+  }
+
   collapsed.value = next;
 }
-// 카테고리 소계를 계산합니다.
-function sum(rows,key) {
-  return rows.reduce((total,row)=>total+Number(row[key]||0),0);
+
+// 지정한 항목의 제품별 수량을 합산합니다.
+function sum(rows, key) {
+  return rows.reduce(
+    (total, row) => total + Number(row[key] || 0),
+    0
+  );
 }
-// 권한 또는 이전 날짜 미마감으로 수정할 수 없는 상태를 공통 안내합니다.
+
+// 수정 권한, 이전 날짜 마감 및 현재 날짜 마감 상태를 확인합니다.
 function ensureMutable() {
   if (!props.canMutate) {
-    emit('error','해당 기능을 사용할 권한이 없습니다.');
+    emit('error', '해당 기능을 사용할 권한이 없습니다.');
     return false;
   }
 
   if (props.daily.blocking_previous_date) {
-    emit('error','이전 날짜 마감 확인을 먼저 완료해주세요.');
+    emit('error', '이전 날짜 마감 확인을 먼저 완료해주세요.');
     return false;
   }
 
   if (['closed', 'store_closed'].includes(props.daily.closure_status)) {
-    emit('error','현재 날짜는 일반 수정이 제한되어 있습니다.');
+    emit('error', '현재 날짜는 일반 수정이 제한되어 있습니다.');
     return false;
   }
 
   return true;
 }
-// 가장 먼저 남아 있는 미확인 항목을 열어 마감 전 연속 확인 동선을 줄입니다.
+
+// 가장 먼저 발견된 미확인 제품의 입력창을 기존 우선순위대로 엽니다.
 function openNextMissing() {
   const row = nextMissingRow.value;
-  if (!row) return;
 
-  if (!row.production_confirmed) return openProduction(row);
-  if (!row.loss_confirmed) return openFlow(row, 'loss');
-  if (!row.waste_confirmed) return openFlow(row, 'waste');
-  if (!row.disposition_confirmed) return openFlow(row, 'carryover');
+  if (!row) {
+    return;
+  }
+
+  if (!row.production_confirmed) {
+    return openProduction(row);
+  }
+
+  if (!row.loss_confirmed) {
+    return openFlow(row, 'loss');
+  }
+
+  if (!row.waste_confirmed) {
+    return openFlow(row, 'waste');
+  }
+
+  if (!row.disposition_confirmed) {
+    return openFlow(row, 'carryover');
+  }
 }
 
 // 생산 수량을 확인하거나 기록할 수 있는 생산 다이얼로그를 엽니다.
 function openProduction(row) {
-  if (!ensureMutable()) return;
-  selectedProduct.value=row;
-  batchOpen.value=true;
+  if (!ensureMutable()) {
+    return;
+  }
+
+  selectedProduct.value = row;
+  batchOpen.value = true;
 }
+
 // 선택한 이월·로스·폐기 업무 다이얼로그를 엽니다.
 function openFlow(row, type) {
-  if (!ensureMutable()) return;
+  if (!ensureMutable()) {
+    return;
+  }
 
   selectedProduct.value = row;
   flowType.value = type;
   flowOpen.value = true;
 }
-// 제품 관리의 상세 데이터를 재사용해 레시피와 선택 날짜 생산 현황을 함께 보여줍니다.
+
+// 제품 상세 데이터를 불러와 레시피와 선택 날짜의 생산 현황을 함께 표시합니다.
 async function openProduct(row) {
   selectedProduct.value = row;
   productDetailLoading.value = true;
 
   try {
-    const { data } = await window.axios.get(`/tillwhite/api/production-management/products/${row.id}`);
+    const { data } = await window.axios.get(
+      `/tillwhite/api/production-management/products/${row.id}`
+    );
+
     productDetail.value = data.product || data;
     productDetailOpen.value = true;
   } catch (error) {
-    emit('error', error.response?.data?.message || '제품 정보를 불러오지 못했습니다.');
+    emit(
+      'error',
+      error.response?.data?.message || '제품 정보를 불러오지 못했습니다.'
+    );
   } finally {
     productDetailLoading.value = false;
   }
 }
-// 요약 지표를 누르면 같은 디자인의 제품별 상세 내역을 보여줍니다.
+
+// 선택한 요약 지표의 제품별 상세 내역을 표시합니다.
 function openMetric(key) {
   detailSelectedRow.value = null;
   detailMetricKey.value = key;
-  detailTitle.value = metrics.value.find((metric) => metric.key === key)?.title || '상세';
+  detailTitle.value =
+    metrics.value.find((metric) => metric.key === key)?.title || '상세';
   detailOpen.value = true;
 }
-// 폐기율 숫자는 같은 요약 상세에서 제품별 폐기율과 비중을 분석합니다.
+
+// 선택한 제품의 폐기율 상세 내역을 표시합니다.
 function openWasteRate(row) {
   detailSelectedRow.value = row;
   detailMetricKey.value = 'waste_rate';
   detailTitle.value = `폐기율 - ${row.name}`;
   detailOpen.value = true;
 }
-// 요약 상세의 제품을 누르면 기존 제품 상세를 재사용해 더 깊은 기록을 확인합니다.
+
+// 요약 상세에서 선택한 제품의 정보 다이얼로그를 엽니다.
 function openMetricProduct(item) {
-  if (!item?.source) return;
+  if (!item?.source) {
+    return;
+  }
+
   detailOpen.value = false;
   openProduct(item.source);
 }
-// 아직 확인하지 않은 생산·이월·로스·폐기만 0개 상태로 일괄 확인합니다.
+
+// 선택한 미확인 항목의 일괄 확인창을 엽니다.
 function askBulkZero(type) {
-  if (!ensureMutable()) return;
+  if (!ensureMutable()) {
+    return;
+  }
+
   bulkZeroType.value = type;
   bulkZeroConfirmOpen.value = true;
 }
-// 확인창에서 선택한 미확인 항목을 0개 상태로 일괄 확인합니다.
+
+// 선택한 미확인 항목을 서버에서 0개로 일괄 확인합니다.
 async function bulkZero() {
   const type = bulkZeroType.value;
-  if (!ensureMutable() || bulkZeroLoading.value) return;
+
+  if (!ensureMutable() || bulkZeroLoading.value) {
+    return;
+  }
+
   bulkZeroLoading.value = true;
+
   try {
-    const {
-      data
-    } = await window.axios.post('/tillwhite/api/production-management/bulk-zero', {
-      store_id: props.storeId, work_date: props.workDate, type
-    });
+    const { data } = await window.axios.post(
+      '/tillwhite/api/production-management/bulk-zero',
+      {
+        store_id: props.storeId,
+        work_date: props.workDate,
+        type
+      }
+    );
+
     bulkZeroConfirmOpen.value = false;
-    if (data.daily) emit('replaceDaily', data.daily);
+
+    if (data.daily) {
+      emit('replaceDaily', data.daily);
+    }
+
     emit('success', data.message);
     emit('reload');
   } catch (error) {
-    emit('error', error.response?.data?.message || '일괄 확인 중 오류가 발생했습니다.');
+    emit(
+      'error',
+      error.response?.data?.message || '일괄 확인 중 오류가 발생했습니다.'
+    );
   } finally {
     bulkZeroLoading.value = false;
   }
 }
-// 하위 다이얼로그 저장 성공 후 최신 일일 데이터를 다시 조회합니다.
+
+// 하위 다이얼로그 저장 후 최신 데이터를 조회하고 마감 점검 상태를 갱신합니다.
 function handleSaved(message, freshDaily = null) {
-  if (freshDaily) emit('replaceDaily', freshDaily);
+  if (freshDaily) {
+    emit('replaceDaily', freshDaily);
+  }
+
   emit('success', message);
   emit('reload');
 
-  // 마감 점검 중 입력했다면 마감창을 유지한 채 서버 기준 상태만 다시 계산합니다.
+  // 마감 점검 중이었다면 마감창을 유지한 채 최신 점검 데이터를 다시 불러옵니다.
   if (closeOpen.value) {
     refreshClosePreview();
   }
 }
-// 감사 로그의 내부 action 값을 직원이 이해하기 쉬운 상태명으로 바꿉니다.
+
+// 변경 이력의 내부 동작명을 직원이 이해하기 쉬운 문구로 변환합니다.
 function historyActionLabel(action) {
   return {
     create: '등록',
@@ -1145,1014 +1696,1328 @@ function historyActionLabel(action) {
     delete: '삭제',
     confirm: '확인',
     close: '마감',
-    correction_open: '수정 시작',
+    correction_open: '수정 시작'
   }[action] || '변경';
 }
 
-// 선택 날짜의 감사 로그를 불러와 일일 변경 이력 다이얼로그를 엽니다.
+// 선택 날짜의 변경 이력을 불러와 다이얼로그를 엽니다.
 async function openHistory() {
   try {
-    const {
-      data
-    } = await window.axios.get('/tillwhite/api/production-management/history', {
-      params: {
-        store_id: props.storeId, work_date: props.workDate
+    const { data } = await window.axios.get(
+      '/tillwhite/api/production-management/history',
+      {
+        params: {
+          store_id: props.storeId,
+          work_date: props.workDate
+        }
       }
-    });
+    );
+
     historyLogs.value = data.logs || [];
     historyPage.value = 1;
     historyOpen.value = true;
   } catch (error) {
-    emit('error', error.response?.data?.message || '변경 이력을 불러오지 못했습니다.');
-  }
-}
-// 관리자 권한과 필수 사유를 확인한 뒤 마감된 날짜를 수정 상태로 엽니다.
-async function openCorrection() {
-  if (!props.canCorrect) {
-    emit('error','마감 후 수정 권한이 없습니다.');
-    return;
-  }
-  try {
-    const {
-      data
-    } = await window.axios.post('/tillwhite/api/production-management/correction/open', {
-      store_id: props.storeId, work_date: props.workDate, reason: correctionReason.value
-    });
-    correctionConfirmOpen.value = false;
-    correctionOpen.value = false;
-    correctionReason.value = '';
-    const affected = data.affected_dates?.length ? ` 영향 날짜: ${data.affected_dates.join(', ')}` : '';
-    emit('success', `${data.message}${affected}`);
-    emit('reload');
-  } catch (error) {
-    emit('error', error.response?.data?.message || '마감 후 수정을 시작하지 못했습니다.');
-  }
-}
-// 마감창을 닫지 않고 최신 미확인 제품과 마감 가능 여부만 다시 계산합니다.
-async function refreshClosePreview() {
-  try {
-    const { data } = await window.axios.get('/tillwhite/api/production-management/close-preview', {
-      params: { store_id: props.storeId, work_date: props.workDate },
-    });
-    closePreview.value = data;
-  } catch (error) {
-    emit('error', error.response?.data?.message || '마감 내용을 다시 확인하지 못했습니다.');
+    emit(
+      'error',
+      error.response?.data?.message || '변경 이력을 불러오지 못했습니다.'
+    );
   }
 }
 
-// 서버에서 마감 가능 여부를 다시 계산해 최종 확인 다이얼로그를 엽니다.
-async function previewClose() {
-  if (!ensureMutable()) return;
+// 마감 후 수정 권한을 확인하고 서버에 수정 시작을 요청합니다.
+async function openCorrection() {
+  if (!props.canCorrect) {
+    emit('error', '마감 후 수정 권한이 없습니다.');
+    return;
+  }
+
   try {
-    const {
-      data
-    } = await window.axios.get('/tillwhite/api/production-management/close-preview',{
-      params:{
-        store_id: props.storeId, work_date: props.workDate
+    const { data } = await window.axios.post(
+      '/tillwhite/api/production-management/correction/open',
+      {
+        store_id: props.storeId,
+        work_date: props.workDate,
+        reason: correctionReason.value
       }
-    });
+    );
+
+    correctionConfirmOpen.value = false;
+    correctionOpen.value = false;
+    correctionReason.value = '';
+
+    const affected = data.affected_dates?.length
+      ? ` 날짜: ${data.affected_dates.join(', ')}`
+      : '';
+
+    emit('success', `${data.message}${affected}`);
+    emit('reload');
+  } catch (error) {
+    emit(
+      'error',
+      error.response?.data?.message || '마감 후 수정을 시작하지 못했습니다.'
+    );
+  }
+}
+
+// 마감창을 유지하면서 최신 마감 점검 데이터를 다시 불러옵니다.
+async function refreshClosePreview() {
+  try {
+    const { data } = await window.axios.get(
+      '/tillwhite/api/production-management/close-preview',
+      {
+        params: {
+          store_id: props.storeId,
+          work_date: props.workDate
+        }
+      }
+    );
+
+    // 최신 마감 점검 데이터를 반영합니다.
+    closePreview.value = data;
+
+    // 활성 제품 수를 기준으로 마지막 페이지를 계산합니다.
+    const activeCount = (data?.daily?.rows || []).filter(
+      (row) => row.is_active
+    ).length;
+
+    const lastPage = Math.max(
+      1,
+      Math.ceil(activeCount / closePageSize)
+    );
+
+    // 현재 페이지가 마지막 페이지를 초과한 경우에만 보정합니다.
+    if (closePage.value > lastPage) {
+      closePage.value = lastPage;
+    }
+  } catch (error) {
+    emit(
+      'error',
+      error.response?.data?.message || '마감 내용을 다시 확인하지 못했습니다.'
+    );
+  }
+}
+
+// 서버에서 마감 가능 여부를 조회한 뒤 마감 최종확인창을 엽니다.
+async function previewClose() {
+  if (!ensureMutable()) {
+    return;
+  }
+
+  try {
+    const { data } = await window.axios.get(
+      '/tillwhite/api/production-management/close-preview',
+      {
+        params: {
+          store_id: props.storeId,
+          work_date: props.workDate
+        }
+      }
+    );
+
     closePreview.value = data;
     closePage.value = 1;
     closeOpen.value = true;
   } catch (error) {
-    emit('error',error.response?.data?.message||'마감 내용을 확인하지 못했습니다.');
+    emit(
+      'error',
+      error.response?.data?.message || '마감 내용을 확인하지 못했습니다.'
+    );
   }
 }
-// 최종 확인 뒤 서버 마감을 실행하고 성공한 경우에만 완료 상태를 반영합니다.
+
+// 서버에 하루 업무 마감을 요청하고 성공한 경우에만 완료 상태를 반영합니다.
 async function closeDay() {
-  closing.value=true;
+  closing.value = true;
+
   try {
-    const { data } = await window.axios.post('/tillwhite/api/production-management/close',{
-      store_id: props.storeId, work_date: props.workDate
-    });
+    const { data } = await window.axios.post(
+      '/tillwhite/api/production-management/close',
+      {
+        store_id: props.storeId,
+        work_date: props.workDate
+      }
+    );
+
     confirmCloseOpen.value = false;
     closeOpen.value = false;
-    if (data.daily) emit('replaceDaily', data.daily);
+
+    if (data.daily) {
+      emit('replaceDaily', data.daily);
+    }
+
     emit('success', data.message || '하루 업무를 마감했습니다.');
     emit('reload');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
   } catch (error) {
-    emit('error',error.response?.data?.message||'마감하지 못했습니다.');
+    emit(
+      'error',
+      error.response?.data?.message || '마감하지 못했습니다.'
+    );
   } finally {
-    closing.value=false;
+    closing.value = false;
   }
 }
 </script>
 
 <style scoped>
 .daily-page {
-    display:flex;
-    flex-direction:column;
-    gap:0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
+
 .daily-section {
-    padding: 18px 0;
+  padding: 18px 0;
 }
 
 .date-section {
-    padding: 8px 0;
+  padding: 8px 0;
 }
 
 .date-section .app-date-toolbar {
-    min-height: 46px;
+  min-height: 46px;
 }
 
 .date-section .app-date-main {
-    padding-block: 4px;
-}
-.section-heading {
-    display:flex;
-    align-items:flex-start;
-    justify-content:space-between;
-    gap:16px;
-    margin-bottom:14px;
-}
-.section-heading h3 {
-    margin:0;
-    font-size:.98rem;
-    font-weight:650;
-    letter-spacing:-.02em;
-}
-.section-heading p {
-    margin:4px 0 0;
-    font-size:.76rem;
-    color:rgba(var(--v-theme-on-surface),.58);
-}
-.work-progress {
-    width:100%;
-    height:4px;
-    margin-top:8px;
-    overflow:hidden;
-    border-radius:999px;
-    background:rgba(var(--v-theme-on-surface),.07);
-}
-.work-progress span {
-    display:block;
-    height:100%;
-    border-radius:inherit;
-    background:rgb(var(--v-theme-primary));
-}
-.missing-summary {
-    margin-top:6px;
-    font-size:.7rem;
-    color:rgba(var(--v-theme-on-surface),.62);
-}
-.bulk-menu :deep(.v-list-item-title) {
-    display:flex;
-    justify-content:space-between;
-    gap:16px;
-    font-size:.8rem;
-    font-weight:650;
-}
-.bulk-menu :deep(.v-list-item-subtitle) {
-    margin-top:3px;
-    font-size:.67rem;
-    line-height:1.4;
-    white-space:normal;
-}
-.daily-metrics {
-    display:grid;
-    grid-template-columns:repeat(6,minmax(0,1fr));
-    gap:9px;
-}
-.metric-item {
-    appearance:none;
-    text-align:center;
-    padding:12px 8px;
-    border:1px solid rgba(var(--v-border-color),.7);
-    border-radius:12px;
-    background:rgb(var(--v-theme-surface));
-    color:inherit;
-    cursor:pointer;
-    box-shadow:0 2px 8px rgba(0,0,0,.055);
-    transition:transform .15s ease,box-shadow .15s ease;
-}
-.metric-item:hover {
-    transform:translateY(-1px);
-    box-shadow:0 4px 12px rgba(0,0,0,.08);
-}
-.metric-item.static {
-    cursor:default;
-}
-.metric-item span,.metric-item strong {
-    display:block;
-}
-.metric-item span {
-    font-size:.7rem;
-    font-weight:500;
-    color:rgba(var(--v-theme-on-surface),.58);
-}
-.metric-item strong {
-    margin-top:3px;
-    font-size:1.08rem;
-    font-weight:650;
-    font-variant-numeric:tabular-nums;
-}
-.product-search {
-    max-width:360px;
-}
-/* 제품별 현황은 검색과 테이블을 포함한 하나의 작업 섹션입니다. */
-.product-section-framed { border: 1px solid rgba(var(--v-theme-on-surface), .13); border-radius: 12px; padding: 16px; }
-.product-section-framed .product-heading { border-bottom: 1px solid rgba(var(--v-theme-on-surface), .11); padding-bottom: 14px; }
-.product-count-heading { font-size: .75rem; font-weight: 500; color: rgba(var(--v-theme-on-surface), .58); margin-left: 5px; }
-.waste-rate-header-button { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
-.stock-flow-trigger { width: 100%; text-align: left; border: 1px solid rgba(var(--v-theme-on-surface), .12); border-radius: 8px; background: transparent; padding: 8px; cursor: pointer; }
-.stock-flow-trigger span, .stock-flow-trigger strong { display: block; }
-.stock-flow-event { border: 1px solid rgba(var(--v-theme-on-surface), .12); border-radius: 9px; padding: 11px; margin-top: 8px; }
-.stock-flow-event > div { display: flex; justify-content: space-between; gap: 8px; }
-.stock-flow-event small { display: block; color: rgba(var(--v-theme-on-surface), .6); margin-top: 4px; }
-.production-friendly-empty { display: flex; align-items: center; gap: 8px; padding: 14px; color: rgba(var(--v-theme-on-surface), .65); }
-.product-heading-actions {
-    display:flex;
-    align-items:center;
-    justify-content:flex-end;
-    flex-wrap:nowrap;
-    gap:7px;
-    width:100%;
-}
-.product-heading-actions > .missing-action-button, .product-heading-actions > .v-menu { flex: 1 1 50%; min-width: 0; }
-.missing-action-button {
-    min-height:48px;
-    font-weight:650;
-    width:100%;
-    flex: 1 1 50%;
-}
-.missing-complete-state {
-    min-height:34px;
-    display:flex;
-    align-items:center;
-    padding:0 10px;
-    font-size:.72rem;
-    font-weight:650;
-    color:rgba(var(--v-theme-on-surface),.62);
-}
-.product-filter-row {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:12px;
-}
-.status-filter {
-    border-bottom:1px solid rgba(var(--v-border-color),.65);
-    border-radius:0;
-}
-.status-filter :deep(.v-btn) {
-    min-width:auto;
-    padding-inline:12px;
-    font-size:.76rem;
-    font-weight:500;
-}
-.category-block {
-    margin-bottom:18px;
-    border:1px solid rgba(var(--v-border-color),.72);
-    border-radius:12px;
-    overflow:hidden;
-    background:rgb(var(--v-theme-surface));
-    box-shadow:0 2px 9px rgba(0,0,0,.045);
-}
-.category-header {
-    width:100%;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:16px;
-    padding:13px 15px 10px;
-    border:0;
-    background:transparent;
-    color:inherit;
-    text-align:left;
-    cursor:pointer;
-}
-.category-heading-copy {
-    min-width:0;
-    display:flex;
-    flex-direction:column;
-    gap:2px;
-}
-.category-heading-copy strong {
-    font-size:.9rem;
-    font-weight:650;
-}
-.category-heading-copy span,.category-heading-side {
-    font-size:.7rem;
-    color:rgba(var(--v-theme-on-surface),.56);
-}
-.category-heading-side {
-    display:flex;
-    align-items:center;
-    gap:8px;
-    white-space:nowrap;
-}
-.category-progress {
-    height:2px;
-    background:rgba(var(--v-theme-on-surface),.06);
-}
-.category-progress span {
-    display:block;
-    height:100%;
-    background:rgba(var(--v-theme-primary),.72);
-    transition:width .2s ease;
-}
-.product-table-wrap {
-    overflow-x:hidden;
-}
-.product-table {
-    width:100%;
-    min-width:0;
-    border-collapse:collapse;
-    table-layout:fixed;
-    font-size:.75rem;
-}
-.product-column {
-    width:34%;
-}
-.number-column {
-    width:13.2%;
-}
-.product-table th,.product-table td {
-    height:34px;
-    padding:5px 4px;
-    border-top:1px solid rgba(var(--v-border-color),.58);
-    text-align:center;
-    white-space:nowrap;
-    font-weight:400;
-    font-variant-numeric:tabular-nums;
-}
-.product-table thead th {
-    position:sticky;
-    top:0;
-    z-index:2;
-    height:34px;
-    background:rgb(var(--v-theme-surface));
-    color:rgba(var(--v-theme-on-surface),.58);
-    font-size:.69rem;
-    font-weight:550;
-}
-.product-table th:first-child,.product-table td:first-child {
-    position:sticky;
-    left:0;
-    z-index:3;
-    width:34%;
-    max-width:34%;
-    text-align:left;
-    background:rgb(var(--v-theme-surface));
-}
-.product-table thead th:first-child {
-    z-index:4;
-}
-.product-table tbody tr:hover td {
-    background:rgb(var(--v-theme-surface-variant));
-}
-.product-table tbody tr:hover td:first-child {
-    background:rgb(var(--v-theme-surface-variant));
-}
-.product-table th:first-child,.product-table td:first-child {
-    padding-left:.65rem;
-    border-right:1px solid rgba(var(--v-border-color),.38);
-}
-.product-name {
-    display:block;
-    width:100%;
-    overflow:hidden;
-    text-overflow:ellipsis;
-    white-space:nowrap;
-    appearance:none;
-    border:0;
-    padding:0;
-    background:none;
-    color:inherit;
-    font-size:.76rem;
-    font-weight:500;
-    text-align:left;
-    cursor:pointer;
-}
-.table-value {
-    min-width:30px;
-    padding:5px 7px;
-    border:0;
-    border-radius:6px;
-    background:transparent;
-    color:inherit;
-    font:inherit;
-    cursor:pointer;
-}
-.table-value:hover {
-    background:rgba(var(--v-theme-on-surface),.06);
-}
-.table-value.pending {
-    color:rgba(var(--v-theme-on-surface),.42);
-}
-.table-value.calculated {
-    color:rgba(var(--v-theme-on-surface),.66);
-    cursor:help;
-}
-.rate-value {
-    color:rgba(var(--v-theme-on-surface),.66);
-}
-.row-warning {
-    display:block;
-    margin-top:1px;
-    color:rgb(var(--v-theme-error));
-    font-size:.62rem;
-    font-weight:600;
-}
-.row-inactive {
-    opacity:.5;
-}
-.subtotal-row td {
-    background:rgba(var(--v-theme-on-surface),.055) !important;
-    color:rgb(var(--v-theme-on-surface)) !important;
-    font-weight:650;
-}
-.subtotal-row:hover td {
-    background:rgba(var(--v-theme-on-surface),.055) !important;
-}
-.subtotal-row td:first-child {
-    background:rgba(var(--v-theme-on-surface),.075) !important;
-}
-.daily-actions {
-    display:flex;
-    align-items:center;
-    padding-top:6px;
-}
-.summary-detail-hero {
-    padding:4px 0 16px;
-}
-.summary-detail-hero span,.summary-detail-hero strong {
-    display:block;
-}
-.summary-detail-hero span {
-    font-size:.72rem;
-    color:rgba(var(--v-theme-on-surface),.58);
-}
-.summary-detail-hero strong {
-    margin-top:3px;
-    font-size:1.7rem;
-    font-weight:700;
-    font-variant-numeric:tabular-nums;
-}
-.summary-detail-hero small {
-    display:block;
-    margin-top:6px;
-    font-size:.7rem;
-    color:rgba(var(--v-theme-on-surface),.58);
-}
-.summary-detail-facts {
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:8px;
-    margin-bottom:16px;
-}
-.summary-detail-facts>div {
-    padding:9px 8px;
-    border-radius:9px;
-    background:rgba(var(--v-theme-on-surface),.04);
-    text-align:center;
-}
-.summary-detail-facts span,.summary-detail-facts strong {
-    display:block;
-}
-.summary-detail-facts span {
-    font-size:.64rem;
-    color:rgba(var(--v-theme-on-surface),.55);
-}
-.summary-detail-facts strong {
-    margin-top:2px;
-    font-size:.78rem;
-    font-weight:650;
-}
-.waste-analysis-note {
-    display:flex;
-    flex-direction:column;
-    gap:3px;
-    margin:-4px 0 14px;
-    padding:9px 10px;
-    border-radius:9px;
-    background:rgba(var(--v-theme-on-surface),.04);
-    font-size:.68rem;
-}
-.waste-analysis-note span {
-    color:rgba(var(--v-theme-on-surface),.58);
-    line-height:1.45;
-}
-.summary-detail-meta {
-    margin-bottom:16px;
-    font-size:.7rem;
-    color:rgba(var(--v-theme-on-surface),.55);
-}
-.dialog-full-divider {
-    margin-inline:-24px;
-}
-.summary-detail-heading {
-    padding:16px 0 8px;
-    font-size:.8rem;
-    font-weight:650;
-}
-.summary-detail-list {
-    display:flex;
-    flex-direction:column;
-}
-.summary-detail-row {
-    width:100%;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:16px;
-    padding:9px 2px;
-    border:0;
-    border-bottom:1px solid rgba(var(--v-border-color),.55);
-    background:transparent;
-    color:inherit;
-    text-align:left;
-    font-size:.76rem;
-    cursor:pointer;
-}
-.summary-detail-row>span {
-    display:flex;
-    flex-direction:column;
-    min-width:0;
-}
-.summary-detail-row small {
-    margin-top:2px;
-    font-size:.63rem;
-    color:rgba(var(--v-theme-on-surface),.5);
-}
-.summary-detail-row:hover {
-    background:rgba(var(--v-theme-on-surface),.035);
-}
-.summary-detail-row strong {
-    font-variant-numeric:tabular-nums;
-}
-.summary-detail-empty {
-    padding:18px 0;
-    font-size:.75rem;
-    color:rgba(var(--v-theme-on-surface),.55);
-}
-.summary-detail-empty strong,.summary-detail-empty span {
-    display:block;
-}
-.summary-detail-empty strong {
-    color:rgb(var(--v-theme-on-surface));
-}
-.summary-detail-empty span {
-    margin-top:3px;
-    font-size:.68rem;
-}
-.production-product-section {
-    padding:20px 24px;
-}
-.production-product-title {
-    margin-bottom: 12px;
-    font-size: .88rem;
-    font-weight: 650;
-}
-.production-product-date {
-    margin-top: -8px;
-    margin-bottom: 12px;
-    font-size: .68rem;
-    color: rgba(var(--v-theme-on-surface), .55);
-}
-.product-detail-metrics {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:8px;
-}
-.product-detail-metrics>div {
-    padding:10px;
-    border-radius:9px;
-    background:rgba(var(--v-theme-on-surface),.035);
-    text-align:center;
-}
-.product-detail-metrics span,.product-detail-metrics strong {
-    display:block;
-}
-.product-detail-metrics span {
-    font-size:.68rem;
-    color:rgba(var(--v-theme-on-surface),.56);
-}
-.product-detail-metrics strong {
-    margin-top:2px;
-    font-size:.9rem;
-    font-weight:600;
-}
-.product-analysis-copy {
-    margin:0;
-    font-size:.78rem;
-    line-height:1.65;
-    color:rgba(var(--v-theme-on-surface),.72);
-}
-.history-context {
-    padding:2px 0 14px;
-    font-size:.72rem;
-    color:rgba(var(--v-theme-on-surface),.58);
-}
-.history-list {
-    display:flex;
-    flex-direction:column;
-}
-.history-item {
-    padding:12px 0;
-    border-bottom:1px solid rgba(var(--v-border-color),.52);
-}
-.history-item-head {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-}
-.history-item-head strong {
-    min-width:0;
-    font-size:.8rem;
-    font-weight:650;
-}
-.history-action {
-    flex:none;
-    padding:3px 7px;
-    border-radius:999px;
-    background:rgba(var(--v-theme-on-surface),.06);
-    font-size:.62rem;
-    font-weight:650;
-}
-.history-meta {
-    margin-top:4px;
-    font-size:.67rem;
-    color:rgba(var(--v-theme-on-surface),.55);
-}
-.close-check-list {
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-}
-.close-check-item {
-    padding:12px;
-    border:1px solid rgba(var(--v-border-color),.7);
-    border-radius:10px;
-}
-.close-check-copy {
-    display:flex;
-    flex-direction:column;
-    gap:2px;
-}
-.close-check-copy strong {
-    font-size:.82rem;
-    font-weight:600;
-}
-.close-check-copy span {
-    font-size:.7rem;
-    color:rgba(var(--v-theme-on-surface),.58);
-}
-.close-check-actions {
-    display:flex;
-    flex-wrap:wrap;
-    gap:6px;
-    margin-top:9px;
-}
-.close-progress-copy {
-    margin-top: 10px;
-    font-size: .72rem;
-    color: rgba(var(--v-theme-on-surface), .62);
-}
-.close-product-values {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
-    margin-top: 9px;
-}
-.close-product-values button {
-    padding: 7px 5px;
-    border: 1px solid rgba(var(--v-border-color), .55);
-    border-radius: 8px;
-    background: rgba(var(--v-theme-on-surface), .025);
-    text-align: center;
-    cursor: pointer;
-}
-.close-product-values span,
-.close-product-values strong {
-    display: block;
-}
-.close-product-values span {
-    font-size: .62rem;
-    color: rgba(var(--v-theme-on-surface), .55);
-}
-.close-product-values strong {
-    margin-top: 2px;
-    font-size: .76rem;
-    font-weight: 650;
-}
-.close-product-values .production {
-    background: rgba(76, 175, 80, .12);
-}
-.close-product-values .waste {
-    background: rgba(239, 83, 80, .11);
-}
-.close-pagination {
-    margin-top: 12px;
-}
-.waste-rate-help {
-    padding: 0 2px;
-    border: 0;
-    background: transparent;
-    color: rgba(var(--v-theme-on-surface), .55);
-    font: inherit;
-    cursor: pointer;
-}
-.waste-guide-dialog p {
-    margin: 0 0 14px;
-    font-size: .76rem;
-    line-height: 1.6;
-}
-.waste-guide-dialog > div {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    margin-top: 10px;
-}
-.waste-guide-dialog strong {
-    font-size: .72rem;
-}
-.waste-guide-dialog span {
-    font-size: .72rem;
-    line-height: 1.55;
-    color: rgba(var(--v-theme-on-surface), .68);
-}
-.close-ready {
-    padding:12px;
-    border-radius:10px;
-    background:rgba(var(--v-theme-success),.08);
-    font-size:.78rem;
-    font-weight:600;
+  padding-block: 4px;
 }
 
-.previous-close-alert {
-    margin:2px 0 8px;
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
 }
-.previous-close-copy {
-    display:flex;
-    flex-direction:column;
-    gap:2px;
+
+.section-heading h3 {
+  margin: 0;
+  font-size: .98rem;
+  font-weight: 650;
+  letter-spacing: -.02em;
 }
-.previous-close-copy strong {
-    font-size:.78rem;
+
+.section-heading p {
+  margin: 4px 0 0;
+  font-size: .76rem;
+  color: rgba(var(--v-theme-on-surface), .58);
 }
-.previous-close-copy span {
-    font-size:.69rem;
-    line-height:1.4;
+
+.work-progress {
+  width: 100%;
+  height: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-on-surface), .07);
 }
-.previous-close-action {
-    min-height:38px;
-    font-weight:650;
+
+.work-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgb(var(--v-theme-primary));
 }
-.summary-section {
-    padding-top:10px;
+
+.missing-summary {
+  margin-top: 6px;
+  font-size: .7rem;
+  color: rgba(var(--v-theme-on-surface), .62);
 }
+
+.bulk-menu :deep(.v-list-item-title) {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: .8rem;
+  font-weight: 650;
+}
+
+.bulk-menu :deep(.v-list-item-subtitle) {
+  margin-top: 3px;
+  font-size: .67rem;
+  line-height: 1.4;
+  white-space: normal;
+}
+
 .daily-metrics {
-    grid-template-columns:repeat(5,minmax(0,1fr));
-    gap:7px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 9px;
 }
+
 .metric-item {
-    padding:10px 6px;
+  appearance: none;
+  text-align: center;
+  padding: 12px 8px;
+  border: 1px solid rgba(var(--v-border-color), .7);
+  border-radius: 12px;
+  background: rgb(var(--v-theme-surface));
+  color: inherit;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .055);
+  transition: transform .15s ease, box-shadow .15s ease;
 }
-.missing-type-grid {
-    display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:6px;
-    margin-top:10px;
+
+.metric-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
 }
-.missing-type-button {
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:6px;
-    min-height:34px;
-    padding:6px 8px;
-    border:1px solid rgba(var(--v-border-color),.65);
-    border-radius:8px;
-    background:transparent;
-    color:inherit;
-    cursor:pointer;
+
+.metric-item.static {
+  cursor: default;
 }
-.missing-type-button span {
-    font-size:.67rem;
-    color:rgba(var(--v-theme-on-surface),.58);
+
+.metric-item span,
+.metric-item strong {
+  display: block;
 }
-.missing-type-button strong {
-    font-size:.7rem;
-    font-weight:700;
-    font-variant-numeric:tabular-nums;
+
+.metric-item span {
+  font-size: .7rem;
+  font-weight: 500;
+  color: rgba(var(--v-theme-on-surface), .58);
 }
-.missing-type-button.active {
-    border-color:rgba(var(--v-theme-primary),.55);
-    background:rgba(var(--v-theme-primary),.07);
+
+.metric-item strong {
+  margin-top: 3px;
+  font-size: 1.08rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
 }
-.missing-type-button.complete {
-    opacity:.58;
+
+.product-search {
+  max-width: 360px;
 }
-.history-footer {
-    justify-content:flex-start;
+
+/* 제품별 현황은 검색과 테이블을 포함한 하나의 작업 섹션입니다. */
+.product-section-framed {
+  border: 1px solid rgba(var(--v-theme-on-surface), .13);
+  border-radius: 12px;
+  padding: 16px;
 }
-.status-filter {
-    width:100%;
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    border-bottom:1px solid rgba(var(--v-border-color),.65);
+
+.product-section-framed .product-heading {
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), .11);
+  padding-bottom: 14px;
 }
-.status-filter :deep(.v-btn) {
-    border-radius:0;
+
+.product-count-heading {
+  font-size: .75rem;
+  font-weight: 500;
+  color: rgba(var(--v-theme-on-surface), .58);
+  margin-left: 5px;
 }
-.status-filter :deep(.v-btn--active) {
-    border-bottom:2px solid rgb(var(--v-theme-primary));
+
+.waste-rate-header-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
 }
+
+.stock-flow-trigger {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(var(--v-theme-on-surface), .12);
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.stock-flow-trigger span,
+.stock-flow-trigger strong {
+  display: block;
+}
+
+.stock-flow-event {
+  border: 1px solid rgba(var(--v-theme-on-surface), .12);
+  border-radius: 9px;
+  padding: 11px;
+  margin-top: 8px;
+}
+
+.stock-flow-event > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stock-flow-event small {
+  display: block;
+  color: rgba(var(--v-theme-on-surface), .6);
+  margin-top: 4px;
+}
+
+.production-friendly-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px;
+  color: rgba(var(--v-theme-on-surface), .65);
+}
+
+.product-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 7px;
+  width: 100%;
+}
+
+.product-heading-actions > .missing-action-button,
+.product-heading-actions > .v-menu {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+.missing-action-button {
+  min-height: 48px;
+  font-weight: 650;
+  width: 100%;
+  flex: 1 1 50%;
+}
+
+.missing-complete-state {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: .72rem;
+  font-weight: 650;
+  color: rgba(var(--v-theme-on-surface), .62);
+}
+
 .product-filter-row {
-    align-items:flex-end;
-    flex-wrap:wrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
-.product-filter-row > span {
-    margin-left:auto;
+
+.status-filter {
+  border-bottom: 1px solid rgba(var(--v-border-color), .65);
+  border-radius: 0;
 }
+
+.status-filter :deep(.v-btn) {
+  min-width: auto;
+  padding-inline: 12px;
+  font-size: .76rem;
+  font-weight: 500;
+}
+
+.category-block {
+  margin-bottom: 18px;
+  border: 1px solid rgba(var(--v-border-color), .72);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 2px 9px rgba(0, 0, 0, .045);
+}
+
+.category-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 15px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-heading-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.category-heading-copy strong {
+  font-size: .9rem;
+  font-weight: 650;
+}
+
+.category-heading-copy span,
+.category-heading-side {
+  font-size: .7rem;
+  color: rgba(var(--v-theme-on-surface), .56);
+}
+
+.category-heading-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.category-progress {
+  height: 2px;
+  background: rgba(var(--v-theme-on-surface), .06);
+}
+
+.category-progress span {
+  display: block;
+  height: 100%;
+  background: rgba(var(--v-theme-primary), .72);
+  transition: width .2s ease;
+}
+
+.product-table-wrap {
+  overflow-x: hidden;
+}
+
 .product-table {
-    min-width:100%;
-    font-size:.7rem;
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: .75rem;
 }
+
 .product-column {
-    width:34%;
+  width: 34%;
 }
+
 .number-column {
-    width:13.2%;
+  width: 13.2%;
 }
-.product-table th,.product-table td {
-    height:31px;
-    padding:3px 2px;
+
+.product-table th,
+.product-table td {
+  height: 34px;
+  padding: 5px 4px;
+  border-top: 1px solid rgba(var(--v-border-color), .58);
+  text-align: center;
+  white-space: nowrap;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
-.product-table tbody tr:hover td,.product-table tbody tr:hover td:first-child {
-    background:rgba(var(--v-theme-on-surface),.035);
+
+.product-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 34px;
+  background: rgb(var(--v-theme-surface));
+  color: rgba(var(--v-theme-on-surface), .58);
+  font-size: .69rem;
+  font-weight: 550;
 }
+
+.product-table th:first-child,
+.product-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 34%;
+  max-width: 34%;
+  text-align: left;
+  background: rgb(var(--v-theme-surface));
+}
+
+.product-table thead th:first-child {
+  z-index: 4;
+}
+
+.product-table tbody tr:hover td {
+  background: rgb(var(--v-theme-surface-variant));
+}
+
+.product-table tbody tr:hover td:first-child {
+  background: rgb(var(--v-theme-surface-variant));
+}
+
+.product-table th:first-child,
+.product-table td:first-child {
+  padding-left: .65rem;
+  border-right: 1px solid rgba(var(--v-border-color), .38);
+}
+
+.product-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: .76rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
 .table-value {
-    min-width:30px;
-    padding:4px 6px;
-    border:1px solid transparent;
-    border-radius:999px;
-    background:rgba(var(--v-theme-on-surface),.045);
+  min-width: 30px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
-.table-value.production-value {
-    background:rgba(76,175,80,.12);
-    color:rgb(46,125,50);
+
+.table-value:hover {
+  background: rgba(var(--v-theme-on-surface), .06);
 }
-.table-value.waste-value {
-    background:rgba(239,83,80,.11);
-    color:rgb(198,40,40);
-}
+
 .table-value.pending {
-    background:rgba(var(--v-theme-on-surface),.035);
-    color:rgba(var(--v-theme-on-surface),.42);
+  color: rgba(var(--v-theme-on-surface), .42);
 }
+
+.table-value.calculated {
+  color: rgba(var(--v-theme-on-surface), .66);
+  cursor: help;
+}
+
 .rate-value {
-    font-weight:650;
+  color: rgba(var(--v-theme-on-surface), .66);
 }
+
+.row-warning {
+  display: block;
+  margin-top: 1px;
+  color: rgb(var(--v-theme-error));
+  font-size: .62rem;
+  font-weight: 600;
+}
+
+.row-inactive {
+  opacity: .5;
+}
+
+.subtotal-row td {
+  background: rgba(var(--v-theme-on-surface), .055) !important;
+  color: rgb(var(--v-theme-on-surface)) !important;
+  font-weight: 650;
+}
+
+.subtotal-row:hover td {
+  background: rgba(var(--v-theme-on-surface), .055) !important;
+}
+
+.subtotal-row td:first-child {
+  background: rgba(var(--v-theme-on-surface), .075) !important;
+}
+
+.daily-actions {
+  display: flex;
+  align-items: center;
+  padding-top: 6px;
+}
+.summary-detail-hero {
+  padding: 4px 0 16px;
+}
+
+.summary-detail-hero span,
+.summary-detail-hero strong {
+  display: block;
+}
+
+.summary-detail-hero span {
+  font-size: .72rem;
+  color: rgba(var(--v-theme-on-surface), .58);
+}
+
+.summary-detail-hero strong {
+  margin-top: 3px;
+  font-size: 1.7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-detail-hero small {
+  display: block;
+  margin-top: 6px;
+  font-size: .7rem;
+  color: rgba(var(--v-theme-on-surface), .58);
+}
+
+.summary-detail-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.summary-detail-facts > div {
+  padding: 9px 8px;
+  border-radius: 9px;
+  background: rgba(var(--v-theme-on-surface), .04);
+  text-align: center;
+}
+
+.summary-detail-facts span,
+.summary-detail-facts strong {
+  display: block;
+}
+
+.summary-detail-facts span {
+  font-size: .64rem;
+  color: rgba(var(--v-theme-on-surface), .55);
+}
+
+.summary-detail-facts strong {
+  margin-top: 2px;
+  font-size: .78rem;
+  font-weight: 650;
+}
+
+.waste-analysis-note {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: -4px 0 14px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(var(--v-theme-on-surface), .04);
+  font-size: .68rem;
+}
+
+.waste-analysis-note span {
+  color: rgba(var(--v-theme-on-surface), .58);
+  line-height: 1.45;
+}
+
+.summary-detail-meta {
+  margin-bottom: 16px;
+  font-size: .7rem;
+  color: rgba(var(--v-theme-on-surface), .55);
+}
+
+.dialog-full-divider {
+  margin-inline: -24px;
+}
+
+.summary-detail-heading {
+  padding: 16px 0 8px;
+  font-size: .8rem;
+  font-weight: 650;
+}
+
+.summary-detail-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-detail-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 2px;
+  border: 0;
+  border-bottom: 1px solid rgba(var(--v-border-color), .55);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: .76rem;
+  cursor: pointer;
+}
+
+.summary-detail-row > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.summary-detail-row small {
+  margin-top: 2px;
+  font-size: .63rem;
+  color: rgba(var(--v-theme-on-surface), .5);
+}
+
+.summary-detail-row:hover {
+  background: rgba(var(--v-theme-on-surface), .035);
+}
+
+.summary-detail-row strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-detail-empty {
+  padding: 18px 0;
+  font-size: .75rem;
+  color: rgba(var(--v-theme-on-surface), .55);
+}
+
+.summary-detail-empty strong,
+.summary-detail-empty span {
+  display: block;
+}
+
+.summary-detail-empty strong {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.summary-detail-empty span {
+  margin-top: 3px;
+  font-size: .68rem;
+}
+
+.production-product-section {
+  padding: 20px 24px;
+}
+
+.production-product-title {
+  margin-bottom: 12px;
+  font-size: .88rem;
+  font-weight: 650;
+}
+
+.production-product-date {
+  margin-top: -8px;
+  margin-bottom: 12px;
+  font-size: .68rem;
+  color: rgba(var(--v-theme-on-surface), .55);
+}
+
+.product-detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.product-detail-metrics > div {
+  padding: 10px;
+  border-radius: 9px;
+  background: rgba(var(--v-theme-on-surface), .035);
+  text-align: center;
+}
+
+.product-detail-metrics span,
+.product-detail-metrics strong {
+  display: block;
+}
+
+.product-detail-metrics span {
+  font-size: .68rem;
+  color: rgba(var(--v-theme-on-surface), .56);
+}
+
+.product-detail-metrics strong {
+  margin-top: 2px;
+  font-size: .9rem;
+  font-weight: 600;
+}
+
+.product-analysis-copy {
+  margin: 0;
+  font-size: .78rem;
+  line-height: 1.65;
+  color: rgba(var(--v-theme-on-surface), .72);
+}
+
+.history-context {
+  padding: 2px 0 14px;
+  font-size: .72rem;
+  color: rgba(var(--v-theme-on-surface), .58);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-item {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(var(--v-border-color), .52);
+}
+
+.history-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.history-item-head strong {
+  min-width: 0;
+  font-size: .8rem;
+  font-weight: 650;
+}
+
+.history-action {
+  flex: none;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-on-surface), .06);
+  font-size: .62rem;
+  font-weight: 650;
+}
+
+.history-meta {
+  margin-top: 4px;
+  font-size: .67rem;
+  color: rgba(var(--v-theme-on-surface), .55);
+}
+
+.close-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.close-check-item {
+  padding: 12px;
+  border: 1px solid rgba(var(--v-border-color), .7);
+  border-radius: 10px;
+}
+
+.close-check-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.close-check-copy strong {
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+.close-check-copy span {
+  font-size: .7rem;
+  color: rgba(var(--v-theme-on-surface), .58);
+}
+
+.close-check-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.close-progress-copy {
+  margin-top: 10px;
+  font-size: .72rem;
+  color: rgba(var(--v-theme-on-surface), .62);
+}
+
+.close-product-values {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.close-product-values button {
+  padding: 7px 5px;
+  border: 1px solid rgba(var(--v-border-color), .55);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), .025);
+  text-align: center;
+  cursor: pointer;
+}
+
+.close-product-values span,
+.close-product-values strong {
+  display: block;
+}
+
+.close-product-values span {
+  font-size: .62rem;
+  color: rgba(var(--v-theme-on-surface), .55);
+}
+
+.close-product-values strong {
+  margin-top: 2px;
+  font-size: .76rem;
+  font-weight: 650;
+}
+
+.close-product-values .production {
+  background: rgba(76, 175, 80, .12);
+}
+
+.close-product-values .waste {
+  background: rgba(239, 83, 80, .11);
+}
+
+.close-pagination {
+  margin-top: 12px;
+}
+
+.waste-rate-help {
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: rgba(var(--v-theme-on-surface), .55);
+  font: inherit;
+  cursor: pointer;
+}
+
+.waste-guide-dialog p {
+  margin: 0 0 14px;
+  font-size: .76rem;
+  line-height: 1.6;
+}
+
+.waste-guide-dialog > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.waste-guide-dialog strong {
+  font-size: .72rem;
+}
+
+.waste-guide-dialog span {
+  font-size: .72rem;
+  line-height: 1.55;
+  color: rgba(var(--v-theme-on-surface), .68);
+}
+
+.close-ready {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-success), .08);
+  font-size: .78rem;
+  font-weight: 600;
+}
+.previous-close-alert {
+  margin: 2px 0 8px;
+}
+
+.previous-close-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.previous-close-copy strong {
+  font-size: .78rem;
+}
+
+.previous-close-copy span {
+  font-size: .69rem;
+  line-height: 1.4;
+}
+
+.previous-close-action {
+  min-height: 38px;
+  font-weight: 650;
+}
+
+.summary-section {
+  padding-top: 10px;
+}
+
+.daily-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.metric-item {
+  padding: 10px 6px;
+}
+
+.missing-type-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.missing-type-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid rgba(var(--v-border-color), .65);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.missing-type-button span {
+  font-size: .67rem;
+  color: rgba(var(--v-theme-on-surface), .58);
+}
+
+.missing-type-button strong {
+  font-size: .7rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.missing-type-button.active {
+  border-color: rgba(var(--v-theme-primary), .55);
+  background: rgba(var(--v-theme-primary), .07);
+}
+
+.missing-type-button.complete {
+  opacity: .58;
+}
+
+.history-footer {
+  justify-content: flex-start;
+}
+
+.status-filter {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid rgba(var(--v-border-color), .65);
+}
+
+.status-filter :deep(.v-btn) {
+  border-radius: 0;
+}
+
+.status-filter :deep(.v-btn--active) {
+  border-bottom: 2px solid rgb(var(--v-theme-primary));
+}
+
+.product-filter-row {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.product-filter-row > span {
+  margin-left: auto;
+}
+
+.product-table {
+  min-width: 100%;
+  font-size: .7rem;
+}
+
+.product-column {
+  width: 34%;
+}
+
+.number-column {
+  width: 13.2%;
+}
+
+.product-table th,
+.product-table td {
+  height: 31px;
+  padding: 3px 2px;
+}
+
+.product-table tbody tr:hover td,
+.product-table tbody tr:hover td:first-child {
+  background: rgba(var(--v-theme-on-surface), .035);
+}
+
+.table-value {
+  min-width: 30px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-on-surface), .045);
+}
+
+.table-value.production-value {
+  background: rgba(76, 175, 80, .12);
+  color: rgb(46, 125, 50);
+}
+
+.table-value.waste-value {
+  background: rgba(239, 83, 80, .11);
+  color: rgb(198, 40, 40);
+}
+
+.table-value.pending {
+  background: rgba(var(--v-theme-on-surface), .035);
+  color: rgba(var(--v-theme-on-surface), .42);
+}
+
+.rate-value {
+  font-weight: 650;
+}
+
 @media (max-width: 760px) {
   .daily-section {
-      padding: 14px 0;
+    padding: 14px 0;
   }
 
   .date-section {
-      padding: 6px 0;
+    padding: 6px 0;
   }
+
   .daily-metrics {
-      grid-template-columns:repeat(6,1fr);
+    grid-template-columns: repeat(6, 1fr);
   }
+
   .daily-metrics .metric-item {
-      grid-column:span 2;
+    grid-column: span 2;
   }
-  .daily-metrics .metric-item:nth-child(4),.daily-metrics .metric-item:nth-child(5) {
-      grid-column:span 3;
+
+  .daily-metrics .metric-item:nth-child(4),
+  .daily-metrics .metric-item:nth-child(5) {
+    grid-column: span 3;
   }
+
   .missing-type-grid {
-      grid-template-columns:repeat(2,1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
+
   .previous-close-alert :deep(.v-alert__content) {
-      min-width:0;
+    min-width: 0;
   }
+
   .previous-close-alert :deep(.v-alert__append) {
-      margin-inline-start:8px;
+    margin-inline-start: 8px;
   }
+
   .product-heading {
-      align-items:stretch;
-      flex-direction:column;
+    align-items: stretch;
+    flex-direction: column;
   }
+
   .product-search {
-      max-width:none;
+    max-width: none;
   }
-  .product-column,.product-table th:first-child,.product-table td:first-child {
-      width:34%;
-      max-width:34%;
+
+  .product-column,
+  .product-table th:first-child,
+  .product-table td:first-child {
+    width: 34%;
+    max-width: 34%;
   }
+
   .number-column {
-      width:13.2%;
+    width: 13.2%;
   }
+
   .product-table {
-      min-width:100%;
-      font-size:.64rem;
+    min-width: 100%;
+    font-size: .64rem;
   }
-  .product-table th,.product-table td {
-      height:32px;
-      padding:4px 3px;
+
+  .product-table th,
+  .product-table td {
+    height: 32px;
+    padding: 4px 3px;
   }
+
   .product-name {
-      font-size:.72rem;
+    font-size: .72rem;
   }
+
   .product-detail-metrics {
-      grid-template-columns:repeat(2,1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
+
   .summary-detail-facts {
-      grid-template-columns:repeat(2,1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 }
+
 .product-name-cell {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 2px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
 }
 
 .product-name-cell .product-name {
-    min-width: 0;
-    flex: 1;
+  min-width: 0;
+  flex: 1;
 }
 
 .row-detail-toggle {
-    display: grid;
-    width: 24px;
-    height: 24px;
-    flex: 0 0 24px;
-    place-items: center;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: rgba(var(--v-theme-on-surface), 0.55);
-    cursor: pointer;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  cursor: pointer;
 }
 
 .carryover-value span {
-    display: block;
-    line-height: 1.15;
+  display: block;
+  line-height: 1.15;
 }
 
 .product-detail-row td {
-    position: static !important;
-    height: auto !important;
-    padding: 0 !important;
-    white-space: normal !important;
-    background: rgba(var(--v-theme-on-surface), 0.025) !important;
+  position: static !important;
+  height: auto !important;
+  padding: 0 !important;
+  white-space: normal !important;
+  background: rgba(var(--v-theme-on-surface), 0.025) !important;
 }
 
 .product-row-detail {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    padding: 10px 12px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 12px;
 }
 
 .product-row-detail > div {
-    min-width: 0;
+  min-width: 0;
 }
 
 .product-row-detail span,
 .product-row-detail strong {
-    display: block;
+  display: block;
 }
 
 .product-row-detail span {
-    font-size: 0.62rem;
-    color: rgba(var(--v-theme-on-surface), 0.52);
+  font-size: 0.62rem;
+  color: rgba(var(--v-theme-on-surface), 0.52);
 }
 
 .product-row-detail strong {
-    margin-top: 2px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: normal;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: normal;
 }
 
 .product-row-flow {
-    grid-column: 1 / -1;
-    padding-top: 6px;
-    border-top: 1px solid rgba(var(--v-border-color), 0.45);
+  grid-column: 1 / -1;
+  padding-top: 6px;
+  border-top: 1px solid rgba(var(--v-border-color), 0.45);
 }
 
 .history-pagination {
-    margin-top: 12px;
+  margin-top: 12px;
 }
 
 .history-page-count {
-    margin-top: 2px;
-    color: rgba(var(--v-theme-on-surface), 0.52);
-    font-size: 0.66rem;
-    text-align: center;
+  margin-top: 2px;
+  color: rgba(var(--v-theme-on-surface), 0.52);
+  font-size: 0.66rem;
+  text-align: center;
 }
 
 @media (max-width: 520px) {
-    .product-row-detail {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+  .product-row-detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
-
 </style>
