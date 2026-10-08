@@ -446,6 +446,7 @@
     @saved="handleSaved"
     @error="emit('error', $event)"
   />
+  
   <ProductDetailDialog
     v-model="productDetailOpen"
     :product="productDetail"
@@ -454,29 +455,59 @@
     :loading="productDetailLoading"
   >
     <template #extra-detail>
+      <!-- 선택 날짜의 제품별 생산 및 재고 처리 현황 -->
       <section class="production-product-section">
-        <div class="production-product-title">선택 날짜 생산 현황</div>
-        <div class="production-product-date">{{ formatWorkDateWithWeekday(workDate) }}</div>
+        <div class="production-product-title">
+          선택 날짜 생산 현황
+        </div>
+
+        <div class="production-product-date">
+          {{ formatWorkDateWithWeekday(workDate) }}
+        </div>
+
         <div class="product-detail-metrics">
-          <div v-for="metric in selectedProductMetrics" :key="metric.label">
+          <div
+            v-for="metric in selectedProductMetrics"
+            :key="metric.label"
+          >
             <span>{{ metric.label }}</span>
             <strong>{{ metric.value }}</strong>
           </div>
         </div>
       </section>
+
       <v-divider />
+
+      <!-- 기존 제품 현황 분석 문구 유지 -->
       <section class="production-product-section">
-        <div class="production-product-title">제품 현황</div>
-        <p class="product-analysis-copy">{{ selectedProductAnalysis }}</p>
+        <div class="production-product-title">
+          제품 현황
+        </div>
+
+        <p class="product-analysis-copy">
+          {{ selectedProductAnalysis }}
+        </p>
       </section>
+
+      <!-- 등록된 레시피가 없는 경우 기존 안내 유지 -->
       <template v-if="!productDetail?.recipes?.length">
         <v-divider />
-        <section class="production-product-section empty-inline-state">
+
+        <section
+          class="production-product-section empty-inline-state"
+        >
           <v-icon
-              icon="mdi-book-open-variant-outline"
-              size="20"
+            icon="mdi-book-open-variant-outline"
+            size="20"
           />
-          <div><strong>등록된 레시피가 없습니다.</strong><span>제품 관리에서 레시피를 등록하면 여기에서 확인할 수 있습니다.</span></div>
+
+          <div>
+            <strong>등록된 레시피가 없습니다.</strong>
+            <span>
+              제품 관리에서 레시피를 등록하면
+              여기에서 확인할 수 있습니다.
+            </span>
+          </div>
         </section>
       </template>
     </template>
@@ -499,14 +530,14 @@
           <small>{{ detailInsight }}</small>
         </div>
         <div class="summary-detail-facts">
-          <div><span>기록 제품</span><strong>{{ detailRecordedCount }}개</strong></div>
-          <div><span>확인 완료</span><strong>{{ detailConfirmedCount }} / {{ activeRows.length }}</strong></div>
+          <div><span>기록된 제품</span><strong>{{ detailRecordedCount }}개</strong></div>
+          <div><span>확인 현황</span><strong>{{ detailConfirmedCount }} / {{ activeRows.length }}</strong></div>
           <div><span>미확인</span><strong>{{ Math.max(0, activeRows.length - detailConfirmedCount) }}개</strong></div>
-          <div><span>기준 날짜</span><strong>{{ shortDateLabel(workDate) }}</strong></div>
+          <div><span>날짜</span><strong>{{ shortDateLabel(workDate) }}</strong></div>
         </div>
         <div v-if="detailMetricKey === 'waste_rate'" class="waste-analysis-note">
-          <strong>폐기율 안내 · 당일 생산 기준</strong>
-          <span>폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다. 이월된 제품을 폐기하면 처음 생산한 날짜의 폐기로 반영됩니다.</span>
+          <strong>폐기율 안내</strong>
+          <span>폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다. 이월된 제품을 폐기하면 생산한 날짜의 폐기로 반영됩니다.</span>
           <span><b>계산식</b> · 해당 생산일의 폐기 수량 ÷ 해당 생산일의 생산 수량 × 100</span>
           <span><b>예시</b> · 10/3에 10개 생산한 제품 중 이월 재고 2개를 10/5에 폐기하면 10/3 폐기율은 2 ÷ 10 × 100 = 20%입니다.</span>
         </div>
@@ -529,33 +560,104 @@
         </div>
 
       </v-card-text>
-      <v-card-actions class="app-dialog-footer">
+      <v-card-actions class="app-dialog-footer history-footer">
         <v-btn variant="text" @click="detailOpen=false">닫기</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
   <v-dialog v-model="stockFlowOpen" max-width="620" persistent>
     <v-card class="app-dialog-card" rounded="lg">
-      <v-card-title class="app-dialog-header">재고 흐름 · {{ stockFlowProduct?.name || '-' }}</v-card-title>
+      <v-card-title class="app-dialog-header">재고 흐름 - {{ stockFlowProduct?.name || '-' }}</v-card-title>
       <v-card-text class="app-dialog-body">
-        <div class="production-dialog-overview">
-          <div><span>오늘 생산</span><strong>{{ stockFlowProduct?.production || 0 }}개</strong></div>
-          <div><span>이월 재고</span><strong>{{ stockFlowProduct?.carryover_in || 0 }}개</strong></div>
-          <div><span>해당 날짜 폐기</span><strong>{{ stockFlowProduct?.operational_waste || 0 }}개</strong></div>
+        <!-- 재고 현황: 기존 수량과 계산 기준 유지 -->
+        <div class="production-dialog-overview stock-flow-overview">
+          <div class="stock-flow-summary">
+            <span class="stock-flow-summary__label">오늘 생산</span>
+            <strong class="stock-flow-summary__value">
+              {{ stockFlowProduct?.production || 0 }}
+              <small>개</small>
+            </strong>
+          </div>
+
+          <div class="stock-flow-summary">
+            <span class="stock-flow-summary__label">이월 재고</span>
+            <strong class="stock-flow-summary__value">
+              {{ stockFlowProduct?.carryover_in || 0 }}
+              <small>개</small>
+            </strong>
+          </div>
+
+          <div class="stock-flow-summary">
+            <span class="stock-flow-summary__label">해당 날짜 폐기</span>
+            <strong class="stock-flow-summary__value">
+              {{ stockFlowProduct?.operational_waste || 0 }}
+              <small>개</small>
+            </strong>
+          </div>
         </div>
-        <div class="production-dialog-section-title mt-4">오늘의 재고 처리</div>
-        <div v-for="item in stockFlowEvents" :key="item.key" class="stock-flow-event">
-          <div><strong>{{ item.title }}</strong><span>{{ item.quantity }}개</span></div>
-          <small v-if="item.origin">최초 생산일 {{ item.origin }}</small>
-          <small v-if="item.reason">{{ item.reason }}</small>
+
+        <!-- 재고 처리 기록: 기존 목록과 표시 조건 유지 -->
+        <section class="stock-flow-history">
+          <div class="stock-flow-history__heading">
+            <h3 class="production-dialog-section-title">
+              재고 처리 내역
+            </h3>
+            <span class="stock-flow-history__count">
+              {{ stockFlowEvents.length }}건
+            </span>
+          </div>
+
+          <div
+            v-for="item in stockFlowEvents"
+            :key="item.key"
+            class="stock-flow-event stock-flow-history__item"
+          >
+            <div class="stock-flow-history__item-header">
+              <strong>{{ item.title }}</strong>
+              <span class="stock-flow-history__quantity">
+                {{ item.quantity }}개
+              </span>
+            </div>
+
+            <small
+              v-if="item.origin"
+              class="stock-flow-history__meta"
+            >
+              생산일 {{ item.origin }}
+            </small>
+
+            <small
+              v-if="item.reason"
+              class="stock-flow-history__reason"
+            >
+              {{ item.reason }}
+            </small>
+          </div>
+
+          <!-- 기존 빈 목록 안내 유지 -->
+          <div
+            v-if="!stockFlowEvents.length"
+            class="production-friendly-empty"
+          >
+            <v-icon icon="mdi-clipboard-text-outline" />
+            <span>아직 처리된 재고 기록이 없습니다.</span>
+          </div>
+        </section>
+
+        <!-- 기존 폐기 집계 기준 안내 유지 -->
+        <div class="production-dialog-guide stock-flow-guide">
+          <v-icon
+            icon="mdi-information-outline"
+            size="18"
+            aria-hidden="true"
+          />
+          <span>
+            이월 재고를 폐기한 수량은 해당 날짜 폐기로 포함됩니다.
+            생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.
+          </span>
         </div>
-        <div v-if="!stockFlowEvents.length" class="production-friendly-empty">
-          <v-icon icon="mdi-clipboard-text-outline" />
-          <span>아직 처리된 재고 기록이 없습니다.</span>
-        </div>
-        <div class="production-dialog-guide mt-4">이월 재고를 폐기한 수량은 해당 날짜 폐기에도 포함됩니다. 생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.</div>
       </v-card-text>
-      <v-card-actions class="app-dialog-footer"><v-btn variant="text" @click="stockFlowOpen = false">닫기</v-btn></v-card-actions>
+      <v-card-actions class="app-dialog-footer history-footer"><v-btn variant="text" @click="stockFlowOpen = false">닫기</v-btn></v-card-actions>
     </v-card>
   </v-dialog>
   <v-dialog
@@ -570,7 +672,7 @@
         <div><strong>계산식</strong><span>해당 생산일의 폐기 수량 ÷ 해당 생산일의 생산 수량 × 100</span></div>
         <div><strong>예시</strong><span>10/3에 10개 생산한 제품 중 이월 재고 2개를 10/5에 폐기하면 10/3 폐기율은 2 ÷ 10 × 100 = 20%입니다.</span></div>
       </v-card-text>
-      <v-card-actions class="app-dialog-footer">
+      <v-card-actions class="app-dialog-footer history-footer">
         <v-btn variant="text" @click="wasteGuideOpen = false">닫기</v-btn>
       </v-card-actions>
     </v-card>
@@ -613,7 +715,7 @@
         />
         <div v-if="historyLogs.length" class="history-page-count">{{ historyPage }} / {{ historyPageCount }} 페이지 · 페이지당 10개</div>
       </v-card-text>
-      <v-card-actions class="app-dialog-footer history-footer">
+      <v-card-actions class="app-dialog-footer history-footer justify-start">
         <v-btn variant="text" @click="historyOpen=false">닫기</v-btn>
       </v-card-actions>
     </v-card>
@@ -1183,7 +1285,15 @@ const progressText = computed(() => {
     : `전체 ${required}개 제품의 기록이 확인되었습니다.`;
 });
 
-// 제품 상세정보는 실제 재고 처리 수량과 원 생산일 기준 폐기율을 구분해 표시합니다.
+
+/**
+ * 제품 상세정보에 표시할 생산 및 재고 처리 현황을 구성합니다.
+ *
+ * - 생산·이월·로스는 기존 수량을 유지합니다.
+ * - 해당 날짜 폐기는 실제 처리일 기준 수량을 표시합니다.
+ * - 이월 재고 폐기는 해당 날짜에 폐기한 이전 생산분만 집계합니다.
+ * - 폐기율은 서버에서 계산한 최초 생산일 기준 값을 유지합니다.
+ */
 const selectedProductMetrics = computed(() => {
   const row = selectedProduct.value;
 
@@ -1192,31 +1302,34 @@ const selectedProductMetrics = computed(() => {
   }
 
   return [
-    { 
-      label: '생산', 
-      value: row.production 
-    },
-    { 
-      label: '이월 재고', 
-      value: row.carryover_in 
-    },
-    { 
-      label: '이월 예정', 
-      value: row.carryover_out 
-    },
-    { 
-      label: '로스', 
-      value: row.loss 
-    },
-    { 
-      label: '해당 날짜 폐기', 
-      value: row.waste 
-    },
-    { 
-      label: '이월 재고 폐기', 
-      value: carryoverWaste(row) 
+    {
+      label: '생산',
+      value: row.production,
     },
     {
+      label: '이월 재고',
+      value: row.carryover_in,
+    },
+    {
+      label: '이월 예정',
+      value: row.carryover_out,
+    },
+    {
+      label: '로스',
+      value: row.loss,
+    },
+    {
+      // 선택한 날짜에 실제로 폐기한 전체 수량
+      label: '해당 날짜 폐기',
+      value: row.attributed_waste,
+    },
+    // {
+    //   // 실제 폐기 수량 중 이전 생산일에서 넘어온 재고의 폐기량
+    //   label: '이월 재고 폐기',
+    //   value: carryoverWaste(row),
+    // },
+    {
+      // 최초 생산일에 귀속된 폐기 수량을 기준으로 계산된 폐기율
       label: '폐기율',
       value: row.waste_rate == null ? '-' : `${row.waste_rate}%`,
     },
@@ -3015,7 +3128,142 @@ async function closeDay() {
   text-align: center;
 }
 
-@media (max-width: 520px) {
+
+/* 재고 현황: 모바일에서도 세 항목을 한눈에 확인 */
+.stock-flow-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stock-flow-overview .stock-flow-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 6px;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.stock-flow-summary__label {
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.stock-flow-summary__value {
+  font-size: 21px;
+  line-height: 1.2;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-flow-summary__value small {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* 처리 내역의 제목과 기록 건수 */
+.stock-flow-history {
+  margin-top: 20px;
+}
+
+.stock-flow-history__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stock-flow-history__heading
+.production-dialog-section-title {
+  margin: 0;
+}
+
+.stock-flow-history__count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #788392;
+}
+
+/* 기록별 제목, 수량, 날짜, 사유 구분 */
+.stock-flow-history__item {
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+}
+
+.stock-flow-history__item-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stock-flow-history__item-header strong {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.stock-flow-history__quantity {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-flow-history__meta,
+.stock-flow-history__reason {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #75808e;
+  overflow-wrap: anywhere;
+}
+
+/* 폐기 집계 기준 안내 */
+.stock-flow-guide {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.stock-flow-guide .v-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+@media (max-width: 480px) {
+  .stock-flow-overview {
+    gap: 6px;
+  }
+
+  .stock-flow-overview .stock-flow-summary {
+    padding: 12px 4px;
+  }
+
+  .stock-flow-summary__label {
+    font-size: 11px;
+  }
+
+  .stock-flow-summary__value {
+    font-size: 18px;
+  }
+
   .product-row-detail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
