@@ -1108,11 +1108,47 @@ const detailConfirmationField = computed(() => ({
   waste_rate: 'waste_confirmed',
 }[detailMetricKey.value]));
 const detailConfirmedCount = computed(() => activeRows.value.filter((row) => row[detailConfirmationField.value]).length);
+
+/**
+ * 요약 상세에서 가장 높은 값을 가진 제품을 안내합니다.
+ *
+ * - 기존 제품별 집계 및 정렬 기준을 그대로 사용합니다.
+ * - 최고값이 같은 제품은 누락하지 않고 모두 표시합니다.
+ * - 단독 최고값과 공동 최고값의 안내 문구를 구분합니다.
+ * - 생산·이월·로스·폐기·폐기율에 동일하게 적용됩니다.
+ */
 const detailInsight = computed(() => {
-  if (!detailRows.value.length) return `${detailConfirmedCount.value}개 제품이 확인을 완료했습니다.`;
-  const top = detailRows.value[0];
-  return `${top.name}이(가) 가장 높습니다 · ${top.value}`;
+  const rows = detailRows.value;
+
+  // 기존 기록이 없는 경우의 안내 문구를 유지합니다.
+  if (!rows.length) {
+    return `${detailConfirmedCount.value}개 제품이 확인을 완료했습니다.`;
+  }
+
+  // detailRows는 기존 로직에서 수량 또는 비율 내림차순으로 정렬됩니다.
+  const highestValue = rows[0].rawValue;
+
+  // 최고 수량 또는 최고 폐기율과 동일한 모든 제품을 찾습니다.
+  const topRows = rows.filter(
+    (row) => row.rawValue === highestValue
+  );
+
+  // 기존에 표시하던 값과 단위를 그대로 사용합니다.
+  const displayValue = rows[0].value;
+
+  // 단독 최고값일 때는 기존 안내 문구를 유지합니다.
+  if (topRows.length === 1) {
+    return `${topRows[0].name}이(가) 가장 높습니다 · ${displayValue}`;
+  }
+
+  // 공동 최고값인 제품을 모두 표시합니다.
+  const productNames = topRows
+    .map((row) => row.name)
+    .join(', ');
+
+  return `${productNames}이(가) 공동으로 가장 높습니다 · ${displayValue}`;
 });
+
 const detailEmptyTitle = computed(() => `이 날짜에는 ${detailMetricTitle.value} 기록이 없습니다.`);
 const detailEmptyText = computed(() => detailConfirmedCount.value === activeRows.value.length
   ? '모든 제품이 없음(0)으로 확인된 상태입니다.'
