@@ -94,10 +94,13 @@
       <div v-if="form.recommendationReferenced" class="production-dialog-field-help">
         추천 생산량을 확인하고 생산 수량을 결정한 경우입니다.
       </div>
+      <!-- 참고 여부와 추천 범위 이탈 사유는 서로 다른 정보입니다.
+           참고 체크 여부에 관계없이 이탈 사유를 선택적으로 기록할 수 있도록 유지합니다. -->
       <v-text-field
-          v-if="form.recommendationReferenced"
           v-model="form.recommendationDeviationReason"
-          label="추천 범위와 다르게 생산한 이유 · 선택"
+          label="추천 범위와 다르게 생산한 경우의 이유 · 선택"
+          hint="추천 범위를 벗어나 생산한 경우에만 입력해 주세요."
+          persistent-hint
           variant="outlined"
       />
       <div class="production-dialog-guide">
