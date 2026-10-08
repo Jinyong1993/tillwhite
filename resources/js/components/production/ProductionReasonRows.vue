@@ -24,7 +24,7 @@
           :items="carryoverLotOptions"
           item-title="title"
           item-value="value"
-          label="원 생산일"
+          label="최초 생산일"
           variant="outlined"
           density="compact"
           hide-details="auto"
@@ -206,7 +206,7 @@ function rowMaximum(row, rowIndex = -1) {
 
         return sum + Number(item.quantity || 0);
     }, 0);
-    return Math.max(0, Number(source?.remaining_quantity ?? props.maxQuantity ?? 0) - allocatedByOtherRows);
+    return Math.max(0, Number(source?.remaining_quantity ?? 0) - allocatedByOtherRows);
 }
 
 function stockAvailabilityText(row) {
@@ -215,7 +215,12 @@ function stockAvailabilityText(row) {
         return row.stock_source === 'carryover' ? '사용할 이월 재고를 선택해 주세요.' : '사용 가능한 재고를 확인해 주세요.';
     }
 
-    return `${formatOriginDate(source.origin_production_date)} 생산 · ${source.remaining_quantity}개 사용 가능`;
+    // 같은 최초 생산일을 선택한 모든 사유 행의 입력 수량을 함께 차감합니다.
+    const allocated = props.modelValue
+        .filter((item) => Number(item.stock_lot_id) === Number(source.stock_lot_id))
+        .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const remaining = Math.max(0, Number(source.remaining_quantity || 0) - allocated);
+    return `${formatOriginDate(source.origin_production_date)} 생산 · ${remaining}개 사용 가능`;
 }
 
 function formatOriginDate(date) {

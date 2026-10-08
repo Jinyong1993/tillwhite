@@ -209,7 +209,7 @@
                       >
                         <v-icon :icon="isRowExpanded(row.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="16" />
                       </button>
-                      <button type="button" class="product-name" :title="row.name" @click="toggleRowDetail(row.id)">{{ row.name }}</button>
+                      <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
                     </div>
                   </td>
                   <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
@@ -232,7 +232,7 @@
                     <div class="product-row-detail">
                       <div><span>이월 재고</span><strong>{{ row.carryover_in }}개</strong></div>
                       <div><span>이월 예정</span><strong>{{ row.carryover_out }}개</strong></div>
-                      <div><span>오늘 폐기</span><strong>{{ row.operational_waste }}개</strong></div>
+                      <div><span>해당 날짜 폐기</span><strong>{{ row.operational_waste }}개</strong></div>
                       <div><span>이월 재고 폐기</span><strong>{{ carryoverWaste(row) }}개</strong></div>
                       <button type="button" class="product-row-flow stock-flow-trigger" @click="openStockFlow(row)">
                         <span>재고 흐름 · 상세 보기</span>
@@ -267,7 +267,7 @@
   <div class="daily-actions">
     <v-btn variant="text" prepend-icon="mdi-history" @click="openHistory">변경 이력</v-btn>
     <v-spacer />
-    <v-btn v-if="daily.closure_status === 'closed'" variant="outlined" :disabled="!canCorrect" @click="correctionOpen=true">마감 후 수정</v-btn>
+    <v-btn v-if="daily.closure_status === 'closed'" variant="outlined" :disabled="!canCorrect" @click="correctionOpen=true">마감 수정</v-btn>
     <v-btn v-else variant="flat" :disabled="daily.closure_status === 'store_closed' || !canMutate" @click="previewClose">마감</v-btn>
   </div>
   <ProductionBatchDialog
@@ -386,7 +386,7 @@
         <div class="production-dialog-overview">
           <div><span>오늘 생산</span><strong>{{ stockFlowProduct?.production || 0 }}개</strong></div>
           <div><span>이월 재고</span><strong>{{ stockFlowProduct?.carryover_in || 0 }}개</strong></div>
-          <div><span>오늘 폐기</span><strong>{{ stockFlowProduct?.operational_waste || 0 }}개</strong></div>
+          <div><span>해당 날짜 폐기</span><strong>{{ stockFlowProduct?.operational_waste || 0 }}개</strong></div>
         </div>
         <div class="production-dialog-section-title mt-4">오늘의 재고 처리</div>
         <div v-for="item in stockFlowEvents" :key="item.key" class="stock-flow-event">
@@ -398,7 +398,7 @@
           <v-icon icon="mdi-clipboard-text-outline" />
           <span>아직 처리된 재고 기록이 없습니다.</span>
         </div>
-        <div class="production-dialog-guide mt-4">이월 재고를 폐기한 수량은 오늘 폐기에도 포함됩니다. 생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.</div>
+        <div class="production-dialog-guide mt-4">이월 재고를 폐기한 수량은 해당 날짜 폐기에도 포함됩니다. 생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.</div>
       </v-card-text>
       <v-card-actions class="app-dialog-footer"><v-btn variant="text" @click="stockFlowOpen = false">닫기</v-btn></v-card-actions>
     </v-card>
@@ -862,7 +862,7 @@ const selectedProductMetrics = computed(() => {
     { label: '이월 재고', value: row.carryover_in },
     { label: '이월 예정', value: row.carryover_out },
     { label: '로스', value: row.loss },
-    { label: '오늘 폐기', value: row.waste },
+    { label: '해당 날짜 폐기', value: row.waste },
     { label: '이월 재고 폐기', value: carryoverWaste(row) },
     { label: '폐기율', value: row.waste_rate == null ? '-' : `${row.waste_rate}%` },
   ];
@@ -1083,7 +1083,7 @@ async function openProduct(row) {
 function openMetric(key) {
   detailSelectedRow.value = null;
   detailMetricKey.value = key;
-  detailTitle.value = `${metrics.value.find((metric) => metric.key === key)?.title || '상세'} 상세`;
+  detailTitle.value = metrics.value.find((metric) => metric.key === key)?.title || '상세';
   detailOpen.value = true;
 }
 // 폐기율 숫자는 같은 요약 상세에서 제품별 폐기율과 비중을 분석합니다.

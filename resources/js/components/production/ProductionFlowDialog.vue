@@ -14,7 +14,7 @@
 
       <v-card-text class="app-dialog-body">
         <v-alert
-          v-if="remainingAvailable < currentQuantity"
+          v-if="remainingAvailable < currentQuantity || sourceOverages.length"
           type="error"
           variant="tonal"
           density="compact"
@@ -24,20 +24,18 @@
         </v-alert>
 
         <div class="production-dialog-overview">
-          <div><span>현재 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
+          <div><span>오늘 생산</span><strong>{{ Number(product?.production || 0) }}개</strong></div>
           <div><span>이월 재고</span><strong>{{ Number(product?.carryover_in || 0) }}개</strong></div>
           <div><span>확인 상태</span><strong>{{ flowConfirmed ? '완료' : '미확인' }}</strong></div>
         </div>
 
         <div class="flow-guide">
-          <div><span>남은 수량</span><strong>{{ remainingAvailable }}개</strong></div>
+          <div><span>총 수량</span><strong>{{ available }}개</strong></div>
           <p>{{ dialogDescription }}</p>
         </div>
 
         <div class="flow-summary">
-          <div><span>사용 가능</span><strong>{{ available }}개</strong></div>
-          <div><span>이미 처리된 수량</span><strong>{{ otherAllocated }}개</strong></div>
-          <div class="remaining-after"><span>저장 후 남음</span><strong>{{ remainingAfterSave }}개</strong></div>
+          <div><span>사용 가능</span><strong>{{ selectedSourceRemaining }}개</strong></div>
         </div>
 
         <div v-if="otherAllocationDetails.length" class="allocation-details">
@@ -127,7 +125,7 @@
         <v-btn
           variant="flat"
           :loading="saving"
-          :disabled="saving || remainingAvailable < currentQuantity"
+          :disabled="saving || remainingAvailable < currentQuantity || sourceOverages.length > 0"
           @click="askSave"
         >
           저장
@@ -234,7 +232,30 @@ const editableStockSources = computed(() => (props.product?.stock_sources || [])
   };
 }));
 
+// 총 수량은 선택 날짜의 생산분과 들어온 이월 재고를 합친 값입니다.
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
+
+// 입력 중인 행을 lot별로 묶어 실제로 처리 가능한 재고를 계산합니다.
+// 기존 기록은 editableStockSources에서 편집 가능 수량에 복원되어 있습니다.
+const sourceOverages = computed(() => {
+  if (!isReasonMode.value || !['loss', 'waste'].includes(props.type)) return [];
+  return editableStockSources.value.filter((source) => {
+    const requested = reasonRows.value
+      .filter((row) => Number(row.stock_lot_id) === Number(source.stock_lot_id))
+      .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+    return requested > Number(source.remaining_quantity || 0);
+  });
+});
+
+const selectedSourceRemaining = computed(() => {
+  const selected = reasonRows.value.at(-1);
+  const source = editableStockSources.value.find((item) => Number(item.stock_lot_id) === Number(selected?.stock_lot_id));
+  if (!source) return remainingAvailable.value - currentQuantity.value;
+  const allocated = reasonRows.value
+    .filter((row) => Number(row.stock_lot_id) === Number(source.stock_lot_id))
+    .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  return Math.max(0, Number(source.remaining_quantity || 0) - allocated);
+});
 
 const dialogTitle = computed(() => ({
   carryover: '이월',
@@ -330,14 +351,10 @@ function reasonLabel(item) {
 
 // 당일 생산 재고가 있으면 우선 사용하고, 없으면 이월 재고를 기본 선택합니다.
 const defaultStockSource = computed(() => (
-  editableStockSources.value.some((source) => source.source === 'today' && source.remaining_quantity > 0)
-    ? 'today'
-    : 'carryover'
+  'today'
 ));
 const defaultStockLotId = computed(() => (
-  editableStockSources.value.find((source) => (
-    source.source === defaultStockSource.value && source.remaining_quantity > 0
-  ))?.stock_lot_id ?? null
+  editableStockSources.value.find((source) => source.source === 'today')?.stock_lot_id ?? null
 ));
 
 // 기존 기록을 다시 열면 저장된 재고 출처와 수량을 그대로 편집할 수 있게 복원합니다.
@@ -428,6 +445,11 @@ function askSave() {
 
   if (reasonRows.value.some((row) => row.reason_code === 'other' && !String(row.reason_text || '').trim())) {
     emit('error', '직접입력 사유를 입력해주세요.');
+    return;
+  }
+
+  if (sourceOverages.value.length) {
+    emit('error', '선택한 생산일의 잔여 재고보다 입력한 수량이 많습니다.');
     return;
   }
 

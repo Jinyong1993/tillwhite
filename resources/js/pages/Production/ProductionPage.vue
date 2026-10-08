@@ -59,7 +59,7 @@
               :work-date="workDate"
               :refreshing="loading"
               :can-mutate="!options.store_read_only && (can('production.create') || can('production.update'))"
-              :can-correct="can('production.correct')"
+              :can-correct="!options.store_read_only && can('production.correct')"
               @update:work-date="changeDate"
               @reload="reloadCurrentDate"
               @replace-daily="replaceDaily"
