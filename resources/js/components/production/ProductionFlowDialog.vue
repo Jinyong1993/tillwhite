@@ -14,7 +14,7 @@
 
       <v-card-text class="app-dialog-body">
         <v-alert
-          v-if="remainingAvailable < currentQuantity || sourceOverages.length"
+          v-if="remainingAvailable < currentQuantity || sourceOverages.length || invalidSourceRows.length"
           type="error"
           variant="tonal"
           density="compact"
@@ -125,7 +125,7 @@
         <v-btn
           variant="flat"
           :loading="saving"
-          :disabled="saving || remainingAvailable < currentQuantity || sourceOverages.length > 0"
+          :disabled="saving || remainingAvailable < currentQuantity || sourceOverages.length || invalidSourceRows.length > 0"
           @click="askSave"
         >
           저장
@@ -217,6 +217,7 @@ const flowConfirmed = computed(() => ({
 const savedDetails = computed(() => {
   if (props.type === 'loss') return props.product?.operational_loss_details || props.product?.loss_details || [];
   if (props.type === 'waste') return props.product?.operational_waste_details || props.product?.waste_details || [];
+  if (props.type === 'other_outflow') return props.product?.other_outflow_details || [];
   return [];
 });
 
@@ -228,7 +229,10 @@ const editableStockSources = computed(() => (props.product?.stock_sources || [])
 
   return {
     ...source,
-    remaining_quantity: Number(source.remaining_quantity || 0) + currentSaved,
+    // 서버의 음수 포함 미배정 수량으로 기존 기록을 복원합니다.
+    // 표시용 remaining_quantity(최소 0)만 사용하면 초과 차감된 기존 데이터에서
+    // 수정 가능한 수량을 실제보다 크게 계산할 수 있습니다.
+    remaining_quantity: Math.max(0, Number(source.unallocated_quantity ?? source.remaining_quantity ?? 0) + currentSaved),
   };
 }));
 
@@ -237,8 +241,15 @@ const available = computed(() => Number(props.product?.production || 0) + Number
 
 // 입력 중인 행을 lot별로 묶어 실제로 처리 가능한 재고를 계산합니다.
 // 기존 기록은 editableStockSources에서 편집 가능 수량에 복원되어 있습니다.
+// 저장된 화면 정보가 오래되어 출처가 사라졌다면 다른 재고로 대체하지 않습니다.
+const invalidSourceRows = computed(() => {
+  if (!isReasonMode.value || !['loss', 'waste', 'other_outflow'].includes(props.type)) return [];
+  const sourceIds = new Set(editableStockSources.value.map((source) => Number(source.stock_lot_id)));
+  return reasonRows.value.filter((row) => row.stock_lot_id && !sourceIds.has(Number(row.stock_lot_id)));
+});
+
 const sourceOverages = computed(() => {
-  if (!isReasonMode.value || !['loss', 'waste'].includes(props.type)) return [];
+  if (!isReasonMode.value || !['loss', 'waste', 'other_outflow'].includes(props.type)) return [];
   return editableStockSources.value.filter((source) => {
     const requested = reasonRows.value
       .filter((row) => Number(row.stock_lot_id) === Number(source.stock_lot_id))
@@ -445,6 +456,11 @@ function askSave() {
 
   if (reasonRows.value.some((row) => row.reason_code === 'other' && !String(row.reason_text || '').trim())) {
     emit('error', '직접입력 사유를 입력해주세요.');
+    return;
+  }
+
+  if (invalidSourceRows.value.length) {
+    emit('error', '선택한 재고 출처를 찾을 수 없습니다. 재고를 다시 선택해 주세요.');
     return;
   }
 

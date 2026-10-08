@@ -188,6 +188,16 @@ class ProductionDailyService
                 // 폐기율과 생산 성과는 원 생산일에 귀속된 폐기만 사용합니다.
                 'attributed_waste' => $waste,
                 'other_outflow' => $other,
+                // 기타 출고도 로스·폐기와 동일하게 재고 출처별 수정 내역을 제공합니다.
+                // 수정 다이얼로그가 기존 수량을 복원하지 못하면 서버의 교체 저장 검증과 달라집니다.
+                'other_outflow_details' => ($outflows->get($product->id) ?? collect())->map(fn ($outflow) => [
+                    'reason_code' => $outflow->reason_code,
+                    'reason_text' => $outflow->reason_text,
+                    'quantity' => (int) $outflow->quantity,
+                    'origin_production_date' => collect($stockSources)
+                        ->firstWhere('stock_lot_id', $outflow->stock_lot_id)['origin_production_date'] ?? $date,
+                    'stock_lot_id' => $outflow->stock_lot_id,
+                ])->values(),
                 'carryover_out' => $carryOut,
                 'stock_sources' => $stockSources,
                 'waste_rate' => $wasteRate,
@@ -310,6 +320,10 @@ class ProductionDailyService
                 'source' => $lot->origin_production_date->toDateString() === $date ? 'today' : 'carryover',
                 'origin_production_date' => $lot->origin_production_date->toDateString(),
                 'base_quantity' => $baseQuantity,
+                // 기존 데이터가 초과 차감된 경우에도 실제 차이를 보존합니다.
+                // 화면에는 음수 대신 0을 보여주되, 수정 검증에서는 원래 차이를 사용해야
+                // 같은 유형의 기록을 되돌릴 때 가용 수량이 부풀려지지 않습니다.
+                'unallocated_quantity' => $baseQuantity - $loss - $waste - $outflow - $carryover,
                 'remaining_quantity' => max(0, $baseQuantity - $loss - $waste - $outflow - $carryover),
             ];
         })->values()->all();

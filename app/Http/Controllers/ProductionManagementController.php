@@ -353,41 +353,47 @@ class ProductionManagementController extends Controller
         $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
 
         $reasons = collect($data['reasons'] ?? []);
-        $missingDirectReason = $reasons->contains(fn (array $reason) => (
-            $reason['reason_code'] === 'other'
-            && trim((string) ($reason['reason_text'] ?? '')) === ''
-        ));
+        // 이월 저장은 사유 목록을 사용하지 않습니다. 기존 화면이 빈 사유 행을
+        // 함께 전송하더라도 존재하지 않는 reason_code를 읽지 않도록 구분합니다.
+        // 로스·폐기·기타 출고에서는 직접입력 사유의 내용 검증을 유지합니다.
+        $missingDirectReason = $data['type'] !== 'carryover'
+            && $reasons->contains(fn (array $reason) => (
+                ($reason['reason_code'] ?? null) === 'other'
+                && trim((string) ($reason['reason_text'] ?? '')) === ''
+            ));
         abort_if($missingDirectReason, 422, '직접입력 사유를 입력해주세요.');
 
-        // 화면 검증을 우회한 요청도 당일 생산 + 이월 재고 범위를 넘지 못하게 서버에서 다시 확인합니다.
-        $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
-        $row = collect($daily['rows'])->firstWhere('id', (int) $data['product_id']);
-        abort_unless($row, 422, '선택한 제품의 생산 현황을 확인할 수 없습니다.');
+        DB::transaction(function () use ($data, $user, $reasons) {
+            // 동일 제품의 재고 변경을 직렬화해 동시 요청이 같은 잔여량을 중복 사용하지 못하게 합니다.
+            // 재고 출처 및 합계 검증은 잠금 이후의 최신 DB 상태에서 수행합니다.
+            \App\Models\Product::query()->whereKey((int) $data['product_id'])->lockForUpdate()->firstOrFail();
+            // 요청 직후 마감 상태가 변경됐을 수 있으므로 저장 직전에도 다시 확인합니다.
+            // 잠금 이후 확인하여 재고 기록이 마감된 날짜에 저장되는 위험을 줄입니다.
+            $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
+            // 화면 검증을 우회한 요청도 당일 생산 + 이월 재고 범위를 넘지 못하게 서버에서 다시 확인합니다.
+            $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
+            $row = collect($daily['rows'])->firstWhere('id', (int) $data['product_id']);
+            abort_unless($row, 422, '선택한 제품의 생산 현황을 확인할 수 없습니다.');
 
-        $available = (int) $row['production'] + (int) $row['carryover_in'];
-        $otherAllocated = match ($data['type']) {
-            'carryover' => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['other_outflow'],
-            'loss' => (int) $row['operational_waste'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
-            'waste' => (int) $row['operational_loss'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
-            default => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['carryover_out'],
-        };
-        $requestedQuantity = $data['type'] === 'carryover'
-            ? (int) ($data['quantity'] ?? 0)
-            : (int) $reasons->sum('quantity');
-        abort_if($requestedQuantity > max(0, $available - $otherAllocated), 422, '입력한 수량이 현재 사용 가능한 수량보다 많습니다.');
+            // 이 요청은 해당 유형의 기존 기록을 대체하므로 같은 유형의 수량은 여기서 차감하지 않습니다.
+            // 다른 유형에 이미 배정된 수량과 이월 예정 수량은 반드시 가용량에서 제외합니다.
+            $availableForType = $this->availableQuantityForDisposition($row, $data['type']);
+            $requestedQuantity = $data['type'] === 'carryover'
+                ? (int) ($data['quantity'] ?? 0)
+                : (int) $reasons->sum('quantity');
+            abort_if($requestedQuantity > $availableForType, 422, '입력한 수량이 현재 사용 가능한 수량보다 많습니다.');
 
-        if (in_array($data['type'], ['loss', 'waste'], true)) {
-            $this->validateReasonStockSources(
-                (int) $data['store_id'],
-                (int) $data['product_id'],
-                $data['work_date'],
-                $data['type'],
-                $reasons,
-                $row['stock_sources'] ?? [],
-            );
-        }
+            if (in_array($data['type'], ['loss', 'waste', 'other_outflow'], true)) {
+                $this->validateReasonStockSources(
+                    (int) $data['store_id'],
+                    (int) $data['product_id'],
+                    $data['work_date'],
+                    $data['type'],
+                    $reasons,
+                    $row['stock_sources'] ?? [],
+                );
+            }
 
-        DB::transaction(function () use ($data, $user) {
             $storeId = (int) $data['store_id'];
             $productId = (int) $data['product_id'];
             $date = $data['work_date'];
@@ -1406,6 +1412,30 @@ class ProductionManagementController extends Controller
     }
 
     /**
+     * 업무일의 전체 재고에서 다른 처리 유형에 이미 배정된 수량을 제외합니다.
+     *
+     * 같은 유형의 기존 입력은 수정 요청으로 대체되므로 다시 차감하지 않습니다.
+     * 이월 예정은 사용자가 직접 수정해야 하며, 로스·폐기 가능량에서 제외합니다.
+     * 생산일별 실제 잔여량은 validateReasonStockSources()에서 별도로 검사합니다.
+     *
+     * @param array<string, mixed> $row 일별 현황 서비스에서 계산한 제품별 합계
+     * @param string $type 처리 유형(carryover, loss, waste, other_outflow)
+     */
+    private function availableQuantityForDisposition(array $row, string $type): int
+    {
+        $total = (int) $row['production'] + (int) $row['carryover_in'];
+        $allocatedByOtherTypes = match ($type) {
+            'carryover' => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['other_outflow'],
+            'loss' => (int) $row['operational_waste'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
+            'waste' => (int) $row['operational_loss'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
+            'other_outflow' => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['carryover_out'],
+            default => throw new \InvalidArgumentException('지원하지 않는 재고 처리 유형입니다.'),
+        };
+
+        return max(0, $total - $allocatedByOtherTypes);
+    }
+
+    /**
      * 사유 행이 선택한 재고 lot를 현재 점포·제품·업무일에서 실제 사용할 수 있는지 확인합니다.
      * 같은 lot를 여러 사유에서 선택한 경우 합산 수량까지 검증해 중복 차감을 막습니다.
      */
@@ -1418,19 +1448,36 @@ class ProductionManagementController extends Controller
         array $stockSources,
     ): void {
         $sourceMap = collect($stockSources)->keyBy('stock_lot_id');
-        $requestedByLot = $reasons
-            ->filter(fn (array $reason) => ! empty($reason['stock_lot_id']))
-            ->groupBy('stock_lot_id')
-            ->map(fn (Collection $rows) => (int) $rows->sum('quantity'));
+        // 출처 ID가 없는 이전 화면 요청도 실제 재고 출처로 먼저 변환합니다.
+        // 여러 이월 생산일이 존재하면 임의의 최신 기록에 배정하지 않습니다.
+        $requestedByLot = $reasons->groupBy(function (array $reason) use ($storeId, $productId, $date) {
+            $lot = $this->resolveReasonLot($storeId, $productId, $date, $reason);
+            abort_unless($lot, 422, '처리할 재고의 생산일을 확인해주세요.');
+
+            $actualSource = Carbon::parse($lot->origin_production_date)->toDateString() === $date
+                ? 'today' : 'carryover';
+            // 명시적으로 재고 출처를 선택했다면 생산일과 일치해야 합니다.
+            // 이전 화면에서 lot ID만 전송한 경우에는 실제 lot 생산일을 기준으로 판단합니다.
+            // 둘 다 생략한 요청은 resolveReasonLot의 기존 기본값(today)을 따릅니다.
+            $requestedSource = $reason['stock_source'] ?? $actualSource;
+            abort_if($requestedSource !== $actualSource, 422, '선택한 재고 구분과 생산일이 일치하지 않습니다.');
+
+            return $lot->id;
+        })->map(fn (Collection $rows) => (int) $rows->sum('quantity'));
 
         foreach ($requestedByLot as $lotId => $requested) {
             $source = $sourceMap->get((int) $lotId);
             abort_unless($source, 422, '선택한 재고의 생산일을 다시 확인해주세요.');
 
-            $existingCurrentType = $type === 'loss'
-                ? (int) ProductionLoss::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity')
-                : (int) ProductionWaste::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity');
-            $available = (int) ($source['remaining_quantity'] ?? 0) + $existingCurrentType;
+            $existingCurrentType = match ($type) {
+                'loss' => (int) ProductionLoss::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity'),
+                'waste' => (int) ProductionWaste::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity'),
+                'other_outflow' => (int) ProductionOtherOutflow::query()->where('stock_lot_id', $lotId)->whereDate('work_date', $date)->sum('quantity'),
+            };
+            // 표시용 잔여량은 0 미만으로 내려가지 않지만, 과거 초과 차감 데이터의
+            // 수정 검증에는 음수 차이를 보존해야 기존 기록을 과다 복원하지 않습니다.
+            $unallocated = (int) ($source['unallocated_quantity'] ?? $source['remaining_quantity'] ?? 0);
+            $available = max(0, $unallocated + $existingCurrentType);
             $originDate = Carbon::parse($source['origin_production_date'])->format('m/d');
 
             abort_if(
@@ -1452,18 +1499,49 @@ class ProductionManagementController extends Controller
                 ->first();
         }
 
-        return ($reason['stock_source'] ?? 'today') === 'carryover'
-            ? $this->incomingLotForDate($storeId, $productId, $date)
-            : $this->lotForProductDate($storeId, $productId, $date);
+        if (($reason['stock_source'] ?? 'today') === 'carryover') {
+            return $this->incomingLotForDate($storeId, $productId, $date);
+        }
+
+        // 당일 생산 재고를 요청했다면 이전 날짜의 이월 lot로 대체하지 않습니다.
+        // 당일 생산 lot가 없을 때는 검증 단계에서 정확한 출처 선택을 요구합니다.
+        $todayLots = ProductStockLot::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('origin_production_date', $date)
+            ->orderBy('id')
+            ->limit(2)
+            ->get();
+
+        // 동일 날짜에 생산 기록이 여러 개면 최신 기록을 임의로 선택하지 않습니다.
+        // 재고 출처를 지정한 요청은 위의 stock_lot_id 분기에서 그대로 처리합니다.
+        abort_if($todayLots->count() > 1, 422, '같은 날짜의 생산 재고가 여러 건입니다. 처리할 생산 기록을 선택해주세요.');
+
+        return $todayLots->first();
     }
 
     // 시식·서비스·직원사용 등 기타 출고를 현재 입력값으로 교체합니다.
     private function replaceOutflows(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
     {
         ProductionOtherOutflow::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->delete();
-        $lot = $this->lotForProductDate($storeId, $productId, $date);
         foreach ($reasons as $reason) {
-            ProductionOtherOutflow::create(['store_id' => $storeId, 'product_id' => $productId, 'stock_lot_id' => $lot?->id, 'work_date' => $date, 'quantity' => $reason['quantity'], 'reason_code' => $reason['reason_code'], 'reason_text' => $reason['reason_text'] ?? null, 'note' => $note, 'created_by' => $userId]);
+            // 기타 출고도 사유별로 선택한 생산 기록에서 차감합니다.
+            $lot = $this->resolveReasonLot($storeId, $productId, $date, $reason);
+            // 검증 이후에도 출처를 찾지 못했다면 출처 없는 출고 기록을 남기지 않습니다.
+            // 각 사유의 생산 lot 연결을 보존해야 원 생산일별 잔여량을 정확히 계산할 수 있습니다.
+            abort_unless($lot, 422, '처리할 재고의 생산일을 다시 확인해주세요.');
+
+            ProductionOtherOutflow::create([
+                'store_id' => $storeId,
+                'product_id' => $productId,
+                'stock_lot_id' => $lot->id,
+                'work_date' => $date,
+                'quantity' => $reason['quantity'],
+                'reason_code' => $reason['reason_code'],
+                'reason_text' => $reason['reason_text'] ?? null,
+                'note' => $note,
+                'created_by' => $userId,
+            ]);
         }
     }
 
@@ -1489,7 +1567,12 @@ class ProductionManagementController extends Controller
             $movement->delete();
         }
 
+        // 이월 수량을 0으로 바꾸더라도 다음 날 이미 사용한 재고를 검증해야 합니다.
+        // 기존 출처는 삭제 전 기록에서 보존하고, 새 출처는 아래 배정 과정에서 추가합니다.
+        $affectedLotIds = $existing->pluck('stock_lot_id')->map(fn ($id) => (int) $id)->all();
+
         if ($quantity === 0) {
+            $this->assertNextDayCarryoverIntegrity($storeId, $productId, $date, $affectedLotIds);
             return;
         }
 
@@ -1536,25 +1619,124 @@ class ProductionManagementController extends Controller
                 'movement_type' => 'carryover_in',
             ]);
             $remaining -= $allocated;
+            $affectedLotIds[] = (int) $stockSource['stock_lot_id'];
+        }
+
+        $this->assertNextDayCarryoverIntegrity($storeId, $productId, $date, $affectedLotIds);
+    }
+
+    /**
+     * 이월 수정으로 다음 날 이미 사용한 재고가 부족해지는지 확인합니다.
+     *
+     * 이월 출고와 다음 날 이월 입고는 같은 원 생산 재고(stock lot)를 공유합니다.
+     * 다음 날 로스·폐기·기타 출고·재이월이 이미 저장된 상태에서 이월을 줄이면
+     * 그날의 기록이 실제 입고 수량을 초과할 수 있으므로 저장 전체를 취소합니다.
+     * 현재 저장 중인 제품과 영향을 받은 재고 출처만 검사합니다.
+     *
+     * @param array<int, int> $affectedLotIds 수정 전후 이월에 포함된 원 생산 재고 ID
+     */
+    private function assertNextDayCarryoverIntegrity(
+        int $storeId,
+        int $productId,
+        string $date,
+        array $affectedLotIds,
+    ): void {
+        $nextDate = Carbon::parse($date)->addDay()->toDateString();
+
+        foreach (array_unique($affectedLotIds) as $lotId) {
+            $movementQuery = fn (string $type) => ProductStockMovement::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->where('stock_lot_id', $lotId)
+                ->whereDate('work_date', $nextDate)
+                ->where('movement_type', $type)
+                ->sum('quantity');
+
+            $incoming = (int) $movementQuery('carryover_in');
+            $used = (int) $movementQuery('carryover_out');
+
+            // 서로 다른 폐기 사유나 로스 기록도 출처별로 모두 합산합니다.
+            foreach ([ProductionLoss::class, ProductionWaste::class, ProductionOtherOutflow::class] as $model) {
+                $used += (int) $model::query()
+                    ->where('store_id', $storeId)
+                    ->where('product_id', $productId)
+                    ->where('stock_lot_id', $lotId)
+                    ->whereDate('work_date', $nextDate)
+                    ->sum('quantity');
+            }
+
+            $this->assertNextDayCarryoverQuantity($incoming, $used);
         }
     }
 
-    // 해당 날짜에 이월 재고과 연결된 원산지 재고 lot를 찾습니다.
+    /**
+     * 다음 날 실제 입고량과 이미 처리한 수량의 정합성을 검사합니다.
+     *
+     * 두 값은 같은 점포·제품·원 생산 재고·업무일에서 합산한 수량입니다.
+     * 이월을 줄이거나 출처를 바꿀 때 이미 사용한 수량을 보존할 수 없다면
+     * 상위 DB 트랜잭션을 취소하여 다음 날의 기록이 고아 데이터가 되지 않게 합니다.
+     *
+     * @param int $incoming 다음 날 해당 원 생산 재고로 들어온 이월 수량
+     * @param int $used 다음 날 로스·폐기·기타 출고·재이월에 사용한 합계
+     */
+    private function assertNextDayCarryoverQuantity(int $incoming, int $used): void
+    {
+        abort_if(
+            $used > $incoming,
+            422,
+            '다음 날 이미 처리한 재고보다 이월 수량을 적게 설정할 수 없습니다. 다음 날 기록을 먼저 수정해주세요.',
+        );
+    }
+
+    /**
+     * 해당 업무일에 입고된 이월 재고의 원 생산 기록을 조회합니다.
+     *
+     * 생산일이 서로 다른 재고가 함께 입고됐다면 특정 기록을 임의로 선택하지 않습니다.
+     * 호출자는 사용자에게 재고 출처를 다시 선택하도록 안내해야 합니다.
+     */
     private function incomingLotForDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
-        $movement = ProductStockMovement::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->latest('id')->first();
-        return $movement ? ProductStockLot::query()->find($movement->stock_lot_id) : null;
+        $lotIds = ProductStockMovement::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', $date)
+            ->where('movement_type', 'carryover_in')
+            ->distinct()
+            ->pluck('stock_lot_id')
+            ->filter()
+            ->unique();
+
+        abort_if($lotIds->count() > 1, 422, '여러 생산일의 이월 재고가 있습니다. 처리할 생산일을 선택해주세요.');
+
+        return $lotIds->isEmpty() ? null : ProductStockLot::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->find($lotIds->first());
     }
 
-    // 해당 날짜의 당일 생산 또는 이월 재고과 연결된 재고 lot를 찾습니다.
+    /**
+     * 업무일의 재고 출처를 찾되, 여러 생산 기록이 존재하면 임의로 귀속시키지 않습니다.
+     *
+     * 출처를 명확히 지정하지 않은 기존 요청의 호환성을 위한 조회 함수입니다.
+     * 수량 계산과 출처 검증은 저장 트랜잭션의 별도 검증에서 수행합니다.
+     */
     private function lotForProductDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
-        $batchLot = ProductStockLot::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('origin_production_date', $date)->latest('id')->first();
-        if ($batchLot) {
-            return $batchLot;
+        // 기타 출고도 임의의 최신 lot에 귀속시키지 않습니다. 출처가 여러 건이면
+        // 기존 요청 형식으로는 어느 생산 기록을 차감할지 판단할 수 없습니다.
+        $todayLots = ProductStockLot::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('origin_production_date', $date)
+            ->orderBy('id')
+            ->limit(2)
+            ->get();
+        abort_if($todayLots->count() > 1, 422, '같은 날짜의 생산 재고가 여러 건입니다. 재고 출처를 확인해주세요.');
+        if ($todayLots->isNotEmpty()) {
+            return $todayLots->first();
         }
-        $movement = ProductStockMovement::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->where('movement_type', 'carryover_in')->latest('id')->first();
-        return $movement ? ProductStockLot::query()->find($movement->stock_lot_id) : null;
+
+        return $this->incomingLotForDate($storeId, $productId, $date);
     }
 
     // 폐기율은 원 생산일에 귀속된 폐기와 해당 생산일의 생산 수량만으로 계산합니다.
