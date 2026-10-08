@@ -660,14 +660,78 @@ class ProductionManagementController extends Controller
     // 사용자의 최종 확인 뒤 하루 업무를 마감합니다. 미완료나 수량 불일치가 있으면 서버에서 차단합니다.
     public function closeDay(Request $request): JsonResponse
     {
+        // 현재 사용자와 생산 관리 수정 권한을 확인합니다.
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.update');
-        $data = $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'daily_memo' => ['nullable', 'string', 'max:2000']]);
-        $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
-        $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
-        abort_if(collect($daily['rows'])->where('is_active', true)->contains('complete', false), 422, '아직 확인하지 않은 제품이 있어 마감할 수 없습니다.');
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.update'
+        );
+
+        /**
+         * 마감에 필요한 점포, 업무 날짜, 메모를 검증합니다.
+         * 점포와 날짜는 필수이며 마감 메모는 선택 사항입니다.
+         */
+        $data = $request->validate([
+            'store_id' => [
+                'required',
+                'integer',
+                'exists:stores,id',
+            ],
+            'work_date' => [
+                'required',
+                'date_format:Y-m-d',
+            ],
+            'daily_memo' => [
+                'nullable',
+                'string',
+                'max:2000',
+            ],
+        ]);
+
+        // 사용자가 해당 점포의 생산 업무를 처리할 권한이 있는지 확인합니다.
+        $this->accessService->assertStoreDepartment(
+            $user,
+            (int) $data['store_id']
+        );
+
+        /**
+         * 마감 대상 날짜의 최신 생산 현황을 조회합니다.
+         * 생산, 이월, 로스, 폐기 등의 확인 상태와 수량을 검증하는 데 사용합니다.
+         */
+        $daily = $this->dailyService->build(
+            (int) $data['store_id'],
+            $data['work_date']
+        );
+
+        // 활성 제품 중 아직 확인이 완료되지 않은 제품이 있는지 확인합니다.
+        $hasIncompleteProducts = collect($daily['rows'])
+            ->where('is_active', true)
+            ->contains('complete', false);
+
+        // 미확인 제품이 남아 있으면 마감을 차단합니다.
+        abort_if(
+            $hasIncompleteProducts,
+            422,
+            '아직 확인하지 않은 제품이 있어 마감할 수 없습니다.'
+        );
+
+        /**
+         * 일일 생산 현황에서 재고 수량의 불일치 여부를 확인합니다.
+         * 문제가 발견되면 첫 번째 오류 메시지를 반환하고 마감을 차단합니다.
+         */
         $stockIssues = $this->dailyStockIssues($daily);
-        abort_if($stockIssues->isNotEmpty(), 422, $stockIssues->first());
+
+        abort_if(
+            $stockIssues->isNotEmpty(),
+            422,
+            $stockIssues->first()
+        );
+
+        /**
+         * 모든 마감 조건을 통과하면 해당 날짜를 마감 완료 상태로 저장합니다.
+         * 마감 메모, 처리자, 처리 시각 및 최종 수정자를 함께 기록합니다.
+         */
         $closure = $this->updateDailyClosureForDate(
             (int) $data['store_id'],
             $data['work_date'],
@@ -679,19 +743,93 @@ class ProductionManagementController extends Controller
                 'updated_by' => $user->id,
             ],
         );
-        $closure->refresh();
-        abort_unless($closure->status === 'closed', 500, '마감 상태를 저장하지 못했습니다. 다시 시도해주세요.');
 
-        StoreDailyWeather::firstOrCreate(['store_id' => $data['store_id'], 'work_date' => $data['work_date']], ['collection_status' => 'pending']);
-        $openCorrection = ProductionCorrection::query()->where('store_id', $data['store_id'])->whereDate('work_date', $data['work_date'])->whereNull('after_data')->latest('id')->first();
-        if ($openCorrection) {
-            $openCorrection->update(['after_data' => $this->dailyService->build((int) $data['store_id'], $data['work_date'])]);
+        /**
+         * 저장된 마감 기록을 DB에서 다시 조회합니다.
+         * 실제 마감 상태가 완료로 반영되지 않았다면 오류를 반환합니다.
+         */
+        $closure->refresh();
+
+        abort_unless(
+            $closure->status === 'closed',
+            500,
+            '마감 상태를 저장하지 못했습니다. 다시 시도해주세요.'
+        );
+
+        /** 
+         * 해당 점포와 날짜의 날씨 기록이 이미 존재하는지 확인합니다.
+         * work_date에 시각이 포함되어 있어도 날짜를 기준으로 조회합니다.
+        */ 
+        $existingWeather = StoreDailyWeather::query()
+            ->where('store_id', $data['store_id'])
+            ->whereDate('work_date', $data['work_date'])
+            ->first();
+
+        // 기존 기록이 없을 때만 새로운 날씨 기록을 생성합니다.
+        if ($existingWeather === null) {
+            StoreDailyWeather::create([
+                'store_id' => $data['store_id'],
+                'work_date' => $data['work_date'],
+                'collection_status' => 'pending',
+            ]);
         }
-        Session::forget($this->draftKey((int) $data['store_id'], $data['work_date']));
-        $this->auditService->log($user, 'production', 'close', ProductionDailyClosure::class, (int) ProductionDailyClosure::query()->where('store_id', $data['store_id'])->whereDate('work_date', $data['work_date'])->value('id'), null, $data, '하루 업무 마감');
+
+        /**
+         * 마감 후 수정이 진행 중인 기록을 조회합니다.
+         * 같은 점포와 날짜에서 수정 후 데이터가 저장되지 않은 최신 기록만 가져옵니다.
+         */
+        $openCorrection = ProductionCorrection::query()
+            ->where('store_id', $data['store_id'])
+            ->whereDate('work_date', $data['work_date'])
+            ->whereNull('after_data')
+            ->latest('id')
+            ->first();
+
+        // 마감 후 수정 기록이 존재하면 현재 일일 현황을 수정 완료 데이터로 저장합니다.
+        if ($openCorrection) {
+            $openCorrection->update([
+                'after_data' => $this->dailyService->build(
+                    (int) $data['store_id'],
+                    $data['work_date']
+                ),
+            ]);
+        }
+
+        // 마감 완료 후 해당 점포와 날짜의 임시 저장 데이터를 삭제합니다.
+        Session::forget(
+            $this->draftKey(
+                (int) $data['store_id'],
+                $data['work_date']
+            )
+        );
+
+        /**
+         * 마감 작업의 변경 이력을 기록합니다.
+         * 날짜를 기준으로 마감 기록 ID를 조회해 감사 로그에 연결합니다.
+         */
+        $closureId = ProductionDailyClosure::query()
+            ->where('store_id', $data['store_id'])
+            ->whereDate('work_date', $data['work_date'])
+            ->value('id');
+
+        $this->auditService->log(
+            $user,
+            'production',
+            'close',
+            ProductionDailyClosure::class,
+            (int) $closureId,
+            null,
+            $data,
+            '하루 업무 마감'
+        );
+
+        // 마감 완료 메시지와 최신 일일 현황을 반환합니다.
         return response()->json([
             'message' => '하루 업무를 마감했습니다.',
-            'daily' => $this->dailyService->build((int) $data['store_id'], $data['work_date']),
+            'daily' => $this->dailyService->build(
+                (int) $data['store_id'],
+                $data['work_date']
+            ),
         ]);
     }
 
