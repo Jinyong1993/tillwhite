@@ -35,42 +35,141 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 class ProductionManagementController extends Controller
 {
-    // 생산 업무의 권한, 일일 계산, 감사, 추천 서비스를 주입합니다.
-    public function __construct(private readonly AccessService $accessService, private readonly AuditService $auditService, private readonly ProductionDailyService $dailyService, private readonly ProductionRecommendationService $recommendationService)
-    {
+    /**
+     * 생산 관리에 필요한 서비스들을 생성자를 통해 주입합니다.
+     * 각 서비스는 권한 확인, 일일 현황 계산, 변경 이력 기록, 생산량 추천을 담당합니다.
+     */
+    public function __construct(
+        private readonly AccessService $accessService,
+        private readonly AuditService $auditService,
+        private readonly ProductionDailyService $dailyService,
+        private readonly ProductionRecommendationService $recommendationService
+    ) {
     }
 
-    // 선택한 날짜의 생산·폐기 업무 화면 전체 데이터를 반환합니다.
+    /**
+     * 선택한 날짜의 생산 관리 화면에 필요한 전체 데이터를 반환합니다.
+     * 생산 현황, 점포 정보, 행사, 날씨, 이전 날짜의 마감 상태를 함께 제공합니다.
+     */
     public function daily(Request $request): JsonResponse
     {
+        // 로그인 사용자를 확인하고 생산 관리 조회 권한을 검사합니다.
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.view');
-        $validated = $request->validate(['date' => ['required', 'date_format:Y-m-d'], 'store_id' => ['nullable', 'integer', 'exists:stores,id']]);
-        $storeId = $this->resolveStoreId($user, $validated['store_id'] ?? null);
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.view'
+        );
+
+        /**
+         * 조회할 업무 날짜와 점포 ID를 검증합니다.
+         * 날짜는 필수이며 점포 ID는 사용자의 접근 권한에 따라 결정될 수 있습니다.
+         */
+        $validated = $request->validate([
+            'date' => [
+                'required',
+                'date_format:Y-m-d',
+            ],
+            'store_id' => [
+                'nullable',
+                'integer',
+                'exists:stores,id',
+            ],
+        ]);
+
+        // 조회할 점포를 결정하고 해당 점포의 조회 권한을 확인합니다.
+        $storeId = $this->resolveStoreId(
+            $user,
+            $validated['store_id'] ?? null
+        );
+
         $this->assertStoreReadable($user, $storeId);
+
+        // 검증된 업무 날짜를 가져옵니다.
         $date = $validated['date'];
-        $daily = $this->dailyService->build($storeId, $date, true);
+
+        /**
+         * 선택한 점포와 날짜의 생산 현황을 계산합니다.
+         * 기존 build() 호출의 세 번째 인자(true)를 유지합니다.
+         */
+        $daily = $this->dailyService->build(
+            $storeId,
+            $date,
+            true
+        );
+
+        // 화면에 표시할 업무 날짜와 점포 기본 정보를 설정합니다.
         $daily['date'] = $date;
-        $daily['store'] = Store::query()->findOrFail($storeId, ['id', 'name']);
-        $daily['events'] = $this->eventsForDate($storeId, $date);
-        $daily['weather'] = StoreDailyWeather::query()->where('store_id', $storeId)->whereDate('work_date', $date)->first();
-        $daily['blocking_previous_date'] = $this->blockingPreviousDate($storeId, $date);
+        $daily['store'] = Store::query()
+            ->findOrFail($storeId, ['id', 'name']);
+
+        // 선택한 날짜에 등록된 행사 및 일정 정보를 조회합니다.
+        $daily['events'] = $this->eventsForDate(
+            $storeId,
+            $date
+        );
+
+        /**
+         * 해당 점포와 날짜에 저장된 날씨 기록을 조회합니다.
+         * 저장된 날짜에 시각이 포함되어 있어도 날짜 기준으로 비교합니다.
+         */
+        $daily['weather'] = StoreDailyWeather::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $date)
+            ->first();
+
+        // 이전 날짜의 미마감 상태 등 현재 날짜의 작업을 제한하는 날짜를 확인합니다.
+        $daily['blocking_previous_date'] = $this->blockingPreviousDate(
+            $storeId,
+            $date
+        );
+
+        // 생산 관리 화면에 필요한 전체 데이터를 JSON 형식으로 반환합니다.
         return response()->json($daily);
     }
 
-    // 생산 화면에서 필요한 점포, 제품, 근무자와 사유 선택 목록을 반환합니다.
+    /**
+     * 생산 화면에서 사용하는 선택 목록을 반환합니다.
+     * 접근 가능한 점포, 활성 제품, 근무자 및 각종 사유 목록을 제공합니다.
+     */
     public function options(Request $request): JsonResponse
     {
+        // 로그인 사용자를 확인하고 생산 관리 조회 권한을 검사합니다.
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.view');
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.view'
+        );
+
+        // 조회 날짜와 선택한 점포 ID를 검증합니다.
         $validated = $request->validate([
-            'date' => ['required', 'date_format:Y-m-d'],
-            'store_id' => ['nullable', 'integer', 'exists:stores,id'],
+            'date' => [
+                'required',
+                'date_format:Y-m-d',
+            ],
+            'store_id' => [
+                'nullable',
+                'integer',
+                'exists:stores,id',
+            ],
         ]);
-        $storeId = $this->resolveStoreId($user, $validated['store_id'] ?? null);
+
+        // 조회할 점포를 결정하고 해당 점포의 조회 권한을 확인합니다.
+        $storeId = $this->resolveStoreId(
+            $user,
+            $validated['store_id'] ?? null
+        );
+
         $this->assertStoreReadable($user, $storeId);
 
+        // 사용자가 조회할 수 있는 점포 목록을 가져옵니다.
         $stores = $this->accessibleStores($user);
+
+        /**
+         * 선택한 점포의 활성 제품을 조회합니다.
+         * 카테고리, 표시 순서, 제품명 순으로 정렬합니다.
+         */
         $products = Product::query()
             ->with('category:id,name')
             ->where('store_id', $storeId)
@@ -78,14 +177,31 @@ class ProductionManagementController extends Controller
             ->orderBy('product_category_id')
             ->orderBy('sort_order')
             ->orderBy('name')
-            ->get(['id', 'name', 'product_category_id', 'production_department']);
-        $workers = $this->availableWorkers($storeId, $validated['date']);
+            ->get([
+                'id',
+                'name',
+                'product_category_id',
+                'production_department',
+            ]);
 
+        // 선택한 날짜에 생산 업무를 담당할 수 있는 근무자를 조회합니다.
+        $workers = $this->availableWorkers(
+            $storeId,
+            $validated['date']
+        );
+
+        /**
+         * 생산 화면에서 필요한 선택 목록을 반환합니다.
+         * 본사 직원의 읽기 전용 여부와 사유 코드도 함께 전달합니다.
+         */
         return response()->json([
             'stores' => $stores,
             'products' => $products,
             'workers' => $workers,
-            'store_read_only' => $user->isHeadOffice() && $user->role?->code !== 'super_admin',
+
+            'store_read_only' => $user->isHeadOffice()
+                && $user->role?->code !== 'super_admin',
+
             'loss_reasons' => [
                 ['value' => 'production_error', 'title' => '생산 실수'],
                 ['value' => 'shape_failure', 'title' => '모양 불량'],
@@ -94,6 +210,7 @@ class ProductionManagementController extends Controller
                 ['value' => 'damage', 'title' => '파손'],
                 ['value' => 'other', 'title' => '직접입력'],
             ],
+
             'waste_reasons' => [
                 ['value' => 'unsold', 'title' => '당일 잔여'],
                 ['value' => 'quality', 'title' => '품질 저하'],
@@ -102,6 +219,7 @@ class ProductionManagementController extends Controller
                 ['value' => 'carryover_waste', 'title' => '이월 후 폐기'],
                 ['value' => 'other', 'title' => '직접입력'],
             ],
+
             'zero_reasons' => [
                 ['value' => 'no_plan', 'title' => '생산계획 없음'],
                 ['value' => 'material_shortage', 'title' => '재료 부족'],
@@ -114,16 +232,35 @@ class ProductionManagementController extends Controller
     }
 
     /**
-     * 생산 화면에서 제품 관리의 기본 정보와 레시피를 읽기 전용으로 반환합니다.
+     * 생산 화면에서 제품의 기본 정보와 레시피를 읽기 전용으로 반환합니다.
      * 제품 관리 권한과 별개로 생산 조회 권한 범위 안에서만 조회할 수 있습니다.
      */
-    public function productDetail(Request $request, int $productId): JsonResponse
-    {
+    public function productDetail(
+        Request $request,
+        int $productId
+    ): JsonResponse {
+        // 로그인 사용자를 확인하고 생산 관리 조회 권한을 검사합니다.
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.view');
-        $product = Product::withTrashed()->findOrFail($productId);
-        $this->assertStoreReadable($user, (int) $product->store_id);
 
+        $this->accessService->requirePermission(
+            $user,
+            'production.view'
+        );
+
+        // 삭제된 제품을 포함하여 요청한 제품을 조회합니다.
+        $product = Product::withTrashed()
+            ->findOrFail($productId);
+
+        // 해당 제품이 속한 점포의 조회 권한을 확인합니다.
+        $this->assertStoreReadable(
+            $user,
+            (int) $product->store_id
+        );
+
+        /**
+         * 제품에 연결된 점포, 카테고리, 가격 및 레시피 정보를 조회합니다.
+         * 가격은 적용 시작일과 ID를 기준으로 최신순 정렬합니다.
+         */
         $product->load([
             'store:id,name',
             'category:id,store_id,name',
@@ -134,27 +271,134 @@ class ProductionManagementController extends Controller
             'recipes.steps',
         ]);
 
-        return response()->json(['product' => $product]);
+        // 제품 상세 정보를 JSON 형식으로 반환합니다.
+        return response()->json([
+            'product' => $product,
+        ]);
     }
 
-    // 한 번의 생산 배치를 저장하고 생산 당시 레시피와 작업자를 함께 고정합니다.
+    /**
+     * 한 번의 생산 기록을 저장하고 관련 정보를 함께 등록합니다.
+     * 생산 당시의 레시피, 작업자, 재고 및 추천 참고 이력을 처리합니다.
+     */
     public function storeBatch(Request $request): JsonResponse
     {
+        // 로그인 사용자를 확인하고 생산 기록 등록 권한을 검사합니다.
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.create');
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.create'
+        );
+
+        // 생산 기록에 필요한 입력값을 검증합니다.
         $data = $this->validateBatch($request);
-        $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
-        $this->assertDateUnlocked((int) $data['store_id'], $data['work_date']);
-        $this->assertWorkersScheduled((int) $data['store_id'], $data['work_date'], $data['workers'] ?? []);
+
+        /**
+         * 선택한 점포의 생산 업무 권한과 날짜의 수정 가능 여부를 확인합니다.
+         * 지정된 작업자가 해당 날짜에 근무하는지도 검사합니다.
+         */
+        $this->accessService->assertStoreDepartment(
+            $user,
+            (int) $data['store_id']
+        );
+
+        $this->assertDateUnlocked(
+            (int) $data['store_id'],
+            $data['work_date']
+        );
+
+        $this->assertWorkersScheduled(
+            (int) $data['store_id'],
+            $data['work_date'],
+            $data['workers'] ?? []
+        );
+
+        /**
+         * 생산 기록과 관련 데이터를 하나의 트랜잭션으로 저장합니다.
+         * 처리 중 오류가 발생하면 트랜잭션 내 DB 변경 사항을 롤백합니다.
+         */
         $batch = DB::transaction(function () use ($data, $user) {
-            $product = Product::query()->with('recipes.ingredients', 'recipes.steps')->findOrFail($data['product_id']);
-            abort_unless($product->store_id === (int) $data['store_id'], 422, '선택한 점포의 제품이 아닙니다.');
-            $recipe = $product->recipes()->whereNull('deleted_at')->latest('id')->first();
-            $batch = ProductionBatch::create(['store_id' => $data['store_id'], 'product_id' => $data['product_id'], 'work_date' => $data['work_date'], 'quantity' => $data['quantity'], 'recipe_id' => $recipe?->id, 'recipe_snapshot' => $recipe ? $recipe->load('ingredients', 'steps')->toArray() : null, 'recipe_deviated' => (bool) ($data['recipe_deviated'] ?? false), 'recipe_deviation_note' => $data['recipe_deviation_note'] ?? null, 'note' => $data['note'] ?? null, 'created_by' => $user->id]);
+
+            // 선택한 제품과 연결된 레시피 정보를 조회합니다.
+            $product = Product::query()
+                ->with(
+                    'recipes.ingredients',
+                    'recipes.steps'
+                )
+                ->findOrFail($data['product_id']);
+
+            // 선택한 제품이 생산 대상 점포에 속하는지 확인합니다.
+            abort_unless(
+                $product->store_id === (int) $data['store_id'],
+                422,
+                '선택한 점포의 제품이 아닙니다.'
+            );
+
+            // 삭제되지 않은 레시피 중 가장 최근에 등록된 레시피를 조회합니다.
+            $recipe = $product->recipes()
+                ->whereNull('deleted_at')
+                ->latest('id')
+                ->first();
+
+            /**
+             * 생산 기록을 생성하고 당시 레시피 내용을 함께 저장합니다.
+             * 레시피 변경 여부, 변경 사유 및 생산 메모도 기록합니다.
+             */
+            $batch = ProductionBatch::create([
+                'store_id' => $data['store_id'],
+                'product_id' => $data['product_id'],
+                'work_date' => $data['work_date'],
+                'quantity' => $data['quantity'],
+
+                'recipe_id' => $recipe?->id,
+                'recipe_snapshot' => $recipe
+                    ? $recipe->load('ingredients', 'steps')->toArray()
+                    : null,
+
+                'recipe_deviated' => (bool) (
+                    $data['recipe_deviated'] ?? false
+                ),
+
+                'recipe_deviation_note' =>
+                    $data['recipe_deviation_note'] ?? null,
+
+                'note' => $data['note'] ?? null,
+                'created_by' => $user->id,
+            ]);
+
+            /**
+             * 생산에 참여한 작업자를 기록합니다.
+             * 작업자별 담당 공정이 지정되지 않았다면 전체 공정으로 저장합니다.
+             */
             foreach ($data['workers'] ?? [] as $worker) {
-                DB::table('production_batch_workers')->insert(['production_batch_id' => $batch->id, 'user_id' => $worker['user_id'], 'process_type' => $worker['process_type'] ?? 'all', 'created_at' => now(), 'updated_at' => now()]);
+                DB::table('production_batch_workers')->insert([
+                    'production_batch_id' => $batch->id,
+                    'user_id' => $worker['user_id'],
+                    'process_type' => $worker['process_type'] ?? 'all',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             }
-            ProductStockLot::create(['store_id' => $data['store_id'], 'product_id' => $data['product_id'], 'production_batch_id' => $batch->id, 'origin_production_date' => $data['work_date'], 'initial_quantity' => $data['quantity'], 'remaining_quantity' => $data['quantity'], 'status' => 'active']);
+
+            /**
+             * 생산된 제품의 재고 기록을 생성합니다.
+             * 최초 생산 수량과 현재 남은 수량을 동일하게 설정합니다.
+             */
+            ProductStockLot::create([
+                'store_id' => $data['store_id'],
+                'product_id' => $data['product_id'],
+                'production_batch_id' => $batch->id,
+                'origin_production_date' => $data['work_date'],
+                'initial_quantity' => $data['quantity'],
+                'remaining_quantity' => $data['quantity'],
+                'status' => 'active',
+            ]);
+
+            /**
+             * 해당 제품의 생산 확인 상태를 완료로 변경합니다.
+             * 생산량 0에 대한 기존 사유는 초기화하고 확인자를 기록합니다.
+             */
             $this->updateConfirmationForDate(
                 (int) $data['store_id'],
                 (int) $data['product_id'],
@@ -165,65 +409,323 @@ class ProductionManagementController extends Controller
                     'confirmed_by' => $user->id,
                 ],
             );
+
+            /**
+             * 생산량 추천을 참고했다고 표시한 경우에만 추천 이력을 저장합니다.
+             * 기존 28일 조회 범위와 추천 계산 조건을 그대로 유지합니다.
+             */
             if ((bool) ($data['recommendation_referenced'] ?? false)) {
+
+                // 과거 생산 현황을 수집할 목록과 기준 날짜를 준비합니다.
                 $history = collect();
                 $target = Carbon::parse($data['work_date']);
+
+                // 기준 날짜 이전 28일의 생산 기록을 오래된 날짜부터 조회합니다.
                 for ($i = 28; $i >= 1; $i--) {
-                    $historyDate = $target->copy()->subDays($i)->toDateString();
-                    $daily = $this->dailyService->build((int) $data['store_id'], $historyDate);
-                    $row = collect($daily['rows'])->firstWhere('id', (int) $data['product_id']);
+                    $historyDate = $target->copy()
+                        ->subDays($i)
+                        ->toDateString();
+
+                    $daily = $this->dailyService->build(
+                        (int) $data['store_id'],
+                        $historyDate
+                    );
+
+                    // 해당 날짜의 생산 현황에서 현재 제품을 찾습니다.
+                    $row = collect($daily['rows'])
+                        ->firstWhere(
+                            'id',
+                            (int) $data['product_id']
+                        );
+
+                    /**
+                     * 생산 확인이 완료된 기록만 추천 계산에 사용합니다.
+                     * 해당 날짜에 행사가 존재하는지도 함께 기록합니다.
+                     */
                     if ($row && $row['production_confirmed']) {
-                        $history->push(['date' => $historyDate, ...$row, 'special_day' => !empty($this->eventsForDate((int) $data['store_id'], $historyDate))]);
+                        $history->push([
+                            'date' => $historyDate,
+                            ...$row,
+                            'special_day' => !empty(
+                                $this->eventsForDate(
+                                    (int) $data['store_id'],
+                                    $historyDate
+                                )
+                            ),
+                        ]);
                     }
                 }
-                $targetEvents = collect($this->eventsForDate((int) $data['store_id'], $data['work_date']))->filter(fn(array $event) => empty($event['products']) || collect($event['products'])->contains('id', (int) $data['product_id']))->values()->all();
-                $recommendation = $this->recommendationService->recommend($history, $target, $targetEvents);
-                $this->recommendationService->snapshot((int) $data['store_id'], (int) $data['product_id'], $data['work_date'], $recommendation, $batch->id, $data['recommendation_deviation_reason'] ?? null);
+
+                /**
+                 * 생산 대상 날짜에 등록된 행사 중 현재 제품과 관련된 행사를 조회합니다.
+                 * 적용 제품이 지정되지 않은 행사도 포함합니다.
+                 */
+                $targetEvents = collect(
+                    $this->eventsForDate(
+                        (int) $data['store_id'],
+                        $data['work_date']
+                    )
+                )
+                    ->filter(
+                        fn (array $event) =>
+                            empty($event['products'])
+                            || collect($event['products'])->contains(
+                                'id',
+                                (int) $data['product_id']
+                            )
+                    )
+                    ->values()
+                    ->all();
+
+                // 과거 생산 기록과 대상 날짜의 행사 정보를 사용하여 추천량을 계산합니다.
+                $recommendation = $this->recommendationService->recommend(
+                    $history,
+                    $target,
+                    $targetEvents
+                );
+
+                /**
+                 * 생산 당시 참고한 추천 결과를 해당 생산 기록에 연결합니다.
+                 * 추천량과 실제 생산량의 차이에 대한 사유도 함께 저장합니다.
+                 */
+                $this->recommendationService->snapshot(
+                    (int) $data['store_id'],
+                    (int) $data['product_id'],
+                    $data['work_date'],
+                    $recommendation,
+                    $batch->id,
+                    $data['recommendation_deviation_reason'] ?? null
+                );
             }
+
+            // 생성한 생산 기록을 트랜잭션 결과로 반환합니다.
             return $batch;
         });
-        $this->auditService->log($user, 'production', 'create', ProductionBatch::class, $batch->id, null, $batch->toArray(), '생산 기록 등록');
-        return response()->json(['message' => '생산 기록을 저장했습니다.', 'batch' => $batch], 201);
+
+        // 생산 기록 등록 내역을 감사 로그에 저장합니다.
+        $this->auditService->log(
+            $user,
+            'production',
+            'create',
+            ProductionBatch::class,
+            $batch->id,
+            null,
+            $batch->toArray(),
+            '생산 기록 등록'
+        );
+
+        // 등록 완료 메시지와 생산 기록을 반환합니다.
+        return response()->json([
+            'message' => '생산 기록을 저장했습니다.',
+            'batch' => $batch,
+        ], 201);
     }
 
-    // 마감 전 생산 배치의 수량·메모를 수정하고 동시 수정 충돌을 검사합니다.
-    public function updateBatch(Request $request, ProductionBatch $batch): JsonResponse
-    {
+    /**
+     * 마감 전 생산 기록의 수량, 메모 및 작업자를 수정합니다.
+     * 동시 수정 충돌과 연결된 재고 기록을 확인하여 잘못된 수량 변경을 방지합니다.
+     */
+    public function updateBatch(
+        Request $request,
+        ProductionBatch $batch
+    ): JsonResponse {
+        // 로그인 사용자를 확인하고 생산 관리 수정 권한을 검사합니다.
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.update');
-        $data = $request->validate(['quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'note' => ['nullable', 'string', 'max:1000'], 'lock_version' => ['required', 'integer', 'min:1'], 'workers' => ['required', 'array', 'min:1'], 'workers.*.user_id' => ['required', 'integer', 'distinct', 'exists:users,id']]);
-        $this->accessService->assertStoreDepartment($user, (int) $batch->store_id);
-        $this->assertDateUnlocked((int) $batch->store_id, $batch->work_date->toDateString());
-        $this->assertWorkersScheduled((int) $batch->store_id, $batch->work_date->toDateString(), $data['workers']);
-        abort_unless((int) $batch->lock_version === (int) $data['lock_version'], 409, '다른 사용자가 먼저 이 생산 기록을 변경했습니다. 최신 내용을 다시 확인해주세요.');
-        $lotIds = ProductStockLot::query()->where('production_batch_id', $batch->id)->pluck('id');
-        $hasDownstreamFlow = ProductStockMovement::query()->whereIn('stock_lot_id', $lotIds)->exists()
-            || ProductionLoss::query()->whereIn('stock_lot_id', $lotIds)->exists()
-            || ProductionWaste::query()->whereIn('stock_lot_id', $lotIds)->exists()
-            || ProductionOtherOutflow::query()->whereIn('stock_lot_id', $lotIds)->exists();
-        $reducingQuantity = (int) $data['quantity'] < (int) $batch->quantity;
-        abort_if(
-            $reducingQuantity && $hasDownstreamFlow,
-            422,
-            '이미 이월·로스·폐기 등 연결 기록이 있어 생산 수량을 줄일 수 없습니다. 연결 기록을 먼저 확인해주세요.',
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.update'
         );
+
+        /**
+         * 생산 수량, 메모, 잠금 버전 및 작업자 목록을 검증합니다.
+         * 작업자는 최소 1명 이상 필요하며 동일한 사용자를 중복 지정할 수 없습니다.
+         */
+        $data = $request->validate([
+            'quantity' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:100000',
+            ],
+            'note' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+            'lock_version' => [
+                'required',
+                'integer',
+                'min:1',
+            ],
+            'workers' => [
+                'required',
+                'array',
+                'min:1',
+            ],
+            'workers.*.user_id' => [
+                'required',
+                'integer',
+                'distinct',
+                'exists:users,id',
+            ],
+        ]);
+
+        // 반복 사용되는 점포 ID와 업무 날짜를 준비합니다.
+        $storeId = (int) $batch->store_id;
+        $workDate = $batch->work_date->toDateString();
+
+        /**
+         * 해당 점포의 수정 권한과 업무 날짜의 수정 가능 여부를 확인합니다.
+         * 지정된 작업자가 해당 날짜에 근무하는지도 검사합니다.
+         */
+        $this->accessService->assertStoreDepartment(
+            $user,
+            $storeId
+        );
+
+        $this->assertDateUnlocked(
+            $storeId,
+            $workDate
+        );
+
+        $this->assertWorkersScheduled(
+            $storeId,
+            $workDate,
+            $data['workers']
+        );
+
+        /**
+         * 사용자가 조회한 기록의 버전과 현재 기록의 버전을 비교합니다.
+         * 다른 사용자가 먼저 수정한 경우 충돌 오류를 반환합니다.
+         */
+        abort_unless(
+            (int) $batch->lock_version === (int) $data['lock_version'],
+            409,
+            '다른 사용자가 먼저 이 생산 기록을 변경했습니다. 최신 내용을 다시 확인해주세요.'
+        );
+
+        // 변경할 생산 수량이 기존 수량보다 작은지 확인합니다.
+        $reducingQuantity = (int) $data['quantity']
+            < (int) $batch->quantity;
+
+        /**
+         * 생산 수량을 줄이는 경우에만 연결된 재고 기록을 확인합니다.
+         * 수량 증가 또는 동일 수량 수정 시 불필요한 DB 조회를 생략합니다.
+         */
+        if ($reducingQuantity) {
+
+            // 해당 생산 기록으로 생성된 재고 기록의 ID를 조회합니다.
+            $lotIds = ProductStockLot::query()
+                ->where('production_batch_id', $batch->id)
+                ->pluck('id');
+
+            /**
+             * 재고 이동, 로스, 폐기 및 기타 출고 기록의 존재 여부를 확인합니다.
+             * 하나라도 존재하면 생산 수량 감소를 허용하지 않습니다.
+             */
+            $hasDownstreamFlow =
+                ProductStockMovement::query()
+                    ->whereIn('stock_lot_id', $lotIds)
+                    ->exists()
+
+                || ProductionLoss::query()
+                    ->whereIn('stock_lot_id', $lotIds)
+                    ->exists()
+
+                || ProductionWaste::query()
+                    ->whereIn('stock_lot_id', $lotIds)
+                    ->exists()
+
+                || ProductionOtherOutflow::query()
+                    ->whereIn('stock_lot_id', $lotIds)
+                    ->exists();
+
+            // 연결된 재고 처리 기록이 있으면 생산 수량 감소를 차단합니다.
+            abort_if(
+                $hasDownstreamFlow,
+                422,
+                '이미 이월·로스·폐기 등 연결 기록이 있어 생산 수량을 줄일 수 없습니다. 연결 기록을 먼저 확인해주세요.'
+            );
+        }
+
+        // 감사 로그에 사용할 수정 전 생산 기록을 보관합니다.
         $before = $batch->toArray();
+
+        /**
+         * 작업자, 생산 기록 및 최초 재고 수량을 트랜잭션으로 수정합니다.
+         * 처리 중 오류가 발생하면 트랜잭션 내 DB 변경 사항을 롤백합니다.
+         */
         DB::transaction(function () use ($batch, $data, $user) {
-            DB::table('production_batch_workers')->where('production_batch_id', $batch->id)->delete();
+
+            // 기존 생산 기록에 연결된 작업자 목록을 삭제합니다.
+            DB::table('production_batch_workers')
+                ->where('production_batch_id', $batch->id)
+                ->delete();
+
+            /**
+             * 새 작업자 목록을 일괄 등록할 수 있도록 데이터를 준비합니다.
+             * 기존과 동일하게 모든 작업자의 담당 공정을 전체로 설정합니다.
+             */
+            $now = now();
+
+            $workers = [];
+
             foreach ($data['workers'] as $worker) {
-                DB::table('production_batch_workers')->insert([
+                $workers[] = [
                     'production_batch_id' => $batch->id,
                     'user_id' => $worker['user_id'],
                     'process_type' => 'all',
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
             }
-            $batch->update(['quantity' => $data['quantity'], 'note' => $data['note'] ?? null, 'updated_by' => $user->id, 'lock_version' => $batch->lock_version + 1]);
-            ProductStockLot::query()->where('production_batch_id', $batch->id)->update(['initial_quantity' => $data['quantity']]);
+
+            // 작업자별 개별 INSERT 대신 한 번의 INSERT로 등록합니다.
+            DB::table('production_batch_workers')
+                ->insert($workers);
+
+            /**
+             * 생산 수량과 메모를 수정하고 최종 수정자를 기록합니다.
+             * 기존 방식대로 잠금 버전을 1 증가시킵니다.
+             */
+            $batch->update([
+                'quantity' => $data['quantity'],
+                'note' => $data['note'] ?? null,
+                'updated_by' => $user->id,
+                'lock_version' => $batch->lock_version + 1,
+            ]);
+
+            /**
+             * 해당 생산 기록에 연결된 재고의 최초 생산 수량을 갱신합니다.
+             * 기존 동작을 유지하기 위해 남은 수량은 변경하지 않습니다.
+             */
+            ProductStockLot::query()
+                ->where('production_batch_id', $batch->id)
+                ->update([
+                    'initial_quantity' => $data['quantity'],
+                ]);
         });
-        $this->auditService->log($user, 'production', 'update', ProductionBatch::class, $batch->id, $before, $batch->fresh()->toArray(), '생산 기록 수정');
-        return response()->json(['message' => '생산 기록을 수정했습니다.']);
+
+        /**
+         * 수정 전후 생산 기록을 감사 로그에 저장합니다.
+         * 수정 후 정보는 DB에서 다시 조회한 데이터를 사용합니다.
+         */
+        $this->auditService->log(
+            $user,
+            'production',
+            'update',
+            ProductionBatch::class,
+            $batch->id,
+            $before,
+            $batch->fresh()->toArray(),
+            '생산 기록 수정'
+        );
+
+        // 생산 기록 수정 완료 메시지를 반환합니다.
+        return response()->json([
+            'message' => '생산 기록을 수정했습니다.',
+        ]);
     }
 
     // 마감 전 생산 배치를 Soft Delete하고 연결 재고가 이미 이월되었다면 삭제를 차단합니다.
