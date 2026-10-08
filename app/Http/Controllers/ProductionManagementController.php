@@ -125,8 +125,160 @@ class ProductionManagementController extends Controller
             $date
         );
 
+        /**
+         * 일일 현황의 제품 목록은 Collection 또는 배열로 반환될 수 있습니다.
+         *
+         * 최근 입력 제품 조회 함수는 배열을 받도록 정의되어 있으므로
+         * 기존 제품 목록의 순서와 데이터를 유지하면서 배열로 변환합니다.
+         */
+        $daily['recent_product_ids'] = $this->recentProductIds(
+            $storeId,
+            $date,
+            collect($daily['rows'] ?? [])->all()
+        );
+
         // 생산 관리 화면에 필요한 전체 데이터를 JSON 형식으로 반환합니다.
         return response()->json($daily);
+    }
+
+    /**
+     * 선택한 점포와 날짜에서 최근 입력된 제품 ID를 반환합니다.
+     *
+     * 생산 기록과 개별 재고 처리 이력만 대상으로 하며,
+     * 마감처럼 특정 제품을 식별할 수 없는 이력은 제외합니다.
+     *
+     * 현재 화면에 표시할 수 있는 활성 제품만 포함하고
+     * 같은 제품의 반복 입력은 최신 기록 하나로 취급합니다.
+     */
+    private function recentProductIds(
+        int $storeId,
+        string $date,
+        array $rows
+    ): array {
+        // 현재 화면에 표시 가능한 활성 제품 ID를 준비합니다.
+        $activeProductIds = collect($rows)
+            ->filter(fn ($row) => !empty($row['is_active']))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (empty($activeProductIds)) {
+            return [];
+        }
+
+        // 한국 업무 날짜를 생산 기록의 UTC 직렬화 형식으로 변환합니다.
+        $productionDate = Carbon::createFromFormat(
+            '!Y-m-d',
+            $date,
+            'Asia/Seoul'
+        )->utc()->format('Y-m-d\TH:i:s.u\Z');
+
+        /**
+         * 기존 변경 이력의 날짜 조회 기준을 사용합니다.
+         * 점포와 날짜가 일치하는 기록만 최신순으로 조회합니다.
+         */
+        $logs = AuditLog::query()
+            ->where('domain', 'production')
+            ->where(function ($query) use ($date, $productionDate) {
+                $query->where('new_values->work_date', $date)
+                    ->orWhere('new_values->target_date', $date)
+                    ->orWhere('old_values->work_date', $date)
+                    ->orWhereJsonContains(
+                        'new_values->attribution_dates',
+                        $date
+                    )
+                    ->orWhere(function ($batchQuery) use ($productionDate) {
+                        $batchQuery
+                            ->where('target_type', ProductionBatch::class)
+                            ->where(function ($dateQuery) use ($productionDate) {
+                                $dateQuery
+                                    ->where('new_values->work_date', $productionDate)
+                                    ->orWhere('old_values->work_date', $productionDate);
+                            });
+                    });
+            })
+            ->where(function ($query) use ($storeId) {
+                $query->where('new_values->store_id', $storeId)
+                    ->orWhere('old_values->store_id', $storeId)
+                    ->orWhere(function ($nested) {
+                        $nested->whereNull('new_values->store_id')
+                            ->whereNull('old_values->store_id');
+                    });
+            })
+            ->latest('id')
+            ->limit(100)
+            ->get([
+                'action',
+                'target_type',
+                'target_id',
+                'description',
+                'old_values',
+                'new_values',
+            ]);
+
+        // 현재 일일 현황의 생산 기록 ID와 제품 ID를 연결합니다.
+        $batchProductIds = [];
+
+        foreach ($rows as $row) {
+            foreach ($row['batches'] ?? [] as $batch) {
+                $batchProductIds[(int) $batch['id']] = (int) $row['id'];
+            }
+        }
+
+        $recentIds = [];
+
+        foreach ($logs as $log) {
+            $newValues = $log->new_values ?? [];
+            $oldValues = $log->old_values ?? [];
+            $productId = null;
+
+            if (
+                $log->target_type === ProductionBatch::class
+                && in_array($log->action, ['create', 'update', 'delete'], true)
+            ) {
+                $productId = $newValues['product_id']
+                    ?? $oldValues['product_id']
+                    ?? $batchProductIds[(int) $log->target_id]
+                    ?? null;
+            } elseif ($log->target_type === Product::class) {
+                $isFlowRecord = $log->action === 'update'
+                    && in_array(
+                        $newValues['type'] ?? null,
+                        ['loss', 'waste', 'carryover', 'other_outflow'],
+                        true
+                    );
+
+                $isZeroProduction = $log->action === 'confirm'
+                    && ($log->description ?? '') === '생산 0개 확인';
+
+                if ($isFlowRecord || $isZeroProduction) {
+                    $productId = $newValues['product_id']
+                        ?? $oldValues['product_id']
+                        ?? $log->target_id;
+                }
+            }
+
+            if ($productId === null) {
+                continue;
+            }
+
+            $productId = (int) $productId;
+
+            if (
+                !in_array($productId, $activeProductIds, true)
+                || in_array($productId, $recentIds, true)
+            ) {
+                continue;
+            }
+
+            $recentIds[] = $productId;
+
+            if (count($recentIds) === 5) {
+                break;
+            }
+        }
+
+        return $recentIds;
     }
 
     /**
@@ -2326,6 +2478,9 @@ class ProductionManagementController extends Controller
      * 일반 변경 이력은 기존 작업일 기준으로 조회하고,
      * 이월 재고 폐기는 실제 폐기일과 최초 생산일 모두에서
      * 동일한 변경 이력을 확인할 수 있도록 합니다.
+     *
+     * 변경 이력에 제품명을 함께 표시할 수 있도록
+     * 관련 제품을 한 번에 조회하여 응답에 추가합니다.
      */
     public function history(Request $request): JsonResponse
     {
@@ -2343,6 +2498,16 @@ class ProductionManagementController extends Controller
         $this->assertStoreReadable($user, (int) $data['store_id']);
 
         /**
+         * 생산 기록의 날짜는 모델 직렬화 과정에서 UTC로 저장됩니다.
+         * 조회할 한국 날짜의 자정을 UTC로 변환하여 정확히 비교합니다.
+         */
+        $productionDate = Carbon::createFromFormat(
+            '!Y-m-d',
+            $data['work_date'],
+            'Asia/Seoul'
+        )->utc()->format('Y-m-d\TH:i:s.u\Z');
+
+        /**
          * 기존 작업일 및 대상 날짜에 해당하는 변경 이력을 조회합니다.
          * 폐기 기록에 최초 생산일이 포함된 경우에는
          * 해당 생산일에서도 동일한 변경 이력을 조회합니다.
@@ -2350,14 +2515,35 @@ class ProductionManagementController extends Controller
         $logs = AuditLog::query()
             ->with('user:id,name')
             ->where('domain', 'production')
-            ->where(function ($query) use ($data) {
+            ->where(function ($query) use ($data, $productionDate) {
+                /*
+                * 기존 생산·이월·로스·폐기 및 0개 확인 이력의
+                * 작업일 조회 조건을 유지합니다.
+                */
                 $query->where('new_values->work_date', $data['work_date'])
                     ->orWhere('new_values->target_date', $data['work_date'])
                     ->orWhere('old_values->work_date', $data['work_date'])
                     ->orWhereJsonContains(
                         'new_values->attribution_dates',
                         $data['work_date']
-                    );
+                );
+
+                /*
+                * 생산 등록·수정·삭제 기록은 ProductionBatch 모델을
+                * 대상으로 저장되므로 UTC 날짜 형식도 조회합니다.
+                *
+                * 등록은 new_values, 삭제는 old_values,
+                * 수정은 변경 전후 양쪽 날짜를 확인합니다.
+                */
+                $query->orWhere(function ($batchQuery) use ($productionDate) {
+                    $batchQuery
+                        ->where('target_type', ProductionBatch::class)
+                        ->where(function ($dateQuery) use ($productionDate) {
+                            $dateQuery
+                                ->where('new_values->work_date', $productionDate)
+                                ->orWhere('old_values->work_date', $productionDate);
+                    });
+                });
             })
             ->where(function ($query) use ($data) {
                 $query->where('new_values->store_id', (int) $data['store_id'])
@@ -2381,7 +2567,116 @@ class ProductionManagementController extends Controller
                 'created_at',
             ]);
 
-        // 조회한 변경 이력을 기존 응답 구조 그대로 반환합니다.
+        /**
+         * 변경 이력에서 사용된 제품 ID를 수집합니다.
+         *
+         * 생산 기록은 ProductionBatch에 제품 ID가 저장되고,
+         * 로스·폐기·이월 기록은 Product에 연결됩니다.
+         *
+         * 제품별로 DB를 반복 조회하지 않도록
+         * 중복된 제품 ID는 제거합니다.
+         */
+        $productIds = $logs
+            ->map(function ($log) {
+                $newValues = $log->new_values ?? [];
+                $oldValues = $log->old_values ?? [];
+
+                if ($log->target_type === ProductionBatch::class) {
+                    return $newValues['product_id']
+                        ?? $oldValues['product_id']
+                        ?? null;
+                }
+
+                if ($log->target_type === Product::class) {
+                    return $newValues['product_id']
+                        ?? $oldValues['product_id']
+                        ?? $log->target_id;
+                }
+
+                return null;
+            })
+            ->filter(fn ($id) => is_numeric($id) && (int) $id > 0)
+            ->unique()
+            ->values();
+
+        /**
+         * 변경 이력에 필요한 제품명을 한 번에 조회합니다.
+         *
+         * 삭제된 제품의 과거 변경 이력도 확인할 수 있도록
+         * Soft Delete된 제품까지 조회 대상에 포함합니다.
+         *
+         * 현재 조회 중인 점포의 제품으로 범위를 제한합니다.
+         */
+        $productNames = Product::withTrashed()
+            ->where('store_id', (int) $data['store_id'])
+            ->whereIn('id', $productIds)
+            ->pluck('name', 'id');
+
+        /**
+         * 각 변경 이력에 제품명을 추가합니다.
+         *
+         * 기존 action, description, old_values, new_values 등은
+         * 변경하지 않고 화면 표시용 product_name만 추가합니다.
+         *
+         * 마감처럼 특정 제품과 연결되지 않은 이력에는
+         * product_name을 null로 설정합니다.
+         */
+        $logs->each(function ($log) use ($productNames) {
+            $newValues = $log->new_values ?? [];
+            $oldValues = $log->old_values ?? [];
+
+            $productId = null;
+
+            if ($log->target_type === ProductionBatch::class) {
+                $productId = $newValues['product_id']
+                    ?? $oldValues['product_id']
+                    ?? null;
+            } elseif ($log->target_type === Product::class) {
+                $productId = $newValues['product_id']
+                    ?? $oldValues['product_id']
+                    ?? $log->target_id;
+            }
+
+            $log->setAttribute(
+                'product_name',
+                $productId !== null
+                    ? $productNames->get((int) $productId)
+                    : null
+            );
+
+            /*
+            * 원본 감사 로그 설명은 보존합니다.
+            * 화면에서 동작 칩을 별도로 표시하므로
+            * 기본 작업 설명에 중복된 동작 문구를 붙이지 않습니다.
+            */
+            $displayDescription = $log->description;
+
+            if ($log->target_type === ProductionBatch::class) {
+                $displayDescription = '생산 기록';
+            } elseif ($log->target_type === Product::class) {
+                $type = $newValues['type'] ?? $oldValues['type'] ?? null;
+
+                $labels = [
+                    'loss' => '로스',
+                    'waste' => '폐기',
+                    'carryover' => '이월',
+                    'other_outflow' => '기타 출고',
+                ];
+
+                if (isset($labels[$type])) {
+                    $displayDescription = $labels[$type] . ' 처리';
+                } elseif (
+                    $log->action === 'confirm'
+                    && $log->description === '생산 0개 확인'
+                ) {
+                    $displayDescription = '생산 0개';
+                }
+            }
+
+            $log->setAttribute('display_description', $displayDescription);
+        });
+
+        // 기존 응답 구조를 유지하면서 제품명을 함께 반환합니다.
         return response()->json([
             'logs' => $logs,
         ]);

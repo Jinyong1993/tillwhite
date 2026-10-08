@@ -143,6 +143,23 @@
         class="product-search mb-3"
     />
 
+    <!-- 선택 날짜에 최근 기록을 변경한 제품으로 빠르게 이동합니다. -->
+    <div v-if="recentProducts.length" class="recent-products">
+      <span class="recent-products-label">최근 입력</span>
+      <div class="recent-products-list">
+        <button
+          v-for="row in recentProducts"
+          :key="row.id"
+          type="button"
+          class="recent-product-button"
+          :title="`${row.name} 찾기`"
+          @click="selectRecentProduct(row)"
+        >
+          {{ row.name }}
+        </button>
+      </div>
+    </div>
+
     <div class="product-filter-row mb-4">
       <v-btn-toggle
           v-model="filter"
@@ -691,12 +708,35 @@
         <div class="history-context">{{ formatKoreanDate(workDate) }}의 생산·이월·로스·폐기 변경 기록입니다.</div>
         <v-divider class="app-section-divider" />
         <div v-if="historyLogs.length" ref="historyListRef" class="history-list">
-          <article v-for="log in pagedHistoryLogs" :key="log.id" class="history-item">
+          <article
+            v-for="log in pagedHistoryLogs"
+            :key="log.id"
+            class="history-item"
+          >
             <div class="history-item-head">
-              <strong>{{ log.description || '업무 기록 변경' }}</strong>
-              <span class="history-action">{{ historyActionLabel(log.action) }}</span>
+              <strong>
+                <template v-if="log.product_name">
+                  {{ log.product_name }} ·
+                </template>
+                {{ historyDescription(log) }}
+              </strong>
+
+              <span class="history-action">
+                {{ historyActionLabel(log.action) }}
+              </span>
             </div>
-            <div class="history-meta">{{ log.user?.name || '-' }} · {{ new Date(log.created_at).toLocaleString('ko-KR') }}</div>
+
+            <div
+              v-if="historyQuantityText(log)"
+              class="history-quantity"
+            >
+              {{ historyQuantityText(log) }}
+            </div>
+
+            <div class="history-meta">
+              {{ log.user?.name || '-' }} ·
+              {{ new Date(log.created_at).toLocaleString('ko-KR') }}
+            </div>
           </article>
         </div>
         <v-empty-state
@@ -911,7 +951,9 @@
 import {
     computed,
     ref,
+    watch,
 } from 'vue';
+
 import ConfirmDialog from '../common/ConfirmDialog.vue';
 import ProductDetailDialog from '../product/ProductDetailDialog.vue';
 import ProductionBatchDialog from './ProductionBatchDialog.vue';
@@ -949,8 +991,49 @@ const emit = defineEmits([
 const today = toLocalDateString();
 const dateMenu = ref(false);
 const filter = ref('all');
+
 const search = ref('');
 const missingType = ref(null);
+
+// 동일한 점포·날짜의 중복 요청을 공유합니다.
+let historyRequest = null;
+let historyRequestKey = null;
+
+/**
+ * 최근 입력과 변경 이력이 동일한 API를 사용할 때
+ * 진행 중인 요청을 중복 실행하지 않습니다.
+ */
+function fetchHistory(storeId, workDate, force = false) {
+  const key = `${storeId}:${workDate}`;
+
+  if (!force && historyRequest && historyRequestKey === key) {
+    return historyRequest;
+  }
+
+  const request = window.axios.get(
+    '/tillwhite/api/production-management/history',
+    {
+      params: {
+        store_id: storeId,
+        work_date: workDate
+      }
+    }
+  ).then(({ data }) => data.logs || []);
+
+  historyRequest = request;
+  historyRequestKey = key;
+
+  // 완료된 요청은 보관하지 않아 이후 조회 시 최신 기록을 읽습니다.
+  request.finally(() => {
+    if (historyRequest === request) {
+      historyRequest = null;
+      historyRequestKey = null;
+    }
+  }).catch(() => {});
+
+  return request;
+}
+
 const collapsed = ref(new Set());
 const selectedProduct = ref(null);
 const productDetail = ref(null);
@@ -986,6 +1069,38 @@ const closeListRef = ref(null);
 const closePageSize = 10;
 
 const activeRows = computed(() => (props.daily.rows || []).filter((row) => row.is_active));
+
+/**
+ * 일일 생산 현황 응답에 포함된 최근 입력 제품을 표시합니다.
+ *
+ * 별도 API 요청 없이 현재 화면의 제품 데이터에서 찾으므로
+ * 제품별 현황과 최근 입력이 함께 렌더링됩니다.
+ */
+const recentProducts = computed(() => {
+  const rowsById = new Map(
+    activeRows.value.map((row) => [Number(row.id), row])
+  );
+
+  return (props.daily.recent_product_ids || [])
+    .map((id) => rowsById.get(Number(id)))
+    .filter(Boolean)
+    .slice(0, 5);
+});
+
+/**
+ * 최근 입력 제품을 선택하면 기존 검색 기능으로 해당 제품을 찾습니다.
+ * 다른 필터에 가려지지 않도록 필터를 초기화하고 카테고리를 펼칩니다.
+ */
+function selectRecentProduct(row) {
+  search.value = row.name;
+  filter.value = 'all';
+  missingType.value = null;
+
+  const next = new Set(collapsed.value);
+  next.delete(row.category_name);
+  collapsed.value = next;
+}
+
 // 마감 최종확인은 미확인 제품을 먼저 보여주고 페이지당 10개로 고정합니다.
 const closeRows = computed(() => {
   const rows = closePreview.value?.daily?.rows || [];
@@ -1849,20 +1964,103 @@ function historyActionLabel(action) {
   }[action] || '변경';
 }
 
+/**
+ * 변경 이력의 표시용 설명을 반환합니다.
+ *
+ * 서버에서 제공하는 표시용 설명을 우선 사용하며,
+ * 기존 감사 로그의 원본 설명은 변경하지 않습니다.
+ *
+ * 등록·수정·삭제 등의 작업 유형은 별도 칩에서 표시합니다.
+ */
+function historyDescription(log) {
+  return log.display_description
+    || log.description
+    || '업무 기록 변경';
+}
+
+/**
+ * 변경 이력에 저장된 실제 수량을 표시합니다.
+ *
+ * - 생산 등록·삭제: 해당 시점의 수량을 표시합니다.
+ * - 생산 수정: 수정 전후 수량을 구분합니다.
+ * - 로스·폐기·이월: 서버 감사 로그의 수량을 사용합니다.
+ * - 수량이 기록되지 않았다면 임의로 추측하지 않습니다.
+ */
+function historyQuantityText(log) {
+  const oldValues = log.old_values || {};
+  const newValues = log.new_values || {};
+
+  // 감사 로그에 기록된 수량만 사용합니다.
+  const readQuantity = (values) => {
+    const quantity = values.quantity ?? values.qty;
+
+    return quantity == null ? null : Number(quantity);
+  };
+
+  const oldQuantity = readQuantity(oldValues);
+  const newQuantity = readQuantity(newValues);
+
+  // 생산 기록은 생성·수정·삭제를 구분합니다.
+  if (log.target_type === 'App\\Models\\ProductionBatch') {
+    if (log.action === 'update') {
+      if (oldQuantity !== null && newQuantity !== null) {
+        return `생산 ${oldQuantity}개 → ${newQuantity}개`;
+      }
+    }
+
+    const quantity = newQuantity ?? oldQuantity;
+
+    return quantity === null ? '' : `생산 ${quantity}개`;
+  }
+
+  // 재고 처리 유형은 감사 로그에 저장된 type 값을 기준으로 판단합니다.
+  if (log.target_type === 'App\\Models\\Product') {
+    const type = newValues.type ?? oldValues.type;
+
+    const labels = {
+      loss: '로스',
+      waste: '폐기',
+      carryover: '이월',
+      other_outflow: '기타 출고'
+    };
+
+    const label = labels[type];
+
+    if (!label) {
+      return '';
+    }
+
+    if (
+      log.action === 'update' &&
+      oldQuantity !== null &&
+      newQuantity !== null &&
+      oldQuantity !== newQuantity
+    ) {
+      return `${label} ${oldQuantity}개 → ${newQuantity}개`;
+    }
+
+    const quantity = newQuantity ?? oldQuantity;
+
+    return quantity === null ? '' : `${label} ${quantity}개`;
+  }
+
+  return '';
+}
+
 // 선택 날짜의 변경 이력을 불러와 다이얼로그를 엽니다.
 async function openHistory() {
-  try {
-    const { data } = await window.axios.get(
-      '/tillwhite/api/production-management/history',
-      {
-        params: {
-          store_id: props.storeId,
-          work_date: props.workDate
-        }
-      }
-    );
+  const storeId = props.storeId;
+  const workDate = props.workDate;
 
-    historyLogs.value = data.logs || [];
+  try {
+    const logs = await fetchHistory(storeId, workDate);
+
+    // 요청 중 날짜나 점포가 바뀌었다면 이전 결과를 표시하지 않습니다.
+    if (storeId !== props.storeId || workDate !== props.workDate) {
+      return;
+    }
+
+    historyLogs.value = logs;
     historyPage.value = 1;
     historyOpen.value = true;
   } catch (error) {
@@ -2013,6 +2211,13 @@ async function closeDay() {
 </script>
 
 <style scoped>
+/* 변경 이력의 수량은 제목과 작업자 정보 사이에 표시합니다. */
+.history-quantity {
+  margin-top: 5px;
+  font-size: .74rem;
+  color: rgba(var(--v-theme-on-surface), .72);
+}
+
 .daily-page {
   display: flex;
   flex-direction: column;
@@ -2413,6 +2618,7 @@ async function closeDay() {
   font-weight: 500;
   text-align: left;
   cursor: pointer;
+  transform: translateX(-5px);
 }
 
 .table-value {
@@ -3003,6 +3209,55 @@ async function closeDay() {
   font-weight: 650;
 }
 
+/* 최근 입력 제품은 기존 검색 및 필터와 독립된 보조 탐색 영역입니다. */
+.recent-products {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: -4px 0 12px;
+}
+
+.recent-products-label {
+  flex-shrink: 0;
+  padding-top: 5px;
+  font-size: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+.recent-products-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.recent-product-button {
+  max-width: 100%;
+  padding: 4px 9px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  color: rgb(var(--v-theme-on-surface));
+  overflow-wrap: anywhere;
+}
+
+.recent-product-button:hover {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
+@media (max-width: 600px) {
+  .recent-products {
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .recent-products-label {
+    padding-top: 0;
+  }
+}
+
 @media (max-width: 760px) {
   .daily-section {
     padding: 14px 0;
@@ -3104,6 +3359,7 @@ async function closeDay() {
   background: transparent;
   color: rgba(var(--v-theme-on-surface), 0.55);
   cursor: pointer;
+  transform: translateX(-6px);
 }
 
 .carryover-value span {

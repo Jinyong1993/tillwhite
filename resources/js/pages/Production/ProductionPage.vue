@@ -29,7 +29,7 @@
         v-if="loadError && !ready"
         :message="loadError"
         :loading="loading"
-        @retry="loadPage({ force: true })"
+        @retry="retryLoadPage"
       />
 
       <div v-if="ready">
@@ -129,7 +129,13 @@ import {
     toLocalDateString,
 } from '../../utils/localDate';
 const router = useRouter();
-const { completePageLoading, cancelLoading } = useAppLoading();
+
+const {
+  beginNavigationLoading,
+  completePageLoading,
+  cancelLoading,
+} = useAppLoading();
+
 const { clear } = useSession();
 
 const appShellRef = ref(null);
@@ -160,16 +166,48 @@ function cacheKey(date, targetStoreId) {
   return `${targetStoreId || 'auto'}:${date}`;
 }
 
-// API 오류를 사용자가 이해할 수 있는 공통 조회 메시지로 변환합니다.
+/**
+ * 서버 내부 오류 정보가 사용자에게 노출되지 않도록
+ * 안전한 안내 문구만 반환합니다.
+ */
 function getLoadErrorMessage(error) {
-  if (error.code === 'ECONNABORTED') {
+  if (error?.code === 'ECONNABORTED') {
     return '응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.';
   }
 
-  return error.response?.data?.message
-    || (error.response || error.request
-      ? '생산·폐기 정보를 불러오지 못했습니다. 다시 시도해주세요.'
-      : error.message || '생산·폐기 정보를 불러오지 못했습니다.');
+  return '생산·폐기 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.';
+}
+
+/**
+ * 조회 실패 후 다시 시도할 때 실행합니다.
+ *
+ * 기존 전체 화면 로딩 오버레이를 표시한 뒤
+ * 서버에서 데이터를 다시 조회합니다.
+ *
+ * 재조회가 성공하거나 실패하더라도
+ * 오버레이를 정상적으로 종료합니다.
+ *
+ * 다른 화면으로 이동하여 컴포넌트가 해제된 경우에는
+ * 해당 화면의 로딩 종료 처리를 실행하지 않습니다.
+ */
+async function retryLoadPage() {
+  // 이미 조회 중이거나 화면을 떠난 상태에서는 재요청하지 않습니다.
+  if (loading.value || disposed) {
+    return;
+  }
+
+  // 기존 공통 전체 화면 오버레이를 시작합니다.
+  beginNavigationLoading();
+
+  try {
+    // 기존 재조회 기능을 그대로 사용합니다.
+    await loadPage({ force: true });
+  } finally {
+    // 현재 화면이 유지되는 경우에만 공통 로딩을 종료합니다.
+    if (!disposed) {
+      await completePageLoading();
+    }
+  }
 }
 
 // 선택 날짜의 옵션과 일일 데이터를 조회합니다. 이미 확인한 날짜는 캐시를 우선 사용합니다.
