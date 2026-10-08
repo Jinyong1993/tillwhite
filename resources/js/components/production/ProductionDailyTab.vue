@@ -2143,9 +2143,9 @@ async function closeDay() {
   max-width: 360px;
 }
 
-/* 제품별 현황은 검색과 테이블을 포함한 하나의 작업 섹션입니다. */
+/* 제품별 현황의 외곽 테두리만 제거하고 기존 여백을 유지합니다. */
 .product-section-framed {
-  border: 1px solid rgba(var(--v-theme-on-surface), .13);
+  border: none;
   border-radius: 12px;
   padding: 16px;
 }
