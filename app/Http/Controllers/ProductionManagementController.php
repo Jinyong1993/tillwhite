@@ -1179,7 +1179,15 @@ class ProductionManagementController extends Controller
                 'integer',
                 'min:0',
             ],
+            /**
+             * 이월 수량이 1개 이상이면 재고 출처를 반드시 선택해야 합니다.
+             * 이월 수량이 0개인 경우에는 출처 없이도 저장할 수 있습니다.
+             */
             'carryover_source' => [
+                Rule::requiredIf(
+                    fn () => $request->input('type') === 'carryover'
+                        && (int) $request->input('quantity', 0) > 0
+                ),
                 'nullable',
                 Rule::in(['today', 'incoming']),
             ],
@@ -3047,6 +3055,9 @@ class ProductionManagementController extends Controller
     /**
      * 다음 날 이월 수량을 원 생산일별 stock lot에 나눠 기록합니다.
      * 한 제품에 당일 생산과 여러 날짜의 이월 재고가 섞여 있어도 원 생산일 연결을 유지합니다.
+     *
+     * 사용자가 선택한 재고 출처에서만 이월 수량을 배정합니다.
+     * 선택한 출처의 재고가 부족하더라도 다른 출처로 자동 대체하지 않습니다.
      */
     private function replaceCarryover(int $storeId, int $productId, string $date, int $quantity, string $source, int $userId): void
     {
@@ -3063,42 +3074,76 @@ class ProductionManagementController extends Controller
                 ->whereDate('work_date', Carbon::parse($date)->addDay())
                 ->where('movement_type', 'carryover_in')
                 ->delete();
+
             $movement->delete();
         }
 
         // 이월 수량을 0으로 바꾸더라도 다음 날 이미 사용한 재고를 검증해야 합니다.
         // 기존 출처는 삭제 전 기록에서 보존하고, 새 출처는 아래 배정 과정에서 추가합니다.
-        $affectedLotIds = $existing->pluck('stock_lot_id')->map(fn ($id) => (int) $id)->all();
+        $affectedLotIds = $existing
+            ->pluck('stock_lot_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
 
         if ($quantity === 0) {
-            $this->assertNextDayCarryoverIntegrity($storeId, $productId, $date, $affectedLotIds);
+            $this->assertNextDayCarryoverIntegrity(
+                $storeId,
+                $productId,
+                $date,
+                $affectedLotIds
+            );
+
             return;
         }
 
+        // 사용자가 선택한 이월 출처를 실제 stock lot의 출처로 변환합니다.
+        // today: 오늘 생산분 / incoming: 기존 이월분
+        $selectedSource = $source === 'incoming' ? 'carryover' : 'today';
+
+        // 기존 이월 기록을 제거한 후 최신 잔여 수량을 다시 계산합니다.
+        // 폐기·로스·기타 출고 등 이미 처리된 수량을 반영한 값을 사용합니다.
         $daily = $this->dailyService->build($storeId, $date);
-        $row = collect($daily['rows'])->firstWhere('id', $productId);
+
+        $row = collect($daily['rows'])
+            ->firstWhere('id', $productId);
+
+        abort_unless(
+            $row,
+            422,
+            '선택한 제품의 생산 현황을 확인할 수 없습니다.'
+        );
+
+        // 선택한 출처의 재고만 이월 대상으로 사용합니다.
+        // 다른 출처에 재고가 남아 있어도 자동으로 대체하지 않습니다.
         $stockSources = collect($row['stock_sources'] ?? [])
-            ->filter(fn (array $item) => (int) ($item['remaining_quantity'] ?? 0) > 0)
-            ->sortBy(function (array $item) use ($source) {
-                $preferred = $source === 'incoming' ? 'carryover' : 'today';
-                return sprintf(
-                    '%d|%s',
-                    $item['source'] === $preferred ? 0 : 1,
-                    $item['origin_production_date'],
-                );
-            })
+            ->filter(fn (array $item) => (
+                ($item['source'] ?? null) === $selectedSource
+                && (int) ($item['remaining_quantity'] ?? 0) > 0
+            ))
+            ->sortBy('origin_production_date')
             ->values();
 
+        // 선택한 출처의 잔여 수량만 합산합니다.
         $available = (int) $stockSources->sum('remaining_quantity');
-        abort_if($quantity > $available, 422, "이월할 수 있는 재고는 {$available}개입니다.");
+
+        abort_if(
+            $quantity > $available,
+            422,
+            "선택한 재고의 이월 가능 수량은 {$available}개입니다."
+        );
 
         $remaining = $quantity;
+
         foreach ($stockSources as $stockSource) {
             if ($remaining <= 0) {
                 break;
             }
 
-            $allocated = min($remaining, (int) $stockSource['remaining_quantity']);
+            $allocated = min(
+                $remaining,
+                (int) $stockSource['remaining_quantity']
+            );
+
             $movementData = [
                 'stock_lot_id' => (int) $stockSource['stock_lot_id'],
                 'store_id' => $storeId,
@@ -3112,16 +3157,24 @@ class ProductionManagementController extends Controller
                 'work_date' => $date,
                 'movement_type' => 'carryover_out',
             ]);
+
             ProductStockMovement::create([
                 ...$movementData,
                 'work_date' => Carbon::parse($date)->addDay()->toDateString(),
                 'movement_type' => 'carryover_in',
             ]);
+
             $remaining -= $allocated;
             $affectedLotIds[] = (int) $stockSource['stock_lot_id'];
         }
 
-        $this->assertNextDayCarryoverIntegrity($storeId, $productId, $date, $affectedLotIds);
+        // 다음 날 이미 처리한 이월 재고와 충돌하는지 기존 방식으로 검사합니다.
+        $this->assertNextDayCarryoverIntegrity(
+            $storeId,
+            $productId,
+            $date,
+            $affectedLotIds
+        );
     }
 
     /**

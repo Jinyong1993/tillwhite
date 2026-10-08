@@ -758,11 +758,17 @@ class ProductionDailyService
             // 실제 차감 차이를 보존하고 화면용 잔여 수량만 0 이상으로 제한합니다.
             $unallocated = $baseQuantity - $loss - $waste - $outflow - $carryover;
 
+            /**
+             * 기존 재고 정보와 잔여 수량 계산은 유지합니다.
+             * 현재 날짜에 해당 재고에서 이월한 수량을 추가로 전달하여
+             * 기존 이월 기록을 수정할 때 정확한 출처별 수량을 복원합니다.
+             */
             return [
                 'stock_lot_id' => $lot->id,
                 'source' => $originDate === $date ? 'today' : 'carryover',
                 'origin_production_date' => $originDate,
                 'base_quantity' => $baseQuantity,
+                'carryover_out_quantity' => $carryover,
                 'unallocated_quantity' => $unallocated,
                 'remaining_quantity' => max(0, $unallocated),
             ];

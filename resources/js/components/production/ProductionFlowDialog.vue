@@ -93,10 +93,10 @@
             variant="outlined"
             density="compact"
             :min="0"
-            :max="remainingAvailable"
+            :max="Math.min(remainingAvailable, carryoverSourceAvailable)"
           />
           <v-select
-            v-if="carryoverQuantity > 0 && product?.carryover_in > 0"
+            v-if="product?.carryover_in > 0"
             v-model="carryoverSource"
             :items="carryoverSources"
             item-title="title"
@@ -128,12 +128,27 @@
       </v-card-text>
 
       <v-card-actions class="app-dialog-footer px-4 pb-4">
-        <v-btn variant="text" :disabled="saving" @click="requestClose">닫기</v-btn>
+        <v-btn 
+          variant="text" 
+          :disabled="saving" 
+          @click="requestClose"
+        >
+          닫기
+        </v-btn>
         <v-spacer />
         <v-btn
           variant="flat"
           :loading="saving"
-          :disabled="saving || remainingAvailable < currentQuantity || sourceOverages.length || invalidSourceRows.length > 0"
+          :disabled="
+            saving
+            || remainingAvailable < currentQuantity
+            || sourceOverages.length > 0
+            || invalidSourceRows.length > 0
+            || (
+              type === 'carryover'
+              && currentQuantity > carryoverSourceAvailable
+            )
+          "
           @click="askSave"
         >
           저장
@@ -196,6 +211,9 @@ const carryoverQuantity = ref(0);
 const carryoverSource = ref('today');
 const note = ref('');
 const initialReasonSnapshot = ref('[]');
+
+// 다이얼로그를 열었을 때의 이월 출처를 보관합니다.
+const initialCarryoverSource = ref('today');
 
 const carryoverSources = [
   { value: 'today', title: '오늘 생산분' },
@@ -407,6 +425,64 @@ const otherAllocated = computed(() => otherAllocationDetails.value
   .reduce((sum, item) => sum + item.quantity, 0));
 
 const remainingAvailable = computed(() => Math.max(0, available.value - otherAllocated.value));
+
+/**
+ * 선택한 재고 출처에서 이월할 수 있는 수량을 계산합니다.
+ *
+ * 오늘 생산분과 기존 이월분을 분리하여 계산하며,
+ * 이미 저장된 이월 수량은 해당 출처에만 복원합니다.
+ *
+ * 다른 출처의 재고를 자동으로 사용하지 않습니다.
+ */
+const carryoverSourceAvailable = computed(() => {
+  if (props.type !== 'carryover') {
+    return 0;
+  }
+
+  const selectedSource = carryoverSource.value === 'incoming'
+    ? 'carryover'
+    : 'today';
+
+  return (props.product?.stock_sources || [])
+    .filter((source) => source.source === selectedSource)
+    .reduce((sum, source) => {
+      const remaining = Number(
+        source.unallocated_quantity ?? source.remaining_quantity ?? 0
+      );
+
+      const existingCarryover = Number(
+        source.carryover_out_quantity || 0
+      );
+
+      return sum + Math.max(0, remaining + existingCarryover);
+    }, 0);
+});
+
+// 기존 이월 기록이 두 재고 출처에 나뉘어 있는지 확인합니다.
+const hasMixedCarryoverSources = computed(() => {
+  if (props.type !== 'carryover') {
+    return false;
+  }
+
+  const sources = props.product?.stock_sources || [];
+
+  const todayQuantity = sources
+    .filter((source) => source.source === 'today')
+    .reduce(
+      (sum, source) => sum + Number(source.carryover_out_quantity || 0),
+      0
+    );
+
+  const incomingQuantity = sources
+    .filter((source) => source.source === 'carryover')
+    .reduce(
+      (sum, source) => sum + Number(source.carryover_out_quantity || 0),
+      0
+    );
+
+  return todayQuantity > 0 && incomingQuantity > 0;
+});
+
 const currentQuantity = computed(() => (
   props.type === 'carryover'
     ? Number(carryoverQuantity.value || 0)
@@ -636,17 +712,56 @@ function allocateReasonRows(rows) {
   return allocatedRows;
 }
 
-// 다이얼로그가 열릴 때 선택 기능에 필요한 입력값만 초기화합니다.
+
+/**
+ * 다이얼로그가 열릴 때 기존 기록을 복원합니다.
+ *
+ * 이월 기록이 있으면 실제 재고별 이월 출고 수량을 확인하여
+ * 기존에 사용한 재고 출처를 우선 선택합니다.
+ *
+ * 저장된 이월 기록이 없으면 오늘 생산분을 기본 선택합니다.
+ */
 watch(() => props.modelValue, (value) => {
   if (!value) return;
 
   reasonRows.value = isReasonMode.value
     ? (savedDetails.value.length ? savedDetails.value.map(savedReasonRow) : [emptyReason()])
     : [];
+
   carryoverQuantity.value = Number(props.product?.carryover_out || 0);
-  carryoverSource.value = props.product?.carryover_in > 0 ? 'incoming' : 'today';
+
+  const stockSources = props.product?.stock_sources || [];
+
+  const existingTodayCarryover = stockSources
+    .filter((source) => source.source === 'today')
+    .reduce(
+      (sum, source) => sum + Number(source.carryover_out_quantity || 0),
+      0
+    );
+
+  const existingIncomingCarryover = stockSources
+    .filter((source) => source.source === 'carryover')
+    .reduce(
+      (sum, source) => sum + Number(source.carryover_out_quantity || 0),
+      0
+    );
+
+  /**
+   * 기존 이월 기록의 출처를 복원합니다.
+   * 오늘 생산분과 기존 이월분이 모두 사용된 경우에는
+   * 출처를 임의로 합치거나 재배정하지 않습니다.
+   */
+  if (existingTodayCarryover > 0 && existingIncomingCarryover === 0) {
+    carryoverSource.value = 'today';
+  } else if (existingIncomingCarryover > 0 && existingTodayCarryover === 0) {
+    carryoverSource.value = 'incoming';
+  } else {
+    carryoverSource.value = 'today';
+  }
+
   note.value = '';
   initialReasonSnapshot.value = JSON.stringify(reasonRows.value);
+  initialCarryoverSource.value = carryoverSource.value;
 });
 
 // 로스·폐기가 없을 때 0개 확인을 한 번의 행동으로 입력합니다.
@@ -658,10 +773,16 @@ function setZero() {
 // 사용자가 실제로 입력한 내용이 있는지 확인합니다.
 function isDirty() {
   if (props.type === 'carryover') {
-    return carryoverQuantity.value !== Number(props.product?.carryover_out || 0) || Boolean(note.value);
+    return carryoverQuantity.value !== Number(props.product?.carryover_out || 0)
+      || (
+        Number(carryoverQuantity.value || 0) > 0
+        && carryoverSource.value !== initialCarryoverSource.value
+      )
+      || Boolean(note.value);
   }
 
-  return JSON.stringify(reasonRows.value) !== initialReasonSnapshot.value || Boolean(note.value);
+  return JSON.stringify(reasonRows.value) !== initialReasonSnapshot.value
+    || Boolean(note.value);
 }
 
 // 작성 중인 값이 있으면 확인창을 거친 뒤 닫습니다.
@@ -709,8 +830,38 @@ function askSave() {
     return;
   }
 
+  /**
+   * 기존 이월 기록이 두 출처에 나뉘어 있는 경우
+   * 단일 출처로 잘못 덮어쓰는 것을 방지합니다.
+   */
+  if (hasMixedCarryoverSources.value) {
+    emit(
+      'error',
+      '기존 이월 기록이 오늘 생산분과 기존 이월분에 나뉘어 있어 이 화면에서 수정할 수 없습니다.'
+    );
+    return;
+  }
+
   if (currentQuantity.value > remainingAvailable.value) {
     emit('error', '입력한 수량이 남은 수량보다 많습니다.');
+    return;
+  }
+
+  /**
+   * 이월은 사용자가 선택한 재고 출처의 수량만 검사합니다.
+   * 선택한 출처의 재고가 부족하더라도
+   * 다른 출처의 재고로 자동 대체하지 않습니다.
+   */
+  if (
+    props.type === 'carryover'
+    && currentQuantity.value > carryoverSourceAvailable.value
+  ) {
+    emit(
+      'error',
+      carryoverSource.value === 'incoming'
+        ? '기존 이월분의 남은 수량이 부족합니다.'
+        : '오늘 생산분의 남은 수량이 부족합니다.'
+    );
     return;
   }
 
