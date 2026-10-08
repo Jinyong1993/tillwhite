@@ -43,8 +43,44 @@
           <strong>수정 중인 기록 · {{ editingBatch.quantity }}개</strong>
           <div>기존 값을 변경한 후 수정 내용을 저장해 주세요.</div>
         </v-alert>
-      <div class="production-dialog-section-title">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
-      <div class="production-dialog-guide">오늘 생산한 수량을 입력해 주세요.</div>
+      <div class="production-dialog-section-title">
+        {{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}
+      </div>
+
+      <div class="production-dialog-guide">
+        오늘 생산한 수량을 입력해 주세요.
+      </div>
+
+      <!-- 전날 생산 기록을 참고하는 별도 영역 -->
+      <section v-if="!editingBatch" class="previous-production-reference">
+        <div class="previous-production-reference__content">
+          <span class="previous-production-reference__label">
+            전날 생산량 참고
+          </span>
+
+          <strong v-if="previousProductionLoading">
+            조회 중...
+          </strong>
+
+          <strong v-else-if="previousProduction !== null">
+            {{ previousProduction }}개
+          </strong>
+
+          <strong v-else>
+            기록 없음
+          </strong>
+        </div>
+
+        <v-btn
+          size="small"
+          variant="outlined"
+          :disabled="previousProductionLoading || previousProduction === null || saving"
+          @click="applyPreviousProduction"
+        >
+          불러오기
+        </v-btn>
+      </section>
+
       <v-number-input
           v-model="form.quantity"
           label="생산 수량"
@@ -191,6 +227,8 @@ import {
     watch,
 } from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
+import { addLocalDays } from '../../utils/localDate';
+
 const props = defineProps({
     modelValue: Boolean,
     product: Object,
@@ -207,6 +245,87 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:modelValue', 'saved', 'error']);
 const saving = ref(false);
+
+// 전날 생산량 참고 영역의 조회 상태와 결과입니다.
+// null은 기록이 없는 상태이며, 생산 0개와 구분합니다.
+const previousProduction = ref(null);
+const previousProductionLoading = ref(false);
+
+// 날짜나 제품이 바뀌는 동안 이전 요청 결과가 섞이지 않도록 구분합니다.
+let previousProductionRequestId = 0;
+
+/**
+ * 선택한 제품의 전날 생산 기록을 조회합니다.
+ * 기존 일일 조회 API를 재사용하며 생산 기록은 수정하지 않습니다.
+ */
+async function loadPreviousProduction() {
+  const requestId = ++previousProductionRequestId;
+
+  previousProduction.value = null;
+
+  if (!props.storeId || !props.workDate || !props.product?.id) {
+    previousProductionLoading.value = false;
+    return;
+  }
+
+  previousProductionLoading.value = true;
+
+  try {
+    const previousDate = addLocalDays(props.workDate, -1);
+
+    const response = await window.axios.get(
+      '/tillwhite/api/production-management/daily',
+      {
+        params: {
+          date: previousDate,
+          store_id: props.storeId,
+        },
+      }
+    );
+
+    if (requestId !== previousProductionRequestId) return;
+
+    const previousRow = (response.data?.rows || []).find(
+      (row) => Number(row.id) === Number(props.product.id)
+    );
+
+    // 전날 생산 여부가 확인된 제품만 참고 수량으로 표시합니다.
+    if (previousRow?.production_confirmed) {
+      previousProduction.value = Number(previousRow.production);
+    }
+  } catch (error) {
+    if (requestId !== previousProductionRequestId) return;
+
+    emit(
+      'error',
+      error.response?.data?.message ||
+        '전날 생산량을 조회하지 못했습니다.'
+    );
+  } finally {
+    if (requestId === previousProductionRequestId) {
+      previousProductionLoading.value = false;
+    }
+  }
+}
+
+/**
+ * 전날 생산량을 신규 생산 기록의 입력값에만 반영합니다.
+ * 생산 0개는 기존의 별도 확인 절차를 유지합니다.
+ */
+function applyPreviousProduction() {
+  if (editingBatch.value || previousProduction.value === null) return;
+
+  if (previousProduction.value === 0) {
+    emit(
+      'error',
+      '전날 생산량이 0개입니다. 생산 0개 확인 기능을 이용해 주세요.'
+    );
+    return;
+  }
+
+  form.quantity = previousProduction.value;
+}
+
 const saveConfirmOpen = ref(false);
 const workerError = ref('');
 const editorSection = ref(null);
@@ -261,10 +380,29 @@ const canConfirmZero = computed(() => (
     Boolean(zeroReason.value)
     && (zeroReason.value !== 'other' || Boolean(zeroReasonText.value.trim()))
 ));
+
 // 다이얼로그가 열릴 때 이전 제품의 입력값이 남지 않도록 초기화합니다.
 watch(() => props.modelValue, (value) => {
-  if (value) reset();
+  if (value) {
+    reset();
+    loadPreviousProduction();
+  } else {
+    // 닫힌 다이얼로그의 이전 요청 결과를 무효화합니다.
+    previousProductionRequestId++;
+    previousProductionLoading.value = false;
+  }
 });
+
+// 열린 상태에서 제품이나 날짜가 변경되는 경우에도 최신 기록을 조회합니다.
+watch(
+  () => [props.product?.id, props.workDate, props.storeId],
+  () => {
+    if (props.modelValue) {
+      loadPreviousProduction();
+    }
+  }
+);
+
 // 현재 입력값을 새 생산 기록의 기본값으로 되돌립니다.
 function reset() {
   editingBatch.value = null;
@@ -421,6 +559,41 @@ async function save() {
 </script>
 
 <style scoped>
+/* 전날 생산량을 별도 참고 영역으로 표시합니다. */
+.previous-production-reference {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.13);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+}
+
+.previous-production-reference__content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.previous-production-reference__label {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+.previous-production-reference__content strong {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.previous-production-reference .v-btn {
+  flex-shrink: 0;
+}
+
 .production-record-section { margin-bottom: 12px; }
 .production-record-card { border: 1px solid rgba(var(--v-theme-on-surface), .13); border-radius: 10px; padding: 12px; margin-top: 9px; }
 .production-record-card.record-editing { border-color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), .06); }
