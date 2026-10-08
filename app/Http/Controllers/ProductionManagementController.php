@@ -191,9 +191,10 @@ class ProductionManagementController extends Controller
     {
         $user = $this->user($request);
         $this->accessService->requirePermission($user, 'production.update');
-        $data = $request->validate(['quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'note' => ['nullable', 'string', 'max:1000'], 'lock_version' => ['required', 'integer', 'min:1']]);
+        $data = $request->validate(['quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'note' => ['nullable', 'string', 'max:1000'], 'lock_version' => ['required', 'integer', 'min:1'], 'workers' => ['required', 'array', 'min:1'], 'workers.*.user_id' => ['required', 'integer', 'distinct', 'exists:users,id']]);
         $this->accessService->assertStoreDepartment($user, (int) $batch->store_id);
         $this->assertDateUnlocked((int) $batch->store_id, $batch->work_date->toDateString());
+        $this->assertWorkersScheduled((int) $batch->store_id, $batch->work_date->toDateString(), $data['workers']);
         abort_unless((int) $batch->lock_version === (int) $data['lock_version'], 409, '다른 사용자가 먼저 이 생산 기록을 변경했습니다. 최신 내용을 다시 확인해주세요.');
         $lotIds = ProductStockLot::query()->where('production_batch_id', $batch->id)->pluck('id');
         $hasDownstreamFlow = ProductStockMovement::query()->whereIn('stock_lot_id', $lotIds)->exists()
@@ -208,6 +209,16 @@ class ProductionManagementController extends Controller
         );
         $before = $batch->toArray();
         DB::transaction(function () use ($batch, $data, $user) {
+            DB::table('production_batch_workers')->where('production_batch_id', $batch->id)->delete();
+            foreach ($data['workers'] as $worker) {
+                DB::table('production_batch_workers')->insert([
+                    'production_batch_id' => $batch->id,
+                    'user_id' => $worker['user_id'],
+                    'process_type' => 'all',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
             $batch->update(['quantity' => $data['quantity'], 'note' => $data['note'] ?? null, 'updated_by' => $user->id, 'lock_version' => $batch->lock_version + 1]);
             ProductStockLot::query()->where('production_batch_id', $batch->id)->update(['initial_quantity' => $data['quantity']]);
         });
@@ -1171,7 +1182,7 @@ class ProductionManagementController extends Controller
     // 생산 배치 요청을 검증합니다.
     private function validateBatch(Request $request): array
     {
-        return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['array'], 'workers.*.user_id' => ['required', 'integer', 'exists:users,id'], 'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
+        return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['required', 'array', 'min:1'], 'workers.*.user_id' => ['required', 'integer', 'exists:users,id'], 'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
     }
 
     /**

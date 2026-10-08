@@ -78,10 +78,10 @@
 
   <v-divider />
 
-  <section class="daily-section product-section">
+  <section class="daily-section product-section product-section-framed">
     <div class="section-heading product-heading">
       <div>
-        <h3>제품별 현황</h3>
+        <h3>제품별 현황 <span class="product-count-heading">{{ activeRows.length }}개</span></h3>
         <p>{{ progressText }}</p>
         <div class="work-progress" aria-label="제품 기록 진행률"><span :style="{ width: `${progressPercent}%` }" /></div>
         <div v-if="missingSummaryText" class="missing-summary">{{ missingSummaryText }}</div>
@@ -99,11 +99,11 @@
         </div>
       </div>
       <div v-if="canMutate" class="product-heading-actions">
-        <v-btn v-if="nextMissingRow" size="small" variant="outlined" class="missing-action-button" prepend-icon="mdi-skip-next" @click="openNextMissing">다음 미확인 제품</v-btn>
+        <v-btn v-if="nextMissingRow" size="small" variant="outlined" class="missing-action-button" prepend-icon="mdi-skip-next" @click="openNextMissing">미확인 제품</v-btn>
         <div v-else class="missing-complete-state">모든 제품 확인 완료</div>
       <v-menu location="bottom end">
         <template #activator="{ props: menuProps }">
-          <v-btn v-bind="menuProps" size="small" variant="outlined" class="missing-action-button" prepend-icon="mdi-check-all" :disabled="!hasMissingItems">미확인 일괄 확인</v-btn>
+          <v-btn v-bind="menuProps" size="small" variant="outlined" class="missing-action-button" prepend-icon="mdi-check-all" :disabled="!hasMissingItems">미확인 일괄확인</v-btn>
         </template>
         <v-list
             class="bulk-menu"
@@ -193,7 +193,7 @@
                 <th>이월</th>
                 <th>로스</th>
                 <th>폐기</th>
-                <th>폐기율 <button type="button" class="waste-rate-help" aria-label="폐기율 계산 기준 보기" @click.stop="wasteGuideOpen = true">ⓘ</button></th>
+                <th><button type="button" class="waste-rate-header-button" @click.stop="wasteGuideOpen = true">폐기율</button></th>
               </tr>
             </thead>
             <tbody>
@@ -201,7 +201,6 @@
                 <tr :class="{ 'row-inactive': !row.is_active, 'row-needs-check': !row.complete && row.is_active }">
                   <td>
                     <div class="product-name-cell">
-                      <button type="button" class="product-name" :title="row.name" @click="openProduct(row)">{{ row.name }}</button>
                       <button
                           type="button"
                           class="row-detail-toggle"
@@ -210,6 +209,7 @@
                       >
                         <v-icon :icon="isRowExpanded(row.id) ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="16" />
                       </button>
+                      <button type="button" class="product-name" :title="row.name" @click="toggleRowDetail(row.id)">{{ row.name }}</button>
                     </div>
                   </td>
                   <td><button type="button" class="table-value production-value" :class="{ pending: !row.production_confirmed }" @click="openProduction(row)">{{ row.production_confirmed ? row.production : '-' }}</button></td>
@@ -225,7 +225,7 @@
                   </td>
                   <td><button type="button" class="table-value" :class="{ pending: !row.loss_confirmed }" @click="openFlow(row, 'loss')">{{ row.loss_confirmed ? row.loss : '-' }}</button></td>
                   <td><button type="button" class="table-value waste-value" :class="{ pending: !row.waste_confirmed }" @click="openFlow(row, 'waste')">{{ row.waste_confirmed ? row.waste : '-' }}</button></td>
-                  <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }} <span aria-hidden="true">›</span></button></td>
+                  <td><button type="button" class="table-value rate-value" @click="openWasteRate(row)">{{ row.waste_rate === null ? '-' : `${row.waste_rate}%` }}</button></td>
                 </tr>
                 <tr v-if="isRowExpanded(row.id)" class="product-detail-row">
                   <td colspan="6">
@@ -233,11 +233,11 @@
                       <div><span>이월 재고</span><strong>{{ row.carryover_in }}개</strong></div>
                       <div><span>이월 예정</span><strong>{{ row.carryover_out }}개</strong></div>
                       <div><span>오늘 폐기</span><strong>{{ row.operational_waste }}개</strong></div>
-                      <div><span>귀속 폐기</span><strong>{{ row.attributed_waste }}개</strong></div>
-                      <div class="product-row-flow">
-                        <span>재고 흐름</span>
+                      <div><span>이월 재고 폐기</span><strong>{{ carryoverWaste(row) }}개</strong></div>
+                      <button type="button" class="product-row-flow stock-flow-trigger" @click="openStockFlow(row)">
+                        <span>재고 흐름 · 상세 보기</span>
                         <strong>{{ stockFlowText(row) }}</strong>
-                      </div>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -377,6 +377,30 @@
       <v-card-actions class="app-dialog-footer">
         <v-btn variant="text" @click="detailOpen=false">닫기</v-btn>
       </v-card-actions>
+    </v-card>
+  </v-dialog>
+  <v-dialog v-model="stockFlowOpen" max-width="620" persistent>
+    <v-card class="app-dialog-card" rounded="lg">
+      <v-card-title class="app-dialog-header">재고 흐름 · {{ stockFlowProduct?.name || '-' }}</v-card-title>
+      <v-card-text class="app-dialog-body">
+        <div class="production-dialog-overview">
+          <div><span>오늘 생산</span><strong>{{ stockFlowProduct?.production || 0 }}개</strong></div>
+          <div><span>이월 재고</span><strong>{{ stockFlowProduct?.carryover_in || 0 }}개</strong></div>
+          <div><span>오늘 폐기</span><strong>{{ stockFlowProduct?.operational_waste || 0 }}개</strong></div>
+        </div>
+        <div class="production-dialog-section-title mt-4">오늘의 재고 처리</div>
+        <div v-for="item in stockFlowEvents" :key="item.key" class="stock-flow-event">
+          <div><strong>{{ item.title }}</strong><span>{{ item.quantity }}개</span></div>
+          <small v-if="item.origin">최초 생산일 {{ item.origin }}</small>
+          <small v-if="item.reason">{{ item.reason }}</small>
+        </div>
+        <div v-if="!stockFlowEvents.length" class="production-friendly-empty">
+          <v-icon icon="mdi-clipboard-text-outline" />
+          <span>아직 처리된 재고 기록이 없습니다.</span>
+        </div>
+        <div class="production-dialog-guide mt-4">이월 재고를 폐기한 수량은 오늘 폐기에도 포함됩니다. 생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.</div>
+      </v-card-text>
+      <v-card-actions class="app-dialog-footer"><v-btn variant="text" @click="stockFlowOpen = false">닫기</v-btn></v-card-actions>
     </v-card>
   </v-dialog>
   <v-dialog
@@ -621,6 +645,8 @@ const flowOpen = ref(false);
 const flowType = ref('carryover');
 const detailOpen = ref(false);
 const wasteGuideOpen = ref(false);
+const stockFlowOpen = ref(false);
+const stockFlowProduct = ref(null);
 const detailTitle = ref('');
 const detailMetricKey = ref('production');
 const detailSelectedRow = ref(null);
@@ -740,7 +766,7 @@ const detailEmptyText = computed(() => detailConfirmedCount.value === activeRows
 const metrics = computed(() => [ {
   key:'production', title:'생산', value: props.daily.totals?.production || 0
 }, {
-  key:'carryover', title:'이월', value: `재고 ${props.daily.totals?.carryover || 0} · 예정 ${props.daily.totals?.carryover_out || 0}`
+  key:'carryover', title:'이월', value: `${Number(props.daily.totals?.carryover || 0) + Number(props.daily.totals?.carryover_out || 0)}`
 }, {
   key:'loss', title:'로스', value: props.daily.totals?.loss || 0
 }, {
@@ -754,7 +780,7 @@ const closeMetrics = computed(() => {
   const source = closePreview.value?.daily?.totals || props.daily.totals || {};
   return [
     { key: 'production', title: '생산', value: source.production || 0 },
-    { key: 'carryover', title: '이월', value: `재고 ${source.carryover || 0} · 예정 ${source.carryover_out || 0}` },
+    { key: 'carryover', title: '이월', value: `${Number(source.carryover || 0) + Number(source.carryover_out || 0)}` },
     { key: 'loss', title: '로스', value: source.loss || 0 },
     { key: 'waste', title: '폐기', value: source.waste || 0 },
     { key: 'waste_rate', title: '폐기율', value: source.waste_rate == null ? '-' : `${source.waste_rate}%` },
@@ -837,7 +863,7 @@ const selectedProductMetrics = computed(() => {
     { label: '이월 예정', value: row.carryover_out },
     { label: '로스', value: row.loss },
     { label: '오늘 폐기', value: row.waste },
-    { label: '귀속 폐기', value: row.attributed_waste },
+    { label: '이월 재고 폐기', value: carryoverWaste(row) },
     { label: '폐기율', value: row.waste_rate == null ? '-' : `${row.waste_rate}%` },
   ];
 });
@@ -846,7 +872,7 @@ const selectedProductAnalysis = computed(() => {
   const row = selectedProduct.value;
   if (!row) return '-';
   if (!row.complete) return `확인이 필요한 항목이 있습니다. ${missingReasonText(row)}`;
-  if (row.attributed_waste > 0) return `이 날짜 생산분에 귀속된 폐기 ${row.attributed_waste}개가 반영되어 폐기율은 ${row.waste_rate ?? 0}%입니다.${row.waste > row.attributed_waste ? ` 오늘 실제 폐기는 ${row.waste}개이며 이월 재고 폐기가 포함되어 있습니다.` : ''}`;
+  if (row.attributed_waste > 0) return `이 날짜 생산분의 폐기 ${row.attributed_waste}개가 반영되어 폐기율은 ${row.waste_rate ?? 0}%입니다.${row.waste > row.attributed_waste ? ` 오늘 실제 폐기는 ${row.waste}개이며 이월 재고 폐기가 포함되어 있습니다.` : ''}`;
   if (row.loss > 0) return `로스 ${row.loss}개가 기록되어 있습니다. 사유와 수량을 확인해 주세요.`;
   if (row.carryover_in > 0) return `이월 재고 ${row.carryover_in}개가 있습니다. 원 생산일별 재고를 확인할 수 있습니다.`;
   return '특이사항 없이 필수 기록이 모두 확인되었습니다.';
@@ -866,11 +892,44 @@ function isRowExpanded(productId) {
 }
 
 // 핵심 재고 흐름만 한 문장으로 조립해 표를 넓히지 않고 상세에서 설명합니다.
+// 오늘 실제 폐기 기록 중 최초 생산일이 다른 수량만 이월 재고 폐기로 집계합니다.
+function carryoverWaste(row) {
+  return (row.operational_waste_details || [])
+    .filter(item => item.origin_production_date && item.origin_production_date !== props.workDate)
+    .reduce((total, item) => total + Number(item.quantity || 0), 0);
+}
+
+function openStockFlow(row) {
+  stockFlowProduct.value = row;
+  stockFlowOpen.value = true;
+}
+
+const stockFlowEvents = computed(() => {
+  const row = stockFlowProduct.value;
+  if (!row) return [];
+  const items = [];
+  const add = (title, quantity, origin = null, reason = null) => {
+    if (Number(quantity) > 0) items.push({ key: `${title}-${items.length}`, title, quantity, origin, reason });
+  };
+  add('오늘 생산', row.production);
+  for (const source of row.stock_sources || []) {
+    if (source.origin_production_date !== props.workDate) add('이월 재고', source.incoming_quantity || source.quantity || 0, source.origin_production_date);
+  }
+  for (const detail of row.operational_loss_details || []) add('로스', detail.quantity, detail.origin_production_date, productionReasonLabel(detail));
+  for (const detail of row.operational_waste_details || []) {
+    add(detail.origin_production_date !== props.workDate ? '이월 재고 폐기' : '오늘 생산분 폐기', detail.quantity, detail.origin_production_date, productionReasonLabel(detail));
+  }
+  add('이월 예정', row.carryover_out);
+  return items;
+});
+
 function stockFlowText(row) {
   const parts = [`오늘 생산 ${Number(row.production || 0)}개`];
   if (row.carryover_in) parts.push(`이월 재고 ${row.carryover_in}개`);
   if (row.operational_loss) parts.push(`로스 ${row.operational_loss}개`);
-  if (row.operational_waste) parts.push(`폐기 ${row.operational_waste}개`);
+  const carryover = carryoverWaste(row);
+  if (row.operational_waste > carryover) parts.push(`오늘 생산분 폐기 ${row.operational_waste - carryover}개`);
+  if (carryover) parts.push(`이월 재고 폐기 ${carryover}개`);
   if (row.carryover_out) parts.push(`다음날 이월 ${row.carryover_out}개`);
   return parts.join(' → ');
 }
@@ -1292,16 +1351,31 @@ async function closeDay() {
 .product-search {
     max-width:360px;
 }
+/* 제품별 현황은 검색과 테이블을 포함한 하나의 작업 섹션입니다. */
+.product-section-framed { border: 1px solid rgba(var(--v-theme-on-surface), .13); border-radius: 12px; padding: 16px; }
+.product-section-framed .product-heading { border-bottom: 1px solid rgba(var(--v-theme-on-surface), .11); padding-bottom: 14px; }
+.product-count-heading { font-size: .75rem; font-weight: 500; color: rgba(var(--v-theme-on-surface), .58); margin-left: 5px; }
+.waste-rate-header-button { border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; padding: 0; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.stock-flow-trigger { width: 100%; text-align: left; border: 1px solid rgba(var(--v-theme-on-surface), .12); border-radius: 8px; background: transparent; padding: 8px; cursor: pointer; }
+.stock-flow-trigger span, .stock-flow-trigger strong { display: block; }
+.stock-flow-event { border: 1px solid rgba(var(--v-theme-on-surface), .12); border-radius: 9px; padding: 11px; margin-top: 8px; }
+.stock-flow-event > div { display: flex; justify-content: space-between; gap: 8px; }
+.stock-flow-event small { display: block; color: rgba(var(--v-theme-on-surface), .6); margin-top: 4px; }
+.production-friendly-empty { display: flex; align-items: center; gap: 8px; padding: 14px; color: rgba(var(--v-theme-on-surface), .65); }
 .product-heading-actions {
     display:flex;
     align-items:center;
     justify-content:flex-end;
-    flex-wrap:wrap;
+    flex-wrap:nowrap;
     gap:7px;
+    width:100%;
 }
+.product-heading-actions > .missing-action-button, .product-heading-actions > .v-menu { flex: 1 1 50%; min-width: 0; }
 .missing-action-button {
-    min-height:34px;
+    min-height:48px;
     font-weight:650;
+    width:100%;
+    flex: 1 1 50%;
 }
 .missing-complete-state {
     min-height:34px;

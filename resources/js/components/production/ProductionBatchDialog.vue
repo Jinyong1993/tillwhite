@@ -9,7 +9,7 @@
       class="app-dialog-card production-dialog-card"
   >
     <v-card-title class="app-dialog-header d-flex align-center justify-space-between">
-      <div>생산 - {{ product?.name || '-' }}</div>
+      <div>{{ editingBatch ? '생산 기록 수정' : '생산' }} - {{ product?.name || '-' }}</div>
     </v-card-title>
     <v-card-text class="app-dialog-body">
       <div class="production-dialog-overview">
@@ -18,36 +18,31 @@
         <div><span>확인 상태</span><strong>{{ product?.production_confirmed ? '완료' : '미확인' }}</strong></div>
       </div>
       <div class="production-dialog-guide overview-guide">생산 기록을 확인하고 새 생산량을 추가하거나 기존 기록을 수정할 수 있습니다.</div>
-      <div v-if="product?.batches?.length" class="mb-4">
+      <section class="production-record-section">
         <div class="production-dialog-section-title">오늘 생산 기록</div>
-        <v-list
-            density="compact"
-            border
-            rounded
-        >
-          <v-list-item
-              v-for="batch in product.batches"
-              :key="batch.id"
-              :title="`${batch.quantity}개`"
-              :subtitle="new Date(batch.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })"
-          >
-            <template #append>
-              <v-btn
-                  icon="mdi-pencil-outline"
-                  size="small"
-                  variant="text"
-                  @click="editBatch(batch)"
-              />
-              <v-btn
-                  icon="mdi-delete-outline"
-                  size="small"
-                  variant="text"
-                  @click="askDelete(batch)"
-              />
-            </template>
-          </v-list-item>
-        </v-list>
-      </div>
+        <div v-if="!product?.batches?.length" class="production-friendly-empty">
+          <v-icon icon="mdi-clipboard-text-outline" size="22" />
+          <div><strong>아직 생산 기록이 없습니다.</strong><span>아래에서 첫 생산 기록을 등록해 주세요.</span></div>
+        </div>
+        <div v-for="batch in product?.batches || []" :key="batch.id" class="production-record-card" :class="{ 'record-editing': editingBatch?.id === batch.id }">
+          <div class="production-record-main">
+            <strong>{{ batch.quantity }}개</strong>
+            <span>{{ new Date(batch.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) }}</span>
+          </div>
+          <div class="production-record-workers">작업자: {{ batch.workers?.map(worker => worker.name).join(', ') || '기록 없음' }}</div>
+          <div v-if="batch.note" class="production-record-note">{{ batch.note }}</div>
+          <div class="production-record-actions">
+            <v-btn size="small" variant="text" prepend-icon="mdi-pencil-outline" @click="editBatch(batch)">수정</v-btn>
+            <v-btn size="small" variant="text" prepend-icon="mdi-delete-outline" @click="askDelete(batch)">삭제</v-btn>
+          </div>
+        </div>
+      </section>
+      <v-divider class="my-4" />
+      <div ref="editorSection" class="production-record-editor">
+        <v-alert v-if="editingBatch" type="info" variant="tonal" density="compact" class="mb-3">
+          <strong>수정 중인 기록 · {{ editingBatch.quantity }}개</strong>
+          <div>기존 값을 변경한 후 수정 내용을 저장해 주세요.</div>
+        </v-alert>
       <div class="production-dialog-section-title">{{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}</div>
       <div class="production-dialog-guide">오늘 생산한 수량을 입력해 주세요.</div>
       <v-number-input
@@ -63,13 +58,18 @@
         :items="workers"
         item-title="name"
         item-value="id"
-        label="작업자 · 선택"
+        label="작업자 · 필수"
+        :error-messages="workerError ? [workerError] : []"
+        @update:model-value="workerError = ''"
         variant="outlined"
         multiple
         chips
         clearable
         no-data-text="선택할 수 있는 작업자가 없습니다"
       />
+      <v-divider class="my-3" />
+      <div class="production-dialog-section-title">레시피 변경</div>
+      <div class="production-dialog-guide">레시피와 다르게 작업한 경우 변경 내용을 기록해 주세요.</div>
       <v-checkbox
           v-model="form.recipeDeviated"
           label="레시피 변경"
@@ -82,6 +82,9 @@
           variant="outlined"
           rows="2"
       />
+      <v-divider class="my-3" />
+      <div class="production-dialog-section-title">추천 생산량 참고</div>
+      <div class="production-dialog-guide">추천 정보가 없더라도 참고 여부를 기록할 수 있습니다.</div>
       <v-checkbox
           v-model="form.recommendationReferenced"
           label="추천 생산량 참고"
@@ -108,6 +111,7 @@
           rows="2"
       />
       <div v-if="!product?.recipe" class="recipe-empty"><v-icon icon="mdi-book-open-variant-outline" size="18"/><div><strong>등록된 레시피가 없습니다.</strong><span>레시피가 필요한 경우 제품 관리에서 등록해 주세요.</span></div></div>
+      </div>
       <v-divider class="my-3" />
       <div class="production-dialog-section-title">오늘 생산하지 않은 경우</div>
       <div class="production-dialog-guide">
@@ -143,10 +147,17 @@
       <v-btn variant="text" :disabled="saving" @click="requestClose">닫기</v-btn>
       <v-spacer />
       <v-btn v-if="editingBatch" variant="text" :disabled="saving" @click="cancelEdit">수정 취소</v-btn>
-      <v-btn variant="flat" :loading="saving" :disabled="saving" @click="save">{{ editingBatch ? '수정' : '저장' }}</v-btn>
+      <v-btn variant="flat" :loading="saving" :disabled="saving" @click="askSave">{{ editingBatch ? '수정 내용 저장' : '생산 기록 저장' }}</v-btn>
     </v-card-actions>
   </v-card>
 </v-dialog>
+<ConfirmDialog
+    v-model="saveConfirmOpen"
+    :title="editingBatch ? '생산 기록 수정 확인' : '생산 기록 등록 확인'"
+    :message="saveConfirmMessage"
+    :loading="saving"
+    @confirm="save"
+/>
 <ConfirmDialog
     v-model="deleteConfirmOpen"
     title="생산 기록 삭제"
@@ -193,6 +204,9 @@ const props = defineProps({
 });
 const emit = defineEmits(['update:modelValue', 'saved', 'error']);
 const saving = ref(false);
+const saveConfirmOpen = ref(false);
+const workerError = ref('');
+const editorSection = ref(null);
 const confirmClose = ref(false);
 const confirmZeroOpen = ref(false);
 const deleteConfirmOpen = ref(false);
@@ -220,6 +234,26 @@ const displayZeroReasons = computed(() => props.zeroReasons.map((reason) => ({
     title: reason.value === 'other' ? '직접입력' : reason.title,
 })));
 
+const saveConfirmMessage = computed(() => editingBatch.value
+    ? `생산 수량 ${editingBatch.value.quantity}개 → ${form.quantity}개로 수정하시겠습니까? 작업자 변경도 함께 저장됩니다.`
+    : `생산 ${form.quantity}개를 선택한 작업자와 함께 등록하시겠습니까?`);
+
+// 입력 검증을 통과한 뒤에만 공통 확인창을 열어 실제 저장을 승인받습니다.
+function askSave() {
+  if (!props.product?.id || !Number.isInteger(Number(form.quantity)) || Number(form.quantity) < 1) {
+    emit('error', '올바른 생산 수량을 입력해 주세요.');
+    return;
+  }
+  if (!form.workerIds.length) {
+    workerError.value = '작업자를 선택해 주세요.';
+    return;
+  }
+  if (form.recipeDeviated && !form.recipeDeviationNote.trim()) {
+    emit('error', '변경한 작업 내용을 입력해 주세요.');
+    return;
+  }
+  saveConfirmOpen.value = true;
+}
 const canConfirmZero = computed(() => (
     Boolean(zeroReason.value)
     && (zeroReason.value !== 'other' || Boolean(zeroReasonText.value.trim()))
@@ -231,6 +265,8 @@ watch(() => props.modelValue, (value) => {
 // 현재 입력값을 새 생산 기록의 기본값으로 되돌립니다.
 function reset() {
   editingBatch.value = null;
+  workerError.value = '';
+  saveConfirmOpen.value = false;
   deletingBatch.value = null;
   zeroReason.value = null;
   zeroReasonText.value = '';
@@ -274,12 +310,21 @@ function editBatch(batch) {
   editingBatch.value = batch;
   form.quantity = batch.quantity;
   form.note = batch.note || '';
+  form.workerIds = (batch.workers || []).map(worker => worker.id);
+  form.recipeDeviated = Boolean(batch.recipe_deviated);
+  form.recipeDeviationNote = batch.recipe_deviation_note || '';
+  workerError.value = '';
+  editorSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 // 생산 수정 모드를 끝내고 신규 입력 상태로 돌아갑니다.
 function cancelEdit() {
   editingBatch.value = null;
   form.quantity = 1;
   form.note = '';
+  form.workerIds = [];
+  form.recipeDeviated = false;
+  form.recipeDeviationNote = '';
+  workerError.value = '';
 }
 // 삭제할 생산 기록을 기억하고 중요 작업 확인창을 엽니다.
 function askDelete(batch) {
@@ -328,7 +373,7 @@ async function saveZero() {
 }
 // 서버 확인이 끝난 생산 기록만 성공 처리하고 실패 시 입력값을 유지합니다.
 async function save() {
-  if (!props.product?.id || !form.quantity) return;
+  if (!props.product?.id || !form.quantity || !form.workerIds.length) return;
   if (form.recipeDeviated && !form.recipeDeviationNote.trim()) {
     emit('error', '변경한 작업 내용을 입력해 주세요.');
     return;
@@ -338,7 +383,9 @@ async function save() {
     if (editingBatch.value) {
       await window.axios.put(`/tillwhite/api/production-management/batches/${editingBatch.value.id}`, {
         quantity: form.quantity, note: form.note || null, lock_version: editingBatch.value.lock_version,
+        workers: form.workerIds.map(userId => ({ user_id: userId })),
       });
+      saveConfirmOpen.value = false;
       open.value = false;
       emit('saved', '생산 기록을 수정했습니다.');
     } else {
@@ -357,6 +404,7 @@ async function save() {
           process_type: 'all',
         })),
       });
+      saveConfirmOpen.value = false;
       open.value = false;
       emit('saved', '생산 기록을 저장했습니다.');
     }
@@ -370,6 +418,19 @@ async function save() {
 </script>
 
 <style scoped>
+.production-record-section { margin-bottom: 12px; }
+.production-record-card { border: 1px solid rgba(var(--v-theme-on-surface), .13); border-radius: 10px; padding: 12px; margin-top: 9px; }
+.production-record-card.record-editing { border-color: rgb(var(--v-theme-primary)); background: rgba(var(--v-theme-primary), .06); }
+.production-record-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.production-record-main strong { font-size: .95rem; }
+.production-record-main span, .production-record-workers, .production-record-note { font-size: .75rem; color: rgba(var(--v-theme-on-surface), .68); }
+.production-record-workers, .production-record-note { margin-top: 6px; }
+.production-record-actions { display: flex; justify-content: flex-end; border-top: 1px solid rgba(var(--v-theme-on-surface), .08); margin-top: 9px; padding-top: 5px; }
+.production-friendly-empty { display: flex; align-items: center; gap: 10px; padding: 16px 12px; border: 1px dashed rgba(var(--v-theme-on-surface), .18); border-radius: 10px; }
+.production-friendly-empty strong, .production-friendly-empty span { display: block; font-size: .75rem; }
+.production-friendly-empty span { color: rgba(var(--v-theme-on-surface), .6); margin-top: 3px; }
+.production-record-editor { scroll-margin-top: 72px; }
+
 .overview-guide {
     margin-bottom: 14px;
 }

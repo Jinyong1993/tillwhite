@@ -66,6 +66,13 @@ class ProductionDailyService
             ->keyBy('product_category_id');
 
         $batches = ProductionBatch::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->groupBy('product_id');
+        // 작업자는 생산 기록에 연결된 실제 사용자 정보를 일괄 조회해 N+1 쿼리를 방지합니다.
+        $batchWorkerMap = DB::table('production_batch_workers')
+            ->join('users', 'users.id', '=', 'production_batch_workers.user_id')
+            ->whereIn('production_batch_workers.production_batch_id', $batches->flatten()->pluck('id'))
+            ->select('production_batch_workers.production_batch_id', 'users.id', 'users.name')
+            ->get()
+            ->groupBy('production_batch_id');
         // 화면의 실적은 원 생산일 귀속 기준, 당일 재고 차감은 실제 업무 발생일 기준으로 분리합니다.
         $losses = ProductionLoss::query()
             ->with('reasons')
@@ -96,7 +103,7 @@ class ProductionDailyService
         $outgoing = ProductStockMovement::query()->where('store_id', $storeId)->whereDate('work_date', $date)->where('movement_type', 'carryover_out')->get()->groupBy('product_id');
         $confirmations = ProductionConfirmation::query()->where('store_id', $storeId)->whereDate('work_date', $date)->get()->keyBy('product_id');
 
-        $rows = $products->map(function (Product $product) use ($batches, $losses, $operationalLosses, $attributedWastes, $operationalWastes, $outflows, $incoming, $outgoing, $confirmations, $productHistories, $categoryHistories, $date, $storeId) {
+        $rows = $products->map(function (Product $product) use ($batches, $losses, $operationalLosses, $attributedWastes, $operationalWastes, $outflows, $incoming, $outgoing, $confirmations, $productHistories, $categoryHistories, $date, $storeId, $batchWorkerMap) {
             $history = $productHistories->get($product->id);
             $historicalCategoryId = $history?->product_category_id ?? $product->product_category_id;
             $categoryHistory = $categoryHistories->get($historicalCategoryId);
@@ -138,6 +145,9 @@ class ProductionDailyService
                     'quantity' => $batch->quantity,
                     'note' => $batch->note,
                     'lock_version' => $batch->lock_version,
+                    'workers' => ($batchWorkerMap->get($batch->id) ?? collect())->map(fn ($worker) => ['id' => $worker->id, 'name' => $worker->name])->values(),
+                    'recipe_deviated' => $batch->recipe_deviated,
+                    'recipe_deviation_note' => $batch->recipe_deviation_note,
                     'created_at' => $batch->created_at,
                 ])->values(),
                 'loss_details' => ($losses->get($product->id) ?? collect())->flatMap(fn ($loss) => $loss->reasons->map(fn ($reason) => [
