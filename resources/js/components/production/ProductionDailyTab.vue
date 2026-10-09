@@ -495,6 +495,86 @@
 
       <v-divider />
 
+      <!-- 생산 기록 비교: 선택 날짜 기준 최근 7일 생산량을 조회 전용으로 표시합니다. -->
+      <section class="production-product-section">
+        <div class="production-product-title">
+          생산 기록 비교
+        </div>
+
+        <!-- 선택 날짜, 전날, 증감량을 각각 구분하여 표시합니다. -->
+        <div class="production-comparison-cards">
+          <div class="production-comparison-card">
+            <span>선택 날짜</span>
+            <strong>{{ productionComparison.currentText }}</strong>
+          </div>
+
+          <div class="production-comparison-card">
+            <span>전날</span>
+            <strong>{{ productionComparison.previousText }}</strong>
+          </div>
+
+          <div class="production-comparison-card">
+            <span>증감</span>
+            <strong>{{ productionComparison.differenceText }}</strong>
+          </div>
+        </div>
+
+        <!-- 차트와 평균은 같은 생산 기록 비교 섹션에 포함합니다. -->
+        <div class="production-comparison-chart-heading">
+          <strong>최근 7일 생산량</strong>
+          <span>
+            평균
+            {{
+              productionSevenDayAverage === null
+                ? '미확인'
+                : `${Number(productionSevenDayAverage.toFixed(1))}개`
+            }}
+          </span>
+        </div>
+
+        <div
+          v-if="productionComparisonRows.length"
+          class="production-comparison-chart"
+          role="img"
+          aria-label="최근 7일 날짜별 생산량 세로 막대차트"
+        >
+          <div
+            v-for="item in productionComparisonRows"
+            :key="item.date"
+            class="production-comparison-chart-item"
+          >
+            <span class="production-comparison-chart-value">
+              {{ item.quantity === null ? '-' : item.quantity }}
+            </span>
+
+            <div class="production-comparison-chart-track">
+              <div
+                v-if="item.quantity !== null"
+                class="production-comparison-chart-bar"
+                :style="{
+                  height: `${productionChartHeight(item.quantity)}%`,
+                }"
+              />
+            </div>
+
+            <span class="production-comparison-chart-date">
+              {{ item.label }}
+            </span>
+          </div>
+        </div>
+
+        <p v-else class="production-comparison-empty">
+          조회할 생산 기록이 없습니다.
+        </p>
+
+        <p class="production-comparison-note">
+          미확인 날짜는 '-'로 표시하며 평균에서 제외합니다.
+          생산 없음(0개)으로 확인한 날짜는 평균에 포함합니다.
+        </p>
+      </section>
+
+      <v-divider />
+
       <!-- 기존 제품 현황 분석 문구 유지 -->
       <section class="production-product-section">
         <div class="production-product-title">
@@ -1039,6 +1119,11 @@ const selectedProduct = ref(null);
 const productDetail = ref(null);
 const productDetailOpen = ref(false);
 const productDetailLoading = ref(false);
+
+// 제품 상세 다이얼로그에 표시할 최근 7일 생산 기록입니다.
+// quantity가 null이면 미확인, 0이면 생산 없음으로 확인된 날짜입니다.
+const productProductionHistory = ref([]);
+
 const batchOpen = ref(false);
 const flowOpen = ref(false);
 const flowType = ref('carryover');
@@ -1487,6 +1572,128 @@ const selectedProductMetrics = computed(() => {
   ];
 });
 
+/**
+ * 선택 날짜 기준 최근 7일 생산 기록입니다.
+ *
+ * 서버에서 날짜순으로 받은 데이터를 사용합니다.
+ * - quantity === null: 생산 기록 미확인
+ * - quantity === 0: 생산 없음(0개) 확인
+ * - quantity > 0: 실제 생산 수량
+ *
+ * 기존 생산량이나 폐기율 계산에는 영향을 주지 않습니다.
+ */
+const productionComparisonRows = computed(() =>
+  productProductionHistory.value.map((item) => ({
+    date: item.date,
+    quantity: item.quantity === null ? null : Number(item.quantity),
+    label: item.date.slice(5).replace('-', '/'),
+  }))
+);
+
+/**
+ * 선택 날짜와 전날 생산 수량을 비교합니다.
+ *
+ * 기록이 확인되지 않은 날짜는 0으로 취급하지 않으며,
+ * 증감량도 계산하지 않습니다.
+ */
+const productionComparison = computed(() => {
+  const rows = productionComparisonRows.value;
+
+  const today = rows.find(
+    (item) => item.date === props.workDate
+  );
+
+  const previousDate = addLocalDays(props.workDate, -1);
+
+  const yesterday = rows.find(
+    (item) => item.date === previousDate
+  );
+
+  const currentQuantity = today?.quantity ?? null;
+  const previousQuantity = yesterday?.quantity ?? null;
+
+  const hasComparison =
+    currentQuantity !== null &&
+    previousQuantity !== null;
+
+  const difference = hasComparison
+    ? currentQuantity - previousQuantity
+    : null;
+
+  return {
+    currentQuantity,
+    previousQuantity,
+    difference,
+
+    currentText:
+      currentQuantity === null
+        ? '미확인'
+        : `${currentQuantity}개`,
+
+    previousText:
+      previousQuantity === null
+        ? '미확인'
+        : `${previousQuantity}개`,
+
+    differenceText:
+      difference === null
+        ? '비교 불가'
+        : `${difference > 0 ? '+' : ''}${difference}개`,
+  };
+});
+
+/**
+ * 최근 7일 평균 생산량입니다.
+ *
+ * 미확인 날짜는 평균에서 제외합니다.
+ * 명시적으로 0개를 확인한 날짜는 평균에 포함합니다.
+ */
+const productionSevenDayAverage = computed(() => {
+  const confirmedRows = productionComparisonRows.value.filter(
+    (item) => item.quantity !== null
+  );
+
+  if (!confirmedRows.length) {
+    return null;
+  }
+
+  const total = confirmedRows.reduce(
+    (sum, item) => sum + item.quantity,
+    0
+  );
+
+  return total / confirmedRows.length;
+});
+
+/**
+ * 세로 막대차트의 높이를 계산할 기준값입니다.
+ *
+ * 가장 큰 생산량을 100%로 표시합니다.
+ * 전부 0개인 경우에도 0으로 나누지 않도록 최소값을 1로 둡니다.
+ */
+const productionChartMaximum = computed(() =>
+  Math.max(
+    1,
+    ...productionComparisonRows.value
+      .filter((item) => item.quantity !== null)
+      .map((item) => item.quantity)
+  )
+);
+
+/**
+ * 각 날짜의 세로 막대 높이를 백분율로 반환합니다.
+ *
+ * 미확인 날짜는 막대를 표시하지 않습니다.
+ * 0개 확인 날짜는 높이 0%로 처리하고 별도로 0개라고 표시합니다.
+ */
+function productionChartHeight(quantity) {
+  if (quantity === null) {
+    return 0;
+  }
+
+  return (quantity / productionChartMaximum.value) * 100;
+}
+
 // 제품 현황은 원 생산일 귀속 폐기, 실제 폐기, 로스, 이월 재고 순서로 안내합니다.
 const selectedProductAnalysis = computed(() => {
   const row = selectedProduct.value;
@@ -1840,17 +2047,32 @@ function openFlow(row, type) {
   flowOpen.value = true;
 }
 
-// 제품 상세 데이터를 불러와 레시피와 선택 날짜의 생산 현황을 함께 표시합니다.
+// 기존 제품 상세정보와 선택 날짜 기준 최근 7일 생산 기록을 함께 조회합니다.
 async function openProduct(row) {
   selectedProduct.value = row;
   productDetailLoading.value = true;
 
+  // 이전 제품의 생산 기록이 다음 제품에 표시되지 않도록 초기화합니다.
+  productProductionHistory.value = [];
+
   try {
     const { data } = await window.axios.get(
-      `/tillwhite/api/production-management/products/${row.id}`
+      `/tillwhite/api/production-management/products/${row.id}`,
+      {
+        params: {
+          work_date: props.workDate,
+        },
+      }
     );
 
+    // 기존 제품 정보 및 레시피 데이터 처리 방식은 유지합니다.
     productDetail.value = data.product || data;
+
+    // 서버에서 반환한 최근 7일 생산 기록만 별도로 보관합니다.
+    productProductionHistory.value = Array.isArray(data.production_history)
+      ? data.production_history
+      : [];
+
     productDetailOpen.value = true;
   } catch (error) {
     emit(
@@ -3539,7 +3761,165 @@ async function closeDay() {
   margin-top: 1px;
 }
 
+/*
+ * 생산 기록 비교 섹션
+ *
+ * 기존 제품 상세 섹션과 구분선은 그대로 사용합니다.
+ * 이 스타일은 새로 추가한 비교 카드와 차트에만 적용됩니다.
+ */
+
+/* 선택 날짜·전날·증감 수량을 나란히 표시합니다. */
+.production-comparison-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.production-comparison-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 8px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 10px;
+  background: rgb(var(--v-theme-surface));
+  text-align: center;
+}
+
+.production-comparison-card span {
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  font-size: 12px;
+}
+
+.production-comparison-card strong {
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 17px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+/* 최근 7일 차트 제목과 평균 수량입니다. */
+.production-comparison-chart-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+  margin-bottom: 14px;
+}
+
+.production-comparison-chart-heading strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.production-comparison-chart-heading span {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 12px;
+}
+
+/* 최근 7일을 동일한 너비의 세로 막대 7개로 표시합니다. */
+.production-comparison-chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.production-comparison-chart-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.production-comparison-chart-value {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 모든 날짜에 동일한 높이의 막대 영역을 확보합니다. */
+.production-comparison-chart-track {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  height: 140px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+/* 생산량에 비례하여 막대 높이가 달라집니다. */
+.production-comparison-chart-bar {
+  width: min(100%, 32px);
+  margin: 0 auto;
+  border-radius: 5px 5px 0 0;
+  background: rgb(var(--v-theme-primary));
+  transition: height 0.2s ease;
+}
+
+.production-comparison-chart-date {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 기록이 없거나 일부 날짜가 미확인일 때 안내합니다. */
+.production-comparison-empty,
+.production-comparison-note {
+  color: rgba(var(--v-theme-on-surface), 0.65);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.production-comparison-empty {
+  padding: 20px 0;
+  text-align: center;
+}
+
+.production-comparison-note {
+  margin-top: 14px;
+  margin-bottom: 0;
+}
+
 @media (max-width: 480px) {
+  .production-comparison-cards {
+    gap: 6px;
+  }
+
+  .production-comparison-card {
+    padding: 12px 4px;
+  }
+
+  .production-comparison-card strong {
+    font-size: 14px;
+  }
+
+  .production-comparison-chart {
+    gap: 4px;
+  }
+
+  .production-comparison-chart-track {
+    height: 110px;
+  }
+
+  .production-comparison-chart-value {
+    font-size: 11px;
+  }
+
+  .production-comparison-chart-date {
+    font-size: 10px;
+  }
+
   .stock-flow-overview {
     gap: 6px;
   }

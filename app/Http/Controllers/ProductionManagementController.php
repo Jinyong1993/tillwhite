@@ -424,9 +424,90 @@ class ProductionManagementController extends Controller
             'recipes.steps',
         ]);
 
-        // 제품 상세 정보를 JSON 형식으로 반환합니다.
+        /**
+         * 선택 날짜가 전달된 경우에만 최근 7일 생산 기록을 조회합니다.
+         *
+         * 생산 기록이 없는 날짜는 확인 상태를 추가로 검사합니다.
+         * - 미확인: null
+         * - 생산 없음(0개) 확인: 0
+         * - 생산 기록 존재: 해당 날짜의 생산 수량 합계
+         *
+         * 기존 제품 정보와 레시피 응답은 유지합니다.
+         */
+        $history = null;
+
+        $validated = $request->validate([
+            'work_date' => [
+                'sometimes',
+                'required',
+                'date_format:Y-m-d',
+            ],
+        ]);
+
+        if (isset($validated['work_date'])) {
+            // 선택 날짜를 마지막 날로 하는 7일 구간입니다.
+            $end = Carbon::createFromFormat(
+                '!Y-m-d',
+                $validated['work_date']
+            );
+
+            $start = $end->copy()->subDays(6);
+            $storeId = (int) $product->store_id;
+
+            // 해당 점포·제품의 날짜별 생산 수량을 합산합니다.
+            $quantities = ProductionBatch::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereDate('work_date', '>=', $start->toDateString())
+                ->whereDate('work_date', '<=', $end->toDateString())
+                ->selectRaw(
+                    'DATE(work_date) as production_date, SUM(quantity) as total_quantity'
+                )
+                ->groupByRaw('DATE(work_date)')
+                ->get()
+                ->mapWithKeys(
+                    fn ($row) => [
+                        $row->production_date => (int) $row->total_quantity,
+                    ]
+                );
+
+            // 생산량이 0개여도 명시적으로 확인된 날짜를 구합니다.
+            $confirmedDates = ProductionConfirmation::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->where('production_confirmed', true)
+                ->whereDate('work_date', '>=', $start->toDateString())
+                ->whereDate('work_date', '<=', $end->toDateString())
+                ->get(['work_date'])
+                ->mapWithKeys(
+                    fn ($confirmation) => [
+                        Carbon::parse($confirmation->work_date)->toDateString() => true,
+                    ]
+                );
+
+            // 누락 날짜까지 포함하여 7일을 순서대로 구성합니다.
+            $history = [];
+
+            for (
+                $day = $start->copy();
+                $day->lte($end);
+                $day->addDay()
+            ) {
+                $date = $day->toDateString();
+
+                $history[] = [
+                    'date' => $date,
+                    'quantity' => $quantities->has($date)
+                        ? $quantities->get($date)
+                        : ($confirmedDates->has($date) ? 0 : null),
+                ];
+            }
+        }
+
+        // 기존 제품 상세 응답을 유지하면서 비교 데이터만 추가합니다.
         return response()->json([
             'product' => $product,
+            'production_history' => $history,
         ]);
     }
 
