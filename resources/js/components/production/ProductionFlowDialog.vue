@@ -14,7 +14,15 @@
 
       <v-card-text class="app-dialog-body">
         <v-alert
-          v-if="remainingAvailable < currentQuantity || sourceOverages.length || invalidSourceRows.length"
+          v-if="
+            (
+              type !== 'loss' &&
+              type !== 'waste' &&
+              remainingAvailable < currentQuantity
+            ) ||
+            sourceOverages.length ||
+            invalidSourceRows.length
+          "
           type="error"
           variant="tonal"
           density="compact"
@@ -37,12 +45,10 @@
           <p>{{ dialogDescription }}</p>
         </div>
 
-        <div class="flow-guide">
+        <div v-if="isReasonMode" class="flow-guide">
           <div>
-            <span>폐기 입력 가능 수량</span>
-            <strong>
-              {{ Math.max(0, remainingAvailable - currentQuantity) }}개
-            </strong>
+            <span>{{ dialogTitle }} · 마지막 선택 기록 잔여량</span>
+            <strong>{{ selectedSourceRemaining }}개</strong>
           </div>
         </div>
 
@@ -70,7 +76,7 @@
             :today-production-total="Number(product?.production || 0)"
             :stock-sources="editableStockSources"
             :work-date="workDate"
-            :show-stock-source="type === 'loss' || type === 'waste'"
+            :show-stock-source="isReasonMode"
           />
           <div class="production-dialog-actions">
             <v-btn
@@ -162,7 +168,11 @@
           :loading="saving"
           :disabled="
             saving
-            || remainingAvailable < currentQuantity
+            || (
+              type !== 'loss' &&
+              type !== 'waste' &&
+              remainingAvailable < currentQuantity
+            )
             || sourceOverages.length > 0
             || invalidSourceRows.length > 0
             || (
@@ -211,7 +221,7 @@ const props = defineProps({
   type: {
     type: String,
     required: true,
-    validator: (value) => ['carryover', 'loss', 'waste', 'other_outflow'].includes(value),
+    validator: (value) => ['carryover', 'loss', 'waste'].includes(value),
   },
   lossReasons: {
     type: Array,
@@ -246,13 +256,16 @@ const carryoverSources = [
 ];
 
 /**
- * 이월할 생산 기록과 수정 가능한 수량을 표시합니다.
- * 최초 생산일과 기존 이월 수량을 유지합니다.
+ * 이월할 제품의 생산 내역과 사용 가능 수량을 표시합니다.
+ * 오늘 생산분과 기존 이월 재고를 구분합니다.
+ * 같은 날짜의 생산 내역은 목록 번호로 구분합니다.
  */
 const carryoverLotOptions = computed(() => {
   const sourceType = carryoverSource.value === 'incoming'
     ? 'carryover'
     : 'today';
+
+  const countsByDate = new Map();
 
   return (props.product?.stock_sources || [])
     .filter((source) => (
@@ -260,6 +273,14 @@ const carryoverLotOptions = computed(() => {
       source.stock_lot_id != null
     ))
     .map((source) => {
+      const productionDate =
+        source.origin_production_date || '생산일 미확인';
+
+      // 동일 생산일의 내역을 목록에서 구분합니다.
+      const sequence = (countsByDate.get(productionDate) || 0) + 1;
+      countsByDate.set(productionDate, sequence);
+
+      // 실제 남은 수량과 기존 이월 수량을 확인합니다.
       const rawRemaining = source.unallocated_quantity
         ?? source.remaining_quantity;
 
@@ -281,18 +302,10 @@ const carryoverLotOptions = computed(() => {
 
       return {
         value: source.stock_lot_id,
-        title: `${source.origin_production_date || '생산일 미확인'} 생산 · ${quantityText}`,
+        title: `${productionDate} 생산 · 생산 내역 ${sequence} · ${quantityText}`,
       };
     });
 });
-
-const otherReasons = [
-  { value: 'tasting', title: '시식' },
-  { value: 'service', title: '고객 서비스' },
-  { value: 'gift', title: '무료 증정' },
-  { value: 'staff_use', title: '직원 사용' },
-  { value: 'other', title: '직접입력' },
-];
 
 const open = computed({
   get: () => props.modelValue,
@@ -300,16 +313,28 @@ const open = computed({
 });
 
 const isReasonMode = computed(() => props.type !== 'carryover');
+
+// 선택한 업무의 완료 여부만 확인합니다.
 const flowConfirmed = computed(() => ({
   carryover: props.product?.disposition_confirmed,
   loss: props.product?.loss_confirmed,
   waste: props.product?.waste_confirmed,
-  other_outflow: props.product?.disposition_confirmed,
 }[props.type] ?? false));
+
+// 선택한 로스 또는 폐기의 기록만 불러옵니다.
 const savedDetails = computed(() => {
-  if (props.type === 'loss') return props.product?.operational_loss_details || props.product?.loss_details || [];
-  if (props.type === 'waste') return props.product?.operational_waste_details || props.product?.waste_details || [];
-  if (props.type === 'other_outflow') return props.product?.other_outflow_details || [];
+  if (props.type === 'loss') {
+    return props.product?.operational_loss_details
+      || props.product?.loss_details
+      || [];
+  }
+
+  if (props.type === 'waste') {
+    return props.product?.operational_waste_details
+      || props.product?.waste_details
+      || [];
+  }
+
   return [];
 });
 
@@ -370,13 +395,40 @@ const editableStockSources = computed(() => {
 // 총 수량은 선택 날짜의 생산분과 들어온 이월 재고를 합친 값입니다.
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
 
-// 입력 중인 행을 lot별로 묶어 실제로 처리 가능한 재고를 계산합니다.
-// 기존 기록은 editableStockSources에서 편집 가능 수량에 복원되어 있습니다.
-// 저장된 화면 정보가 오래되어 출처가 사라졌다면 다른 재고로 대체하지 않습니다.
+/**
+ * 로스·폐기·기타 출고에 입력한 재고 출처를 검사합니다.
+ * 수량이 입력된 행은 생산 기록 ID와 출처가 모두 일치해야 합니다.
+ * 잘못된 기록이나 사라진 재고를 다른 생산 기록으로 대체하지 않습니다.
+ */
 const invalidSourceRows = computed(() => {
-  if (!isReasonMode.value || !['loss', 'waste', 'other_outflow'].includes(props.type)) return [];
-  const sourceIds = new Set(editableStockSources.value.map((source) => Number(source.stock_lot_id)));
-  return reasonRows.value.filter((row) => row.stock_lot_id && !sourceIds.has(Number(row.stock_lot_id)));
+  if (
+    !isReasonMode.value ||
+    !['loss', 'waste'].includes(props.type)
+  ) {
+    return [];
+  }
+
+  // 수량이 입력된 행만 검사합니다.
+  return reasonRows.value.filter((row) => {
+    const quantity = Number(row.quantity || 0);
+
+    if (quantity <= 0) return false;
+
+    // 생산 기록 ID와 재고 출처는 필수입니다.
+    if (
+      !row.stock_source ||
+      row.stock_lot_id == null ||
+      row.stock_lot_id === ''
+    ) {
+      return true;
+    }
+
+    // ID와 출처가 모두 일치하는 생산 기록만 인정합니다.
+    return !editableStockSources.value.some((source) => (
+      source.source === row.stock_source &&
+      String(source.stock_lot_id) === String(row.stock_lot_id)
+    ));
+  });
 });
 
 /**
@@ -386,7 +438,7 @@ const invalidSourceRows = computed(() => {
 const sourceOverages = computed(() => {
   if (
     !isReasonMode.value ||
-    !['loss', 'waste', 'other_outflow'].includes(props.type)
+    !['loss', 'waste'].includes(props.type)
   ) {
     return [];
   }
@@ -428,21 +480,51 @@ const sourceOverages = computed(() => {
   });
 });
 
+/**
+ * 마지막 사유 행에서 선택한 생산 기록의 남은 수량을 계산합니다.
+ * 로스·폐기·기타 출고를 각각 선택한 재고 기준으로 확인합니다.
+ * 다른 생산 기록의 수량은 합산하지 않습니다.
+ */
 const selectedSourceRemaining = computed(() => {
+  // 이월 화면에서는 사용하지 않습니다.
+  if (!isReasonMode.value) return 0;
+
+  // 마지막 사유 행에서 선택한 생산 기록을 확인합니다.
   const selected = reasonRows.value.at(-1);
-  const source = editableStockSources.value.find((item) => Number(item.stock_lot_id) === Number(selected?.stock_lot_id));
-  if (!source) return remainingAvailable.value - currentQuantity.value;
+  if (selected?.stock_lot_id == null) return 0;
+
+  // 선택한 출처와 생산 기록 ID가 일치하는 재고만 찾습니다.
+  const source = editableStockSources.value.find((item) => (
+    item.source === selected.stock_source &&
+    String(item.stock_lot_id) === String(selected.stock_lot_id)
+  ));
+
+  if (!source) return 0;
+
+  // 기존 기록을 수정할 수 있도록 복원된 재고 수량입니다.
+  const available = source.editable_raw_quantity;
+
+  // 재고 수량이 확인되지 않으면 0개로 표시합니다.
+  if (available == null || !Number.isFinite(Number(available))) {
+    return 0;
+  }
+
+  // 같은 생산 기록에 입력한 모든 사유의 수량을 합산합니다.
   const allocated = reasonRows.value
-    .filter((row) => Number(row.stock_lot_id) === Number(source.stock_lot_id))
+    .filter((row) => (
+      row.stock_source === selected.stock_source &&
+      String(row.stock_lot_id) === String(source.stock_lot_id)
+    ))
     .reduce((sum, row) => sum + Number(row.quantity || 0), 0);
-  return Math.max(0, Number(source.remaining_quantity || 0) - allocated);
+
+  // 선택한 생산 기록의 남은 수량만 반환합니다.
+  return Math.max(0, Number(available) - allocated);
 });
 
 const dialogTitle = computed(() => ({
   carryover: '이월',
   loss: '로스',
   waste: '폐기',
-  other_outflow: '기타 출고',
 }[props.type]));
 
 // 업무명과 제품명을 한 줄에 표시해 어떤 제품을 수정하는지 헤더에서 바로 확인합니다.
@@ -452,37 +534,36 @@ const dialogDescription = computed(() => ({
   carryover: '남은 수량 안에서 다음 영업일로 넘길 수량을 입력해 주세요.',
   loss: '남은 수량 안에서 로스 수량과 사유를 입력해 주세요. 로스가 없으면 ‘로스 없음’을 누르세요.',
   waste: '남은 수량 안에서 폐기 수량과 사유를 입력해 주세요. 폐기가 없으면 ‘폐기 없음’을 누르세요.',
-  other_outflow: '시식·서비스 등 기타 출고 수량을 기록합니다.',
 }[props.type]));
 
 const reasonOptions = computed(() => ({
   loss: props.lossReasons,
   waste: props.wasteReasons,
-  other_outflow: otherReasons,
 }[props.type] || []));
 
+/**
+ * 다른 업무에서 이미 사용한 재고를 표시합니다.
+ * 과거 기타 출고 기록도 차감 수량에 포함하여
+ * 기존 재고가 잘못 증가하지 않도록 합니다.
+ */
 const otherAllocationDetails = computed(() => {
   const row = props.product || {};
+
   const values = {
     carryover: [
       ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
       ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
-      ['기타 출고', Number(row.other_outflow || 0)],
+      ['기타', Number(row.other_outflow || 0)],
     ],
     loss: [
       ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
       ['이월 예정', Number(row.carryover_out || 0)],
-      ['기타 출고', Number(row.other_outflow || 0)],
+      ['기타', Number(row.other_outflow || 0)],
     ],
     waste: [
       ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
       ['이월 예정', Number(row.carryover_out || 0)],
-      ['기타 출고', Number(row.other_outflow || 0)],
-    ],
-    other_outflow: [
-      ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
-      ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
-      ['이월 예정', Number(row.carryover_out || 0)],
+      ['기타', Number(row.other_outflow || 0)],
     ],
   };
 
@@ -626,14 +707,18 @@ function savedReasonRow(item) {
   };
 }
 
-// 사유 행의 기본값을 생성합니다.
+/**
+ * 로스·폐기·기타 출고의 새 입력 항목을 생성합니다.
+ * 재고 구분은 기본값을 유지합니다.
+ * 생산 내역은 자동 선택하지 않고 직접 선택하도록 합니다.
+ */
 function emptyReason() {
   return {
     reason_code: '',
     reason_text: null,
     quantity: 0,
     stock_source: defaultStockSource.value,
-    stock_lot_id: defaultStockLotId.value,
+    stock_lot_id: null,
   };
 }
 
@@ -838,37 +923,54 @@ function forceClose() {
   open.value = false;
 }
 
-// 사유 필수값과 수량 범위를 확인한 뒤 저장 확인창을 엽니다.
+/**
+ * 사유와 생산 기록별 재고 수량을 검증한 뒤 저장 확인창을 엽니다.
+ * 로스·폐기·기타 출고는 선택한 생산 기록 기준으로 검사합니다.
+ * 이월은 선택한 생산 기록의 이월 가능 수량을 검사합니다.
+ */
 function askSave() {
-  if (isReasonMode.value && reasonRows.value.length > 0 && reasonRows.value.some((row) => !row.reason_code || Number(row.quantity || 0) <= 0)) {
+  // 사유와 수량을 모두 입력했는지 확인합니다.
+  if (
+    isReasonMode.value &&
+    reasonRows.value.length > 0 &&
+    reasonRows.value.some((row) => !row.reason_code || Number(row.quantity || 0) <= 0)
+  ) {
     emit('error', '추가한 사유와 수량을 모두 입력해 주세요.');
     return;
   }
 
-  if ((props.type === 'loss' || props.type === 'waste') && reasonRows.value.some((row) => !row.stock_lot_id)) {
+  // 로스·폐기는 사용할 생산 기록을 반드시 선택해야 합니다.
+  if (
+    (props.type === 'loss' || props.type === 'waste') &&
+    reasonRows.value.some((row) => !row.stock_lot_id)
+  ) {
     emit('error', '처리할 재고의 생산일을 선택해 주세요.');
     return;
   }
 
-  if (reasonRows.value.some((row) => row.reason_code === 'other' && !String(row.reason_text || '').trim())) {
+  // 직접입력 사유의 내용을 확인합니다.
+  if (
+    reasonRows.value.some(
+      (row) => row.reason_code === 'other' && !String(row.reason_text || '').trim()
+    )
+  ) {
     emit('error', '직접입력 사유를 입력해주세요.');
     return;
   }
 
+  // 선택한 생산 기록 ID와 재고 출처가 유효한지 확인합니다.
   if (invalidSourceRows.value.length) {
     emit('error', '선택한 재고 출처를 찾을 수 없습니다. 재고를 다시 선택해 주세요.');
     return;
   }
 
+  // 생산 기록별로 입력한 수량이 잔여 재고를 초과하는지 확인합니다.
   if (sourceOverages.value.length) {
     emit('error', '선택한 생산일의 잔여 재고보다 입력한 수량이 많습니다.');
     return;
   }
 
-  /**
-   * 기존 이월 기록이 두 출처에 나뉘어 있는 경우
-   * 단일 출처로 잘못 덮어쓰는 것을 방지합니다.
-   */
+  // 서로 다른 출처의 기존 이월 기록을 하나로 덮어쓰지 않습니다.
   if (hasMixedCarryoverSources.value) {
     emit(
       'error',
@@ -877,19 +979,19 @@ function askSave() {
     return;
   }
 
-  if (currentQuantity.value > remainingAvailable.value) {
+  // 이월만 전체 가용 수량을 추가 검사합니다.
+  if (
+    props.type === 'carryover' &&
+    currentQuantity.value > remainingAvailable.value
+  ) {
     emit('error', '입력한 수량이 남은 수량보다 많습니다.');
     return;
   }
 
-  /**
-   * 이월은 사용자가 선택한 재고 출처의 수량만 검사합니다.
-   * 선택한 출처의 재고가 부족하더라도
-   * 다른 출처의 재고로 자동 대체하지 않습니다.
-   */
+  // 이월할 생산 기록의 남은 수량을 검사합니다.
   if (
-    props.type === 'carryover'
-    && currentQuantity.value > carryoverSourceAvailable.value
+    props.type === 'carryover' &&
+    currentQuantity.value > carryoverSourceAvailable.value
   ) {
     emit(
       'error',
@@ -900,20 +1002,20 @@ function askSave() {
     return;
   }
 
-  // 생산 기록을 선택했는지 확인합니다.
+  // 이월할 생산 기록이 선택되어 있는지 확인합니다.
   if (props.type === 'carryover' && currentQuantity.value > 0) {
     if (selectedCarryoverLotId.value == null) {
       emit('error', '이월할 생산 기록을 선택해 주세요.');
       return;
     }
 
-    // 선택한 기록의 남은 재고를 초과하면 저장하지 않습니다.
     if (currentQuantity.value > carryoverSourceAvailable.value) {
       emit('error', '선택한 생산 기록의 이월 가능 수량이 부족합니다.');
       return;
     }
   }
 
+  // 모든 검증을 통과하면 저장 확인창을 엽니다.
   confirmSave.value = true;
 }
 

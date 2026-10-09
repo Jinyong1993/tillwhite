@@ -1626,9 +1626,10 @@ const selectedProductMetrics = computed(() => {
       value: row.loss,
     },
     {
-      // 선택한 날짜에 실제로 폐기한 전체 수량
+      // 선택한 날짜에 실제로 폐기한 제품 수량을 표시합니다.
+      // 최초 생산일에 귀속되는 폐기 수량과 구분합니다.
       label: '해당 날짜 폐기',
-      value: row.attributed_waste,
+      value: row.operational_waste,
     },
     // {
     //   // 실제 폐기 수량 중 이전 생산일에서 넘어온 재고의 폐기량
@@ -1944,14 +1945,21 @@ function reasonSummary(details, label) {
   return `${label}: ${names.join(' · ')}${details.length > 2 ? ` 외 ${details.length - 2}건` : ''}`;
 }
 
-// 제품별 확인 상태를 실제 미확인 항목 이름으로 설명합니다.
+/**
+ * 해당 날짜에 아직 확인하지 않은 작업 항목을 안내합니다.
+ * 이월과 기타 처리를 서로 독립적으로 판단합니다.
+ */
 function missingReasonText(row) {
   const missing = [];
+
   if (!row.production_confirmed) missing.push('생산');
   if (!row.loss_confirmed) missing.push('로스');
   if (!row.waste_confirmed) missing.push('폐기');
   if (!row.disposition_confirmed) missing.push('이월');
-  return missing.length ? `${missing.join(' · ')} 확인이 필요합니다.` : '확인이 필요한 항목이 있습니다.';
+
+  return missing.length
+    ? `${missing.join(' · ')} 확인이 필요합니다.`
+    : '확인이 필요한 항목이 있습니다.';
 }
 
 // 현황의 미확인 종류를 누르면 해당 제품만 표에 남깁니다.
@@ -2072,7 +2080,10 @@ function ensureMutable() {
   return true;
 }
 
-// 가장 먼저 발견된 미확인 제품의 입력창을 기존 우선순위대로 엽니다.
+/**
+ * 아직 확인하지 않은 작업을 순서대로 엽니다.
+ * 다른 작업의 완료 상태는 변경하지 않습니다.
+ */
 function openNextMissing() {
   const row = nextMissingRow.value;
 

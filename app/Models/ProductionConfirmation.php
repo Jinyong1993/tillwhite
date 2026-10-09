@@ -3,9 +3,13 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+
 class ProductionConfirmation extends Model
 {
-    // 대량 할당 가능한 ProductionConfirmation 업무 속성입니다.
+    /**
+     * 제품별·날짜별 생산, 로스, 폐기, 이월 확인 상태를 저장합니다.
+     * 각 업무의 확인 상태는 독립적으로 관리합니다.
+     */
     protected $fillable = [
         'store_id',
         'product_id',
@@ -20,7 +24,9 @@ class ProductionConfirmation extends Model
         'confirmed_by',
     ];
 
-    // 날짜, 수량, 스냅샷 값을 업무에 맞는 타입으로 변환합니다.
+    /**
+     * 업무 날짜와 확인 상태를 올바른 자료형으로 변환합니다.
+     */
     protected function casts(): array
     {
         return [

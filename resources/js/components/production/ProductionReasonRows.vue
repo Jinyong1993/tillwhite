@@ -157,7 +157,10 @@ const stockSourceOptions = computed(() => [
 ]);
 
 /**
- * 생산 기록마다 실제 사용 가능한 수량을 표시합니다.
+ * 선택한 재고 구분에 해당하는 제품 생산 내역을 표시합니다.
+ * 같은 날짜에 여러 번 생산한 경우 목록 순서로 구분합니다.
+ * 각 생산 내역의 사용 가능 수량은 따로 표시합니다.
+ * 내부 관리 번호는 화면에 표시하지 않습니다.
  */
 function stockLotOptions(type) {
   return props.stockSources
@@ -165,18 +168,20 @@ function stockLotOptions(type) {
       source.source === type &&
       source.stock_lot_id != null
     ))
-    .map((source) => {
+    .map((source, index) => {
+      // 선택한 생산 내역의 실제 사용 가능 수량을 확인합니다.
       const quantity = sourceAvailableQuantity(source);
 
       const amountText = quantity === null
-        ? '미확인'
+        ? '수량 미확인'
         : quantity < 0
           ? `초과 처리 ${Math.abs(quantity)}개`
-          : `${quantity}개`;
+          : `사용 가능 ${quantity}개`;
 
+      // 같은 날짜의 생산 내역도 목록에서 구분할 수 있도록 표시합니다.
       return {
         value: source.stock_lot_id,
-        title: `${formatOriginDate(source.origin_production_date)} 생산 · ${amountText}`,
+        title: `${formatOriginDate(source.origin_production_date)} 생산 · 생산 내역 ${index + 1} · ${amountText}`,
       };
     });
 }
@@ -410,21 +415,26 @@ function rowMaximum(row, rowIndex = -1) {
 }
 
 /**
- * 선택한 생산 기록의 입력 후 남는 수량을 표시합니다.
+ * 선택한 제품 생산분의 남은 수량을 안내합니다.
+ * 각 생산분의 수량을 개별적으로 계산합니다.
+ * 다른 생산분의 수량은 합산하지 않습니다.
  */
 function stockAvailabilityText(row) {
+  // 재고 구분을 선택했는지 확인합니다.
   if (!row.stock_source) {
     return '재고 구분을 선택해 주세요.';
   }
 
+  // 사용할 생산 내역을 선택했는지 확인합니다.
   if (row.stock_lot_id == null || row.stock_lot_id === '') {
-    return '생산 기록을 선택해 주세요.';
+    return '생산 내역을 선택해 주세요.';
   }
 
+  // 선택한 생산분의 재고를 확인합니다.
   const source = findStockSource(row);
 
   if (!source) {
-    return '선택한 생산 기록을 확인할 수 없습니다.';
+    return '선택한 생산 내역을 확인할 수 없습니다.';
   }
 
   const available = sourceAvailableQuantity(source);
@@ -433,7 +443,7 @@ function stockAvailabilityText(row) {
     return '남은 수량을 확인할 수 없습니다.';
   }
 
-  // 같은 생산 기록으로 입력한 모든 사유를 합산합니다.
+  // 동일한 생산분에 입력한 수량만 합산합니다.
   const allocated = props.modelValue.reduce((sum, item) => {
     if (
       item.stock_source !== row.stock_source ||
@@ -446,13 +456,14 @@ function stockAvailabilityText(row) {
     return sum + (validQuantity(item.quantity) ?? 0);
   }, 0);
 
+  // 선택한 생산분에서 입력한 수량을 제외합니다.
   const remaining = available - allocated;
 
   if (remaining < 0) {
-    return `입력 수량이 남은 재고보다 ${Math.abs(remaining)}개 많습니다.`;
+    return `입력한 수량이 남은 수량보다 ${Math.abs(remaining)}개 많습니다.`;
   }
 
-  return `${formatOriginDate(source.origin_production_date)} 생산 · ${remaining}개 사용 가능`;
+  return `${formatOriginDate(source.origin_production_date)} 생산 · 남은 수량 ${remaining}개`;
 }
 
 // 최초 생산일을 월/일 형태로 표시합니다.

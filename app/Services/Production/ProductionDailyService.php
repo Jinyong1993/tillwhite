@@ -278,21 +278,19 @@ class ProductionDailyService
                         ?? false
                     );
 
-                $dispositionConfirmed =
-                    (bool) ($confirmation?->disposition_confirmed ?? false)
-                    || (
-                        $outgoing
-                            ->get($product->id)
-                            ?->isNotEmpty()
-                        ?? false
-                    )
-                    || (
-                        $outflows
-                            ->get($product->id)
-                            ?->isNotEmpty()
-                        ?? false
-                    );
-
+                    /*
+                    * 이월과 기타 처리의 완료 상태를 각각 계산합니다.
+                    * 수량 기록이 있으면 해당 항목을 확인한 것으로 인정합니다.
+                    * 0개 확인은 별도로 저장한 완료 상태를 사용합니다.
+                    */
+                    $dispositionConfirmed =
+                        (bool) ($confirmation?->disposition_confirmed ?? false)
+                        || (
+                            $outgoing
+                                ->get($product->id)
+                                ?->isNotEmpty()
+                            ?? false
+                        );
                 return [
                     'id' => $product->id,
 
@@ -659,19 +657,26 @@ class ProductionDailyService
             ->where('movement_type', 'carryover_in')
             ->pluck('stock_lot_id');
 
-        // 기존과 동일한 조건과 정렬로 당일 생산 및 이월 재고를 선택합니다.
-        $lots = ProductStockLot::query()
-            ->where('store_id', $storeId)
-            ->where('product_id', $productId)
-            ->where(function ($query) use ($date, $incomingLotIds) {
-                $query->whereDate('origin_production_date', $date);
+            /*
+            * 선택 날짜에 실제 사용 가능한 제품 생산 내역을 조회합니다.
+            * 삭제된 생산 내역은 재고 선택에서 제외합니다.
+            * 오늘 생산과 해당 날짜에 입고된 이월 재고를 구분합니다.
+            */
+            $lots = ProductStockLot::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->where('status', '!=', 'deleted')
+                ->where(function ($query) use ($date, $incomingLotIds) {
+                    $query->whereDate('origin_production_date', $date);
 
-                if ($incomingLotIds->isNotEmpty()) {
-                    $query->orWhereIn('id', $incomingLotIds);
-                }
-            })
-            ->orderBy('origin_production_date')
-            ->get();
+                    if ($incomingLotIds->isNotEmpty()) {
+                        $query->orWhereIn('id', $incomingLotIds);
+                    }
+                })
+                // 생산일이 같아도 생산 기록의 목록 순서를 일정하게 유지합니다.
+                ->orderBy('origin_production_date')
+                ->orderBy('id')
+                ->get();
 
         if ($lots->isEmpty()) {
             return [];

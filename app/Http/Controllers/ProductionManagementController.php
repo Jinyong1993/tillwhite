@@ -244,7 +244,7 @@ class ProductionManagementController extends Controller
                 $isFlowRecord = $log->action === 'update'
                     && in_array(
                         $newValues['type'] ?? null,
-                        ['loss', 'waste', 'carryover', 'other_outflow'],
+                        ['loss', 'waste', 'carryover'],
                         true
                     );
 
@@ -550,14 +550,11 @@ class ProductionManagementController extends Controller
          * 저장 중 오류가 발생하면 변경 사항을 롤백합니다.
          */
         $batch = DB::transaction(function () use ($data, $user) {
-            /**
-             * 제품의 기본 정보만 조회합니다.
-             *
-             * 기존에는 모든 레시피와 재료, 제조 단계를 먼저 조회한 뒤
-             * 최신 레시피를 다시 조회했습니다.
-             */
+            // 같은 제품의 생산 수정 및 재고 처리와 저장 순서를 맞춥니다.
             $product = Product::query()
-                ->findOrFail($data['product_id']);
+                ->whereKey((int) $data['product_id'])
+                ->lockForUpdate()
+                ->firstOrFail();
 
             abort_unless(
                 $product->store_id === (int) $data['store_id'],
@@ -926,6 +923,14 @@ class ProductionManagementController extends Controller
                 DB::table('production_batch_workers')
                     ->insert($workers);
 
+                /*
+                * 생산 수량의 변경분을 계산합니다.
+                * 수정 전 수량은 이미 보관한 $before에서 가져옵니다.
+                * 기존 로스·폐기·기타 출고·이월 기록은 변경하지 않습니다.
+                */
+                $quantityDifference = (int) $data['quantity']
+                    - (int) $before['quantity'];
+
                 // 생산 수량, 메모, 수정자 및 잠금 버전을 갱신합니다.
                 $lockedBatch->update([
                     'quantity' => $data['quantity'],
@@ -935,8 +940,9 @@ class ProductionManagementController extends Controller
                 ]);
 
                 /*
-                * 기존 동작대로 최초 생산 수량만 변경합니다.
-                * remaining_quantity는 수정하지 않습니다.
+                * 변경한 생산 수량을 해당 생산 내역의 재고에 반영합니다.
+                * 최초 생산 수량은 새 수량으로 변경합니다.
+                * 남은 재고에는 생산 수량의 차이만 반영합니다.
                 */
                 ProductStockLot::query()
                     ->where(
@@ -945,6 +951,9 @@ class ProductionManagementController extends Controller
                     )
                     ->update([
                         'initial_quantity' => $data['quantity'],
+                        'remaining_quantity' => DB::raw(
+                            'remaining_quantity + (' . $quantityDifference . ')'
+                        ),
                     ]);
 
                 // 실제 저장된 최신 생산 기록을 확보합니다.
@@ -1014,7 +1023,13 @@ class ProductionManagementController extends Controller
         $before = $batch->toArray();
 
         DB::transaction(function () use ($batch) {
-            // 생산 기록을 잠가 동시 수정에 의한 충돌을 방지합니다.
+            // 같은 제품의 생산 수정 및 재고 처리와 저장 순서를 맞춥니다.
+            Product::query()
+                ->whereKey((int) $batch->product_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // 생산 기록을 잠그고 최신 내용을 확인합니다.
             $lockedBatch = ProductionBatch::query()
                 ->whereKey($batch->id)
                 ->lockForUpdate()
@@ -1379,7 +1394,7 @@ class ProductionManagementController extends Controller
             'work_date' => ['required', 'date_format:Y-m-d'],
             'type' => [
                 'required',
-                Rule::in(['loss', 'waste', 'other_outflow', 'carryover']),
+                Rule::in(['loss', 'waste', 'carryover']),
             ],
             'reasons' => ['array'],
             'reasons.*.reason_code' => [
@@ -1509,23 +1524,27 @@ class ProductionManagementController extends Controller
                 '선택한 제품의 생산 현황을 확인할 수 없습니다.'
             );
 
-            $availableForType = $this->availableQuantityForDisposition(
-                $row,
-                $data['type']
-            );
+            /**
+             * 이월은 전체 사용 가능 수량을 확인합니다.
+             * 로스·폐기·기타 출고는 아래 생산 내역별 검사에서 확인합니다.
+             */
+            if ($data['type'] === 'carryover') {
+                $availableForType = $this->availableQuantityForDisposition(
+                    $row,
+                    $data['type']
+                );
 
-            $requestedQuantity = $data['type'] === 'carryover'
-                ? (int) ($data['quantity'] ?? 0)
-                : (int) $reasons->sum('quantity');
+                $requestedQuantity = (int) ($data['quantity'] ?? 0);
 
-            abort_if(
-                $requestedQuantity > $availableForType,
-                422,
-                '입력한 수량이 현재 사용 가능한 수량보다 많습니다.'
-            );
+                abort_if(
+                    $requestedQuantity > $availableForType,
+                    422,
+                    '입력한 수량이 현재 사용 가능한 수량보다 많습니다.'
+                );
+            }
 
             // 로스, 폐기, 기타 출고의 재고 출처와 수량을 검증합니다.
-            if (in_array($data['type'], ['loss', 'waste', 'other_outflow'], true)) {
+            if (in_array($data['type'], ['loss', 'waste'], true)) {
                 $this->validateReasonStockSources(
                     (int) $data['store_id'],
                     (int) $data['product_id'],
@@ -1605,23 +1624,6 @@ class ProductionManagementController extends Controller
                     'waste_confirmed',
                     $user->id
                 );
-            } elseif ($type === 'other_outflow') {
-                $this->replaceOutflows(
-                    $storeId,
-                    $productId,
-                    $date,
-                    $reasons,
-                    $note,
-                    $user->id
-                );
-
-                $this->confirmFlowField(
-                    $storeId,
-                    $productId,
-                    $date,
-                    'disposition_confirmed',
-                    $user->id
-                );
             } else {
                 $this->replaceCarryover(
                     $storeId,
@@ -1678,17 +1680,16 @@ class ProductionManagementController extends Controller
         $labels = [
             'loss' => '로스',
             'waste' => '폐기',
-            'other_outflow' => '기타 출고',
             'carryover' => '이월',
         ];
 
         $label = $labels[$data['type']];
 
-        // 업무 유형에 해당하는 확인 상태 필드를 결정합니다.
+        // 저장한 업무 항목의 완료 상태만 확인합니다.
+        // 이월과 기타 처리는 서로 다른 완료 상태를 사용합니다.
         $confirmationField = [
             'loss' => 'loss_confirmed',
             'waste' => 'waste_confirmed',
-            'other_outflow' => 'disposition_confirmed',
             'carryover' => 'disposition_confirmed',
         ][$data['type']];
 
@@ -3245,24 +3246,36 @@ class ProductionManagementController extends Controller
     }
 
     /**
-     * 업무일의 전체 재고에서 다른 처리 유형에 이미 배정된 수량을 제외합니다.
+     * 선택한 업무에서 사용할 수 있는 수량을 계산합니다.
      *
-     * 같은 유형의 기존 입력은 수정 요청으로 대체되므로 다시 차감하지 않습니다.
-     * 이월 예정은 사용자가 직접 수정해야 하며, 로스·폐기 가능량에서 제외합니다.
-     * 생산일별 실제 잔여량은 validateReasonStockSources()에서 별도로 검사합니다.
-     *
-     * @param array<string, mixed> $row 일별 현황 서비스에서 계산한 제품별 합계
-     * @param string $type 처리 유형(carryover, loss, waste, other_outflow)
+     * 생산·이월 재고에서 다른 업무에 사용한 수량을 제외합니다.
+     * 기존 기타 출고 기록은 과거 재고 정확성을 위해 차감에 포함합니다.
      */
     private function availableQuantityForDisposition(array $row, string $type): int
     {
-        $total = (int) $row['production'] + (int) $row['carryover_in'];
+        $total =
+            (int) $row['production']
+            + (int) $row['carryover_in'];
+
         $allocatedByOtherTypes = match ($type) {
-            'carryover' => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['other_outflow'],
-            'loss' => (int) $row['operational_waste'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
-            'waste' => (int) $row['operational_loss'] + (int) $row['other_outflow'] + (int) $row['carryover_out'],
-            'other_outflow' => (int) $row['operational_loss'] + (int) $row['operational_waste'] + (int) $row['carryover_out'],
-            default => throw new \InvalidArgumentException('지원하지 않는 재고 처리 유형입니다.'),
+            'carryover' =>
+                (int) $row['operational_loss']
+                + (int) $row['operational_waste']
+                + (int) $row['other_outflow'],
+
+            'loss' =>
+                (int) $row['operational_waste']
+                + (int) $row['other_outflow']
+                + (int) $row['carryover_out'],
+
+            'waste' =>
+                (int) $row['operational_loss']
+                + (int) $row['other_outflow']
+                + (int) $row['carryover_out'],
+
+            default => throw new \InvalidArgumentException(
+                '지원하지 않는 재고 처리 유형입니다.'
+            ),
         };
 
         return max(0, $total - $allocatedByOtherTypes);
@@ -3418,31 +3431,6 @@ class ProductionManagementController extends Controller
         abort_if($todayLots->count() > 1, 422, '같은 날짜의 생산 재고가 여러 건입니다. 처리할 생산 기록을 선택해주세요.');
 
         return $todayLots->first();
-    }
-
-    // 시식·서비스·직원사용 등 기타 출고를 현재 입력값으로 교체합니다.
-    private function replaceOutflows(int $storeId, int $productId, string $date, array $reasons, ?string $note, int $userId): void
-    {
-        ProductionOtherOutflow::query()->where('store_id', $storeId)->where('product_id', $productId)->whereDate('work_date', $date)->delete();
-        foreach ($reasons as $reason) {
-            // 기타 출고도 사유별로 선택한 생산 기록에서 차감합니다.
-            $lot = $this->resolveReasonLot($storeId, $productId, $date, $reason);
-            // 검증 이후에도 출처를 찾지 못했다면 출처 없는 출고 기록을 남기지 않습니다.
-            // 각 사유의 생산 lot 연결을 보존해야 원 생산일별 잔여량을 정확히 계산할 수 있습니다.
-            abort_unless($lot, 422, '처리할 재고의 생산일을 다시 확인해주세요.');
-
-            ProductionOtherOutflow::create([
-                'store_id' => $storeId,
-                'product_id' => $productId,
-                'stock_lot_id' => $lot->id,
-                'work_date' => $date,
-                'quantity' => $reason['quantity'],
-                'reason_code' => $reason['reason_code'],
-                'reason_text' => $reason['reason_text'] ?? null,
-                'note' => $note,
-                'created_by' => $userId,
-            ]);
-        }
     }
 
     /**
