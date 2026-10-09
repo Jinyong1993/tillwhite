@@ -39,9 +39,22 @@
       </section>
       <v-divider class="my-4" />
       <div ref="editorSection" class="production-record-editor">
-        <v-alert v-if="editingBatch" type="info" variant="tonal" density="compact" class="mb-3">
-          <strong>수정 중인 기록 · {{ editingBatch.quantity }}개</strong>
-          <div>기존 값을 변경한 후 수정 내용을 저장해 주세요.</div>
+        <!-- 기존 생산 기록 수정 시 간결한 안내를 표시합니다. -->
+        <v-alert
+          v-if="editingBatch"
+          type="info"
+          variant="tonal"
+          density="compact"
+          icon="mdi-information-outline"
+          class="app-supporting-alert mb-3"
+        >
+          <div class="font-weight-medium">
+            수정 중인 기록 · {{ editingBatch.quantity }}개
+          </div>
+
+          <div class="mt-1">
+            기존 값을 변경한 후 수정 내용을 저장해 주세요.
+          </div>
         </v-alert>
       <div class="production-dialog-section-title">
         {{ editingBatch ? '생산 기록 수정' : '새 생산 기록' }}
@@ -190,13 +203,27 @@
     </v-card-actions>
   </v-card>
 </v-dialog>
-<ConfirmDialog
-    v-model="saveConfirmOpen"
-    :title="editingBatch ? '생산 기록 수정 확인' : '생산 기록 등록 확인'"
-    :message="saveConfirmMessage"
-    :loading="saving"
-    @confirm="save"
+
+<!-- 생산 기록 등록 및 수정 확인 전용 다이얼로그 -->
+<ProductionSaveConfirmDialog
+  v-model="saveConfirmOpen"
+  :editing="Boolean(editingBatch)"
+  :product-name="product?.name || '제품'"
+  :quantity="Number(form.quantity)"
+  :original-quantity="Number(editingBatch?.quantity || 0)"
+  :current-total="product?.production == null ? null : Number(product.production)"
+  :expected-total="expectedProductionTotal"
+  :average-quantity="productionAverage"
+  :previous-quantity="previousProductionQuantity"
+  :history-status="productionHistoryStatus"
+  :selected-workers="selectedProductionWorkers"
+  :abnormal="isAbnormalQuantity"
+  :warning-title="productionWarningTitle"
+  :warning-message="productionWarningMessage"
+  :loading="saving"
+  @confirm="save"
 />
+
 <ConfirmDialog
     v-model="deleteConfirmOpen"
     title="생산 기록 삭제"
@@ -227,6 +254,7 @@ import {
     watch,
 } from 'vue';
 import ConfirmDialog from '../common/ConfirmDialog.vue';
+import ProductionSaveConfirmDialog from './ProductionSaveConfirmDialog.vue';
 import { addLocalDays } from '../../utils/localDate';
 
 const props = defineProps({
@@ -326,6 +354,207 @@ function applyPreviousProduction() {
   form.quantity = previousProduction.value;
 }
 
+// 이상 수량 감지를 위한 이전 7일 생산 이력입니다.
+// null은 미확인 날짜이며 실제 생산량 0개와 구분합니다.
+const productionHistory = ref([]);
+const productionHistoryStatus = ref('idle');
+let productionHistoryRequestId = 0;
+
+/**
+ * 선택 날짜 이전 7일의 생산량을 조회합니다.
+ * 기존 제품 상세 API를 재사용하며 생산 기록은 변경하지 않습니다.
+ */
+async function loadProductionHistory() {
+  const requestId = ++productionHistoryRequestId;
+
+  productionHistory.value = [];
+  productionHistoryStatus.value = 'idle';
+
+  if (!props.storeId || !props.workDate || !props.product?.id) {
+    return;
+  }
+
+  productionHistoryStatus.value = 'loading';
+
+  try {
+    const previousDate = addLocalDays(props.workDate, -1);
+
+    const response = await window.axios.get(
+      `/tillwhite/api/production-management/products/${props.product.id}`,
+      {
+        params: {
+          work_date: previousDate,
+        },
+      }
+    );
+
+    if (requestId !== productionHistoryRequestId) return;
+
+    const history = response.data?.production_history;
+
+    if (!Array.isArray(history) || history.length !== 7) {
+      throw new Error('생산 이력 응답이 올바르지 않습니다.');
+    }
+
+    productionHistory.value = history;
+    productionHistoryStatus.value = 'success';
+  } catch (error) {
+    if (requestId !== productionHistoryRequestId) return;
+
+    productionHistory.value = [];
+    productionHistoryStatus.value = 'error';
+  }
+}
+
+// 생산 입력창의 제품이나 날짜가 변경되면 이력을 다시 조회합니다.
+watch(
+  () => [
+    props.modelValue,
+    props.product?.id,
+    props.storeId,
+    props.workDate,
+  ],
+  () => {
+    if (props.modelValue) {
+      loadProductionHistory();
+    } else {
+      productionHistoryRequestId++;
+      productionHistory.value = [];
+      productionHistoryStatus.value = 'idle';
+    }
+  },
+  { immediate: true }
+);
+
+/**
+ * 최근 7일 중 생산량이 확인된 날짜만 평균을 계산합니다.
+ * 미확인 기록은 제외하고 실제 0개는 포함합니다.
+ */
+const productionAverage = computed(() => {
+  if (productionHistoryStatus.value !== 'success') {
+    return null;
+  }
+
+  const quantities = productionHistory.value
+    .map((row) => row.quantity)
+    .filter((quantity) =>
+      quantity !== null &&
+      quantity !== undefined &&
+      Number.isFinite(Number(quantity))
+    )
+    .map(Number);
+
+  // 확인된 날짜가 3일 미만이면 비교하지 않습니다.
+  if (quantities.length < 3) {
+    return null;
+  }
+
+  const total = quantities.reduce(
+    (sum, quantity) => sum + quantity,
+    0
+  );
+
+  return total / quantities.length;
+});
+
+/**
+ * 저장 후 예상 총생산량을 기준으로 이상 수량을 감지합니다.
+ * 최근 7일 평균과 전날 총생산량 중 높은 값의 2배 이상이면 경고합니다.
+ * 평균을 계산할 수 없으면 이상 수량으로 판단하지 않습니다.
+ */
+const isAbnormalQuantity = computed(() => {
+  const average = productionAverage.value;
+  const total = expectedProductionTotal.value;
+
+  // 평균이나 예상 총생산량을 계산할 수 없으면 비교하지 않습니다.
+  if (average === null || average <= 0 || total === null) {
+    return false;
+  }
+
+  if (!Number.isFinite(total) || total < 1) {
+    return false;
+  }
+
+  // 최근 7일 평균과 전날 총생산량 중 높은 값을 비교 기준으로 사용합니다.
+  const previous = previousProductionQuantity.value;
+
+  const baseline = previous !== null
+    ? Math.max(average, previous)
+    : average;
+
+  return total >= baseline * 2;
+});
+
+/**
+ * 최근 생산 이력에서 선택 날짜의 전날 생산량을 조회합니다.
+ * 기록이 없거나 조회에 실패한 경우 null로 유지하며 실제 0개와 구분합니다.
+ */
+const previousProductionQuantity = computed(() => {
+  if (productionHistoryStatus.value !== 'success') {
+    return null;
+  }
+
+  const previousDate = addLocalDays(props.workDate, -1);
+
+  const previousQuantity = productionHistory.value.find(
+    (row) => row.date === previousDate
+  )?.quantity;
+
+  return previousQuantity == null
+    ? null
+    : Number(previousQuantity);
+});
+
+// 이상 수량 감지 시 저장 확인창에 표시할 안내 문구입니다.
+const productionWarningTitle = '생산 수량 확인 필요';
+const productionWarningMessage = '최근 생산 기록보다 입력 수량이 크게 증가했습니다. 수량을 다시 확인해 주세요.';
+
+/**
+ * 생산 기록에 선택한 작업자 정보를 조회합니다.
+ * 작업자 선택 순서를 유지하며 기존 작업자 목록과 연결합니다.
+ */
+const selectedProductionWorkers = computed(() => {
+  return form.workerIds
+    .map((workerId) =>
+      props.workers.find(
+        (worker) => Number(worker.id) === Number(workerId)
+      )
+    )
+    .filter(Boolean);
+});
+
+/**
+ * 생산 기록 등록 또는 수정 후 예상 총생산량을 계산합니다.
+ * 신규 등록은 입력 수량을 더하고 수정은 기존 수량과의 차이만 반영합니다.
+ */
+const expectedProductionTotal = computed(() => {
+  const currentTotal = Number(props.product?.production);
+  const quantity = Number(form.quantity);
+
+  // 현재 총생산량이나 입력 수량이 유효하지 않으면 계산하지 않습니다.
+  if (!Number.isFinite(currentTotal) || currentTotal < 0) {
+    return null;
+  }
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return null;
+  }
+
+  // 수정 중인 기록이 있다면 기존 수량을 제외한 뒤 새 수량을 반영합니다.
+  if (editingBatch.value) {
+    const originalQuantity = Number(editingBatch.value.quantity);
+
+    if (!Number.isFinite(originalQuantity)) {
+      return null;
+    }
+
+    return currentTotal - originalQuantity + quantity;
+  }
+
+  // 신규 등록인 경우 현재 총생산량에 입력 수량을 추가합니다.
+  return currentTotal + quantity;
+});
+
 const saveConfirmOpen = ref(false);
 const workerError = ref('');
 const editorSection = ref(null);
@@ -356,11 +585,7 @@ const displayZeroReasons = computed(() => props.zeroReasons.map((reason) => ({
     title: reason.value === 'other' ? '직접입력' : reason.title,
 })));
 
-const saveConfirmMessage = computed(() => editingBatch.value
-    ? `생산 수량 ${editingBatch.value.quantity}개 → ${form.quantity}개로 수정하시겠습니까? 작업자 변경도 함께 저장됩니다.`
-    : `생산 ${form.quantity}개를 선택한 작업자와 함께 등록하시겠습니까?`);
-
-// 입력 검증을 통과한 뒤에만 공통 확인창을 열어 실제 저장을 승인받습니다.
+// 입력 검증을 통과한 뒤 생산 기록 저장 전용 확인창을 엽니다.
 function askSave() {
   if (!props.product?.id || !Number.isInteger(Number(form.quantity)) || Number(form.quantity) < 1) {
     emit('error', '올바른 생산 수량을 입력해 주세요.');
