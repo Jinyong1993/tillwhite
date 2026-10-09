@@ -224,6 +224,7 @@
                   <!-- 제품명 및 상세 펼치기 -->
                   <td>
                     <div class="product-name-cell">
+                      <!-- 기존 제품별 상세 정보 펼치기 기능 유지 -->
                       <button
                         type="button"
                         class="row-detail-toggle"
@@ -236,6 +237,7 @@
                         />
                       </button>
 
+                      <!-- 제품명 클릭 시 기존 제품 상세 다이얼로그 표시 -->
                       <button
                         type="button"
                         class="product-name"
@@ -247,25 +249,25 @@
                     </div>
                   </td>
 
-                  <!-- 생산: 기존 확인 상태와 입력 동작 유지 -->
+                  <!-- 생산: 통합 재고 관리의 생산 메뉴 표시 -->
                   <td>
                     <button
                       type="button"
                       class="table-value production-value"
                       :class="{ pending: !row.production_confirmed }"
-                      @click="openProduction(row)"
+                      @click="openInventoryDialog(row, 'production')"
                     >
                       {{ row.production_confirmed ? row.production : '-' }}
                     </button>
                   </td>
 
-                  <!-- 이월: 넘어온 수량과 다음 날 이월 예정 수량을 각각 표시 -->
+                  <!-- 이월: 재고와 예정 수량을 구분하여 표시 -->
                   <td>
                     <button
                       type="button"
                       class="table-value carryover-value"
                       :class="{ pending: !row.disposition_confirmed }"
-                      @click="openFlow(row, 'carryover')"
+                      @click="openInventoryDialog(row, 'carryover')"
                     >
                       <template
                         v-if="
@@ -288,19 +290,19 @@
                     </button>
                   </td>
 
-                  <!-- 로스: 기존 처리일 기준 및 확인 상태 유지 -->
+                  <!-- 로스: 통합 재고 관리의 로스 메뉴 표시 -->
                   <td>
                     <button
                       type="button"
                       class="table-value"
                       :class="{ pending: !row.loss_confirmed }"
-                      @click="openFlow(row, 'loss')"
+                      @click="openInventoryDialog(row, 'loss')"
                     >
                       {{ row.loss_confirmed ? row.loss : '-' }}
                     </button>
                   </td>
 
-                  <!-- 폐기: 실제 폐기일이 아닌 원 생산일에 귀속된 수량 표시 -->
+                  <!-- 폐기: 최초 생산일 귀속 폐기량 표시 -->
                   <td>
                     <button
                       type="button"
@@ -310,7 +312,7 @@
                           !row.waste_confirmed &&
                           Number(row.attributed_waste || 0) === 0
                       }"
-                      @click="openFlow(row, 'waste')"
+                      @click="openInventoryDialog(row, 'waste')"
                     >
                       {{
                         row.waste_confirmed ||
@@ -321,51 +323,56 @@
                     </button>
                   </td>
 
-                  <!-- 폐기율: 서버에서 계산한 원 생산일 기준 값 유지 -->
+                  <!-- 폐기율: 서버에서 계산한 값 표시, 조회 전용 -->
                   <td>
                     <button
                       type="button"
                       class="table-value rate-value"
-                      @click="openWasteRate(row)"
+                      @click="openInventoryDialog(row, 'waste_rate')"
                     >
                       {{ row.waste_rate == null ? '-' : `${row.waste_rate}%` }}
                     </button>
                   </td>
                 </tr>
 
-                <!-- 제품별 상세: 실제 재고 처리 기록은 변경하지 않음 -->
+                <!-- 제품별 상세 -->
                 <tr
                   v-if="isRowExpanded(row.id)"
                   class="product-detail-row"
                 >
                   <td colspan="6">
                     <div class="product-row-detail">
-                      <div>
+                      <!-- 이전 날짜에서 넘어온 이월 재고입니다. -->
+                      <div v-if="Number(row.carryover_in || 0) > 0">
                         <span>이월 재고</span>
                         <strong>{{ row.carryover_in }}개</strong>
                       </div>
 
-                      <div>
+                      <!-- 다음 날짜로 넘길 이월 예정 수량입니다. -->
+                      <div v-if="Number(row.carryover_out || 0) > 0">
                         <span>이월 예정</span>
                         <strong>{{ row.carryover_out }}개</strong>
                       </div>
 
+                      <!-- 최초 생산일에 귀속된 폐기량입니다. -->
                       <div>
-                        <span>해당 날짜 폐기</span>
-                        <strong>{{ row.operational_waste }}개</strong>
+                        <span>폐기</span>
+                        <strong>{{ Number(row.attributed_waste || 0) }}개</strong>
                       </div>
 
-                      <div>
+                      <!-- 이월 재고 폐기가 있을 때만 표시합니다. -->
+                      <div v-if="carryoverWaste(row) > 0">
                         <span>이월 재고 폐기</span>
                         <strong>{{ carryoverWaste(row) }}개</strong>
                       </div>
 
+                      <!-- 재고 흐름 -->
                       <button
                         type="button"
                         class="product-row-flow stock-flow-trigger"
                         @click="openStockFlow(row)"
                       >
-                        <span>재고 흐름 · 상세 보기</span>
+                        <span>재고 흐름</span>
                         <strong>{{ stockFlowText(row) }}</strong>
                       </button>
                     </div>
@@ -464,6 +471,22 @@
     @error="emit('error', $event)"
   />
   
+  <!-- 생산·재고 통합 관리 -->
+  <ProductionInventoryDialog
+    v-model="inventoryOpen"
+    :product="selectedProduct"
+    :stock-sources="selectedProduct?.stock_sources || []"
+    :store-id="storeId"
+    :work-date="workDate"
+    :workers="options.workers || []"
+    :zero-reasons="options.zero_reasons || []"
+    :can-mutate="canMutate"
+    :sections="inventorySections"
+    :initial-section="inventoryInitialSection"
+    @saved="handleSaved"
+    @error="emit('error', $event)"
+  />
+
   <ProductDetailDialog
     v-model="productDetailOpen"
     :product="productDetail"
@@ -1038,6 +1061,9 @@ import ConfirmDialog from '../common/ConfirmDialog.vue';
 import ProductDetailDialog from '../product/ProductDetailDialog.vue';
 import ProductionBatchDialog from './ProductionBatchDialog.vue';
 import ProductionFlowDialog from './ProductionFlowDialog.vue';
+// 제품별 생산 및 재고 관리를 위한 통합 다이얼로그입니다.
+import ProductionInventoryDialog from './ProductionInventoryDialog.vue';
+
 import {
     addLocalDays,
     formatKoreanDate,
@@ -1127,6 +1153,30 @@ const productProductionHistory = ref([]);
 const batchOpen = ref(false);
 const flowOpen = ref(false);
 const flowType = ref('carryover');
+
+// 통합 재고 관리 다이얼로그의 열림 상태를 관리합니다.
+const inventoryOpen = ref(false);
+
+// 통합 다이얼로그를 열 때 처음 표시할 업무 유형입니다.
+const inventoryInitialSection = ref('');
+
+/**
+ * 통합 재고 관리 화면의 업무 메뉴를 정의합니다.
+ *
+ * 기존 생산·이월·로스·폐기 업무 유형을 그대로 사용하며,
+ * 화면에 표시할 명칭과 순서를 한곳에서 관리합니다.
+ *
+ * 재이월은 이월 업무에서 재고 출처를 선택하여 처리하고,
+ * 폐기율은 저장 기능이 없는 조회 전용 항목으로 관리합니다.
+ */
+const inventorySections = [
+  { value: 'production', title: '생산' },
+  { value: 'carryover', title: '이월' },
+  { value: 'loss', title: '로스' },
+  { value: 'waste', title: '폐기' },
+  { value: 'waste_rate', title: '폐기율' },
+];
+
 const detailOpen = ref(false);
 const wasteGuideOpen = ref(false);
 const stockFlowOpen = ref(false);
@@ -1355,45 +1405,37 @@ const detailEmptyText = computed(() => detailConfirmedCount.value === activeRows
   : `아직 확인하지 않은 제품이 ${activeRows.value.length - detailConfirmedCount.value}개 있습니다.`);
 
 /**
- * 요약 카드에 표시할 생산·이월·로스·폐기·폐기율을 구성합니다.
- *
- * - 생산·이월·로스: 기존 서버 집계 기준을 유지합니다.
- * - 폐기: 실제 폐기 처리일이 아닌 원 생산일에 귀속된 수량을 표시합니다.
- * - 폐기율: 서버에서 계산한 원 생산일 기준 폐기율을 유지합니다.
- *
- * 이월 재고를 다음 날 폐기하더라도 해당 폐기 수량은
- * 원래 생산한 날짜의 요약에 반영됩니다.
+ * 일일 요약은 기존 생산일 기준 폐기 집계를 유지합니다.
+ * 이월 재고 폐기는 해당 제품의 최초 생산일에 귀속됩니다.
  */
 const metrics = computed(() => [
   {
     key: 'production',
     title: '생산',
-    value: props.daily.totals?.production || 0,
+    value: Number(props.daily.totals?.production || 0),
   },
   {
     key: 'carryover',
     title: '이월',
-    value: `${
+    value:
       Number(props.daily.totals?.carryover || 0) +
-      Number(props.daily.totals?.carryover_out || 0)
-    }`,
+      Number(props.daily.totals?.carryover_out || 0),
   },
   {
     key: 'loss',
     title: '로스',
-    value: props.daily.totals?.loss || 0,
+    value: Number(props.daily.totals?.loss || 0),
   },
   {
     key: 'waste',
     title: '폐기',
-
-    // 제품별 원 생산일 귀속 폐기 수량을 합산합니다.
-    // 실제 폐기 처리일 기준인 totals.waste는 사용하지 않습니다.
-    value: sum(activeRows.value, 'attributed_waste'),
+    // 최초 생산일에 귀속된 폐기량입니다.
+    value: Number(props.daily.totals?.attributed_waste || 0),
   },
   {
     key: 'waste_rate',
     title: '폐기율',
+    // 서버에서 계산한 생산일 기준 폐기율을 사용합니다.
     value:
       props.daily.totals?.waste_rate == null
         ? '-'
@@ -1401,46 +1443,75 @@ const metrics = computed(() => [
   },
 ]);
 
-// 마감 다이얼로그는 서버에서 다시 받은 최종 점검 데이터를 우선 사용하며, 폐기는 원 생산일 기준으로 집계합니다.
+/**
+ * 선택 날짜에 실제 처리한 폐기를 생산일별로 구분합니다.
+ * 이월 재고 폐기가 없다면 빈 배열을 반환합니다.
+ */
+function wasteDetailGroups(row, workDate) {
+  const details = row?.operational_waste_details || [];
+
+  const current = [];
+  const carryover = [];
+
+  for (const detail of details) {
+    const quantity = Number(detail.quantity || 0);
+
+    if (quantity <= 0) continue;
+
+    // 최초 생산일과 선택 날짜를 비교합니다.
+    if (detail.origin_production_date === workDate) {
+      current.push(detail);
+    } else {
+      carryover.push(detail);
+    }
+  }
+
+  return {
+    current,
+    carryover,
+    hasCarryover: carryover.length > 0,
+  };
+}
+
+/**
+ * 마감 최종확인은 서버의 최신 검증 결과를 사용합니다.
+ * 폐기량과 폐기율은 최초 생산일 기준을 유지합니다.
+ */
 const closeMetrics = computed(() => {
   const daily = closePreview.value?.daily || props.daily;
-  const source = daily?.totals || {};
-  const rows = daily?.rows || [];
-
-  // 실제 폐기일 기준인 source.waste 대신 원 생산일에 귀속된 제품별 폐기 수량을 합산합니다.
-  const attributedWaste = sum(rows.filter((row) => row.is_active), 'attributed_waste');
+  const totals = daily?.totals || {};
 
   return [
     {
       key: 'production',
       title: '생산',
-      value: source.production || 0,
+      value: Number(totals.production || 0),
     },
     {
       key: 'carryover',
       title: '이월',
-      value: `${
-        Number(source.carryover || 0) +
-        Number(source.carryover_out || 0)
-      }`,
+      value:
+        Number(totals.carryover || 0) +
+        Number(totals.carryover_out || 0),
     },
     {
       key: 'loss',
       title: '로스',
-      value: source.loss || 0,
+      value: Number(totals.loss || 0),
     },
     {
       key: 'waste',
       title: '폐기',
-      value: attributedWaste,
+      // 최초 생산일에 귀속된 폐기량입니다.
+      value: Number(totals.attributed_waste || 0),
     },
     {
       key: 'waste_rate',
       title: '폐기율',
       value:
-        source.waste_rate == null
+        totals.waste_rate == null
           ? '-'
-          : `${source.waste_rate}%`,
+          : `${totals.waste_rate}%`,
     },
   ];
 });
@@ -2026,25 +2097,74 @@ function openNextMissing() {
   }
 }
 
-// 생산 수량을 확인하거나 기록할 수 있는 생산 다이얼로그를 엽니다.
-function openProduction(row) {
+/**
+ * 선택한 제품의 생산 및 재고 처리 화면을 엽니다.
+ *
+ * 기존 권한 검사와 다이얼로그 동작을 유지하면서
+ * 통합 재고 관리 화면에서 재사용할 공통 진입점을 제공합니다.
+ *
+ * @param {Object} row 선택한 제품
+ * @param {string} type 처리할 업무 유형
+ */
+function openInventoryWork(row, type) {
+  // 기존 수정 권한 및 마감 상태 검사를 유지합니다.
   if (!ensureMutable()) {
     return;
   }
 
+  if (!row) {
+    return;
+  }
+
+  // 모든 업무에서 동일한 제품을 선택하도록 관리합니다.
   selectedProduct.value = row;
-  batchOpen.value = true;
+
+  // 생산은 기존 생산 기록 다이얼로그를 유지합니다.
+  if (type === 'production') {
+    batchOpen.value = true;
+    return;
+  }
+
+  // 이월, 로스, 폐기는 기존 재고 처리 다이얼로그를 유지합니다.
+  if (['carryover', 'loss', 'waste'].includes(type)) {
+    flowType.value = type;
+    flowOpen.value = true;
+  }
 }
 
-// 선택한 이월·로스·폐기 업무 다이얼로그를 엽니다.
-function openFlow(row, type) {
-  if (!ensureMutable()) {
+/**
+ * 선택한 제품의 통합 재고 관리 화면을 엽니다.
+ *
+ * 제품별 생산·이월·로스·폐기·폐기율 숫자를 누르면
+ * 해당 업무 메뉴가 선택된 상태로 표시됩니다.
+ *
+ * 현재는 조회 기능만 사용합니다.
+ */
+function openInventoryDialog(row, type = '') {
+  if (!row) {
     return;
   }
 
+  const section = inventorySections.find(
+    (item) => item.value === type
+  );
+
   selectedProduct.value = row;
-  flowType.value = type;
-  flowOpen.value = true;
+
+  inventoryInitialSection.value =
+    section?.value || inventorySections[0]?.value || '';
+
+  inventoryOpen.value = true;
+}
+
+// 기존 생산 버튼 및 마감 화면의 호출 방식을 유지합니다.
+function openProduction(row) {
+  openInventoryWork(row, 'production');
+}
+
+// 기존 이월·로스·폐기 버튼 및 마감 화면의 호출 방식을 유지합니다.
+function openFlow(row, type) {
+  openInventoryWork(row, type);
 }
 
 // 기존 제품 상세정보와 선택 날짜 기준 최근 7일 생산 기록을 함께 조회합니다.
@@ -3939,5 +4059,34 @@ async function closeDay() {
   .product-row-detail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* 이월 재고 폐기가 존재하는 경우에만 상세 내역을 표시합니다. */
+.inventory-dialog__waste-details {
+  width: 100%;
+  margin-top: 8px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  text-align: left;
+}
+
+.inventory-dialog__waste-details > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.inventory-dialog__waste-detail {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+.inventory-dialog__waste-detail + .inventory-dialog__waste-detail {
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 </style>

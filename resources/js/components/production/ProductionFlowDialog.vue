@@ -64,12 +64,13 @@
         <template v-if="isReasonMode">
           <div class="production-dialog-section-title">{{ dialogTitle }} 수량과 사유</div>
           <ProductionReasonRows
-              v-model="reasonRows"
-              :reason-options="reasonOptions"
-              :max-quantity="remainingAvailable"
-              :stock-sources="editableStockSources"
-              :work-date="workDate"
-              :show-stock-source="type === 'loss' || type === 'waste'"
+            v-model="reasonRows"
+            :reason-options="reasonOptions"
+            :max-quantity="remainingAvailable"
+            :today-production-total="Number(product?.production || 0)"
+            :stock-sources="editableStockSources"
+            :work-date="workDate"
+            :show-stock-source="type === 'loss' || type === 'waste'"
           />
           <div class="production-dialog-actions">
             <v-btn
@@ -84,17 +85,11 @@
             <v-btn size="small" variant="outlined" @click="setZero">{{ dialogTitle }} 없음</v-btn>
           </div>
         </template>
-
         <template v-else>
-          <div class="production-dialog-section-title">다음 영업일로 넘길 수량</div>
-          <v-number-input
-            v-model="carryoverQuantity"
-            label="이월 수량"
-            variant="outlined"
-            density="compact"
-            :min="0"
-            :max="Math.min(remainingAvailable, carryoverSourceAvailable)"
-          />
+          <div class="production-dialog-section-title">
+            다음 영업일로 넘길 수량
+          </div>
+          <!-- 오늘 생산분과 기존 이월분을 구분합니다. -->
           <v-select
             v-if="product?.carryover_in > 0"
             v-model="carryoverSource"
@@ -103,7 +98,33 @@
             item-value="value"
             label="이월할 재고 출처"
             variant="outlined"
+            density="compact"
+            @update:model-value="changeCarryoverSource"
           />
+          <!-- 이월할 생산 기록을 직접 선택합니다. -->
+          <v-select
+            v-model="selectedCarryoverLotId"
+            :items="carryoverLotOptions"
+            item-title="title"
+            item-value="value"
+            label="이월할 생산 기록"
+            variant="outlined"
+            density="compact"
+            clearable
+            :disabled="carryoverLotOptions.length === 0"
+            @update:model-value="changeCarryoverLot"
+          />
+          <!-- 선택한 생산 기록의 재고만 사용합니다. -->
+          <v-number-input
+            v-model="carryoverQuantity"
+            label="이월 수량"
+            variant="outlined"
+            density="compact"
+            :min="0"
+            :max="Math.min(remainingAvailable, carryoverSourceAvailable)"
+            :disabled="selectedCarryoverLotId == null"
+          />
+          <!-- 재이월하더라도 최초 생산일은 유지합니다. -->
           <v-alert
             v-if="carryoverQuantity > 0 && carryoverSource === 'incoming'"
             type="warning"
@@ -209,6 +230,10 @@ const confirmClose = ref(false);
 const reasonRows = ref([]);
 const carryoverQuantity = ref(0);
 const carryoverSource = ref('today');
+
+// 이월할 생산 기록을 선택합니다.
+const selectedCarryoverLotId = ref(null);
+
 const note = ref('');
 const initialReasonSnapshot = ref('[]');
 
@@ -219,6 +244,47 @@ const carryoverSources = [
   { value: 'today', title: '오늘 생산분' },
   { value: 'incoming', title: '기존 이월분 · 재이월' },
 ];
+
+/**
+ * 이월할 생산 기록과 수정 가능한 수량을 표시합니다.
+ * 최초 생산일과 기존 이월 수량을 유지합니다.
+ */
+const carryoverLotOptions = computed(() => {
+  const sourceType = carryoverSource.value === 'incoming'
+    ? 'carryover'
+    : 'today';
+
+  return (props.product?.stock_sources || [])
+    .filter((source) => (
+      source.source === sourceType &&
+      source.stock_lot_id != null
+    ))
+    .map((source) => {
+      const rawRemaining = source.unallocated_quantity
+        ?? source.remaining_quantity;
+
+      const remaining = rawRemaining == null
+        ? null
+        : Number(rawRemaining);
+
+      const existing = Number(source.carryover_out_quantity || 0);
+
+      const available = remaining !== null && Number.isFinite(remaining)
+        ? remaining + existing
+        : null;
+
+      const quantityText = available === null
+        ? '수량 미확인'
+        : available < 0
+          ? `초과 처리 ${Math.abs(available)}개`
+          : `이월 가능 ${available}개`;
+
+      return {
+        value: source.stock_lot_id,
+        title: `${source.origin_production_date || '생산일 미확인'} 생산 · ${quantityText}`,
+      };
+    });
+});
 
 const otherReasons = [
   { value: 'tasting', title: '시식' },
@@ -247,20 +313,59 @@ const savedDetails = computed(() => {
   return [];
 });
 
-// 수정 중인 업무가 이미 사용한 수량은 다시 입력할 수 있도록 해당 재고의 편집 가능 수량에 되돌려 줍니다.
-const editableStockSources = computed(() => (props.product?.stock_sources || []).map((source) => {
-  const currentSaved = savedDetails.value
-    .filter((item) => Number(item.stock_lot_id) === Number(source.stock_lot_id))
-    .reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+/**
+ * 기존 기록을 수정할 때 사용할 수 있는 재고를 계산합니다.
+ * 선택한 업무에서 이미 처리한 수량만 복원합니다.
+ */
+const editableStockSources = computed(() => {
+  const sources = props.product?.stock_sources || [];
+  const details = savedDetails.value || [];
 
-  return {
-    ...source,
-    // 서버의 음수 포함 미배정 수량으로 기존 기록을 복원합니다.
-    // 표시용 remaining_quantity(최소 0)만 사용하면 초과 차감된 기존 데이터에서
-    // 수정 가능한 수량을 실제보다 크게 계산할 수 있습니다.
-    remaining_quantity: Math.max(0, Number(source.unallocated_quantity ?? source.remaining_quantity ?? 0) + currentSaved),
-  };
-}));
+  return sources.map((source) => {
+    const stockLotId = source.stock_lot_id;
+
+    // 현재 업무에서 이 재고로 처리한 기존 수량입니다.
+    const currentSaved = stockLotId == null
+      ? 0
+      : details
+          .filter((item) => (
+            item.stock_lot_id != null &&
+            String(item.stock_lot_id) === String(stockLotId)
+          ))
+          .reduce((sum, item) => {
+            const quantity = Number(item.quantity);
+
+            return Number.isSafeInteger(quantity) && quantity >= 0
+              ? sum + quantity
+              : sum;
+          }, 0);
+
+    // 재고 계산 결과를 그대로 사용합니다.
+    const rawRemaining = Object.prototype.hasOwnProperty.call(
+      source,
+      'unallocated_quantity'
+    )
+      ? source.unallocated_quantity
+      : source.remaining_quantity;
+
+    const remaining = rawRemaining == null || rawRemaining === ''
+      ? null
+      : Number(rawRemaining);
+
+    // 기존 수량만 복원하고 다른 재고의 수량은 합치지 않습니다.
+    const editableQuantity = remaining !== null && Number.isFinite(remaining)
+      ? remaining + currentSaved
+      : null;
+
+    return {
+      ...source,
+      editable_raw_quantity: editableQuantity,
+      remaining_quantity: editableQuantity === null
+        ? null
+        : Math.max(0, editableQuantity),
+    };
+  });
+});
 
 // 총 수량은 선택 날짜의 생산분과 들어온 이월 재고를 합친 값입니다.
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
@@ -275,86 +380,51 @@ const invalidSourceRows = computed(() => {
 });
 
 /**
- * 사유별 입력 수량이 실제 사용 가능한 재고를 초과하는지 검사합니다.
- *
- * 오늘 생산은 여러 생산 기록의 잔여 수량을 합산하여 검사하고,
- * 이월 재고는 사용자가 직접 선택한 재고 기록별로 검사합니다.
- *
- * 동일한 재고를 사용하는 여러 사유 행의 수량도 함께 계산하여
- * 중복 입력으로 재고를 초과하는 상황을 방지합니다.
- *
- * @returns {Array} 사용 가능 수량을 초과한 재고 구분 목록
+ * 생산 기록별로 입력 수량이 재고를 초과하는지 검사합니다.
+ * 다른 생산 기록의 재고는 합산하지 않습니다.
  */
 const sourceOverages = computed(() => {
-  /**
-   * 재고별 수량 검사가 필요한 업무에만 적용합니다.
-   *
-   * 로스, 폐기, 기타 출고 이외의 업무에는 영향을 주지 않도록
-   * 기존 검사 대상과 반환 방식을 유지합니다.
-   */
   if (
-      !isReasonMode.value
-      || !['loss', 'waste', 'other_outflow'].includes(props.type)
+    !isReasonMode.value ||
+    !['loss', 'waste', 'other_outflow'].includes(props.type)
   ) {
-      return [];
+    return [];
   }
 
-  /**
-   * 동일한 재고를 사용하는 사유 행들의 입력 수량을 합산합니다.
-   *
-   * 오늘 생산은 하나의 그룹으로 관리하고,
-   * 이월 재고는 재고 기록 ID별로 구분하여 관리합니다.
-   */
-  const groups = new Map();
+  const requested = new Map();
 
+  // 같은 생산 기록에 입력한 수량을 합산합니다.
   for (const row of reasonRows.value) {
-      /**
-       * 현재 사유 행이 사용하는 재고 그룹을 결정합니다.
-       *
-       * 오늘 생산은 개별 생산 차수와 관계없이 합산하며,
-       * 이월 재고는 사용자가 선택한 기록을 그대로 유지합니다.
-       */
-      const key = row.stock_source === 'today'
-          ? 'today'
-          : `carryover:${row.stock_lot_id}`;
+    const lotId = row.stock_lot_id;
+    const quantity = Number(row.quantity || 0);
 
-      // 같은 재고 그룹에 입력된 수량을 누적합니다.
-      groups.set(
-          key,
-          (groups.get(key) || 0) + Number(row.quantity || 0),
-      );
+    if (lotId == null || lotId === '' || quantity <= 0) {
+      continue;
+    }
+
+    const key = `${row.stock_source}:${lotId}`;
+
+    requested.set(
+      key,
+      (requested.get(key) || 0) + quantity
+    );
   }
 
-  /**
-   * 각 재고 그룹의 입력 수량과 사용 가능 수량을 비교합니다.
-   *
-   * 입력 수량이 실제 재고보다 많은 그룹만 반환하여
-   * 기존 저장 차단 기능에서 초과 여부를 확인할 수 있게 합니다.
-   */
-  return [...groups.entries()].filter(([key, quantity]) => {
-      /**
-       * 현재 그룹에서 사용할 수 있는 생산 기록을 조회합니다.
-       *
-       * 오늘 생산은 모든 당일 생산 기록을 포함하고,
-       * 이월 재고는 선택한 재고 기록만 포함합니다.
-       */
-      const available = editableStockSources.value
-          .filter((source) => {
-              if (key === 'today') {
-                  return source.source === 'today';
-              }
+  // 선택한 기록의 실제 재고와 비교합니다.
+  return [...requested.entries()].filter(([key, quantity]) => {
+    const source = editableStockSources.value.find((item) => (
+      `${item.source}:${item.stock_lot_id}` === key
+    ));
 
-              return key === `carryover:${source.stock_lot_id}`;
-          })
-          .reduce(
-              (sum, source) => (
-                  sum + Number(source.remaining_quantity || 0)
-              ),
-              0,
-          );
+    if (!source) return true;
 
-      // 입력 수량이 사용 가능 수량보다 크면 초과 항목으로 반환합니다.
-      return quantity > available;
+    const available = source.editable_raw_quantity;
+
+    if (available == null || !Number.isFinite(Number(available))) {
+      return true;
+    }
+
+    return quantity > Number(available);
   });
 });
 
@@ -427,35 +497,36 @@ const otherAllocated = computed(() => otherAllocationDetails.value
 const remainingAvailable = computed(() => Math.max(0, available.value - otherAllocated.value));
 
 /**
- * 선택한 재고 출처에서 이월할 수 있는 수량을 계산합니다.
- *
- * 오늘 생산분과 기존 이월분을 분리하여 계산하며,
- * 이미 저장된 이월 수량은 해당 출처에만 복원합니다.
- *
- * 다른 출처의 재고를 자동으로 사용하지 않습니다.
+ * 선택한 생산 기록의 이월 가능 수량을 계산합니다.
+ * 기존에 이월한 수량은 수정할 수 있도록 복원합니다.
+ * 다른 생산 기록의 재고는 합산하지 않습니다.
  */
 const carryoverSourceAvailable = computed(() => {
-  if (props.type !== 'carryover') {
-    return 0;
-  }
+  if (props.type !== 'carryover') return 0;
+  if (selectedCarryoverLotId.value == null) return 0;
 
-  const selectedSource = carryoverSource.value === 'incoming'
+  // 오늘 생산분과 기존 이월분을 구분합니다.
+  const sourceType = carryoverSource.value === 'incoming'
     ? 'carryover'
     : 'today';
 
-  return (props.product?.stock_sources || [])
-    .filter((source) => source.source === selectedSource)
-    .reduce((sum, source) => {
-      const remaining = Number(
-        source.unallocated_quantity ?? source.remaining_quantity ?? 0
-      );
+  // 사용자가 선택한 생산 기록만 조회합니다.
+  const source = (props.product?.stock_sources || []).find((item) => (
+    item.source === sourceType &&
+    String(item.stock_lot_id) === String(selectedCarryoverLotId.value)
+  ));
 
-      const existingCarryover = Number(
-        source.carryover_out_quantity || 0
-      );
+  if (!source) return 0;
 
-      return sum + Math.max(0, remaining + existingCarryover);
-    }, 0);
+  // 실제 남은 수량을 확인합니다.
+  const remaining = Number(
+    source.unallocated_quantity ?? source.remaining_quantity ?? 0
+  );
+
+  // 수정 중인 기존 이월 수량을 복원합니다.
+  const existing = Number(source.carryover_out_quantity || 0);
+
+  return Math.max(0, remaining + existing);
 });
 
 // 기존 이월 기록이 두 재고 출처에 나뉘어 있는지 확인합니다.
@@ -482,6 +553,23 @@ const hasMixedCarryoverSources = computed(() => {
 
   return todayQuantity > 0 && incomingQuantity > 0;
 });
+
+/**
+ * 이월 출처를 변경하면 선택한 생산 기록과 수량을 초기화합니다.
+ */
+function changeCarryoverSource(value) {
+  carryoverSource.value = value;
+  selectedCarryoverLotId.value = null;
+  carryoverQuantity.value = 0;
+}
+
+/**
+ * 이월할 생산 기록을 변경하면 수량을 초기화합니다.
+ */
+function changeCarryoverLot(value) {
+  selectedCarryoverLotId.value = value;
+  carryoverQuantity.value = 0;
+}
 
 const currentQuantity = computed(() => (
   props.type === 'carryover'
@@ -555,163 +643,93 @@ function sumRows(rows) {
 }
 
 /**
- * 사유별 입력 수량을 실제 생산 기록별로 배분합니다.
- *
- * 기존 기록은 원래 연결된 생산 기록에 우선 배분하여
- * 불필요하게 여러 기록으로 분할되는 문제를 방지합니다.
- *
- * 오늘 생산의 신규 입력 또는 기존 기록의 초과 수량은
- * 다른 당일 생산 기록의 사용 가능 수량에 맞춰 배분합니다.
- *
- * 이월 재고는 사용자가 선택한 생산 기록만 사용합니다.
- *
- * @param {Array} rows 사용자가 입력한 사유별 수량 목록
- * @returns {Array} 생산 기록별로 배분한 저장용 사유 목록
- * @throws {Error} 사용 가능한 재고가 부족한 경우
+ * 선택한 생산 기록에서만 로스·폐기 수량을 처리합니다.
+ * 다른 생산 기록의 재고는 사용하지 않습니다.
  */
 function allocateReasonRows(rows) {
-  /**
-   * 원본 재고를 변경하지 않도록 별도 객체를 생성합니다.
-   *
-   * 각 생산 기록의 사용 가능 수량은
-   * 배분 과정에서 독립적으로 관리합니다.
-   */
-  const sources = editableStockSources.value.map((source) => ({
-    ...source,
-    available: Math.max(
-      0,
-      Number(source.remaining_quantity || 0),
-    ),
-  }));
+  // 기존 처리 수량을 반영한 재고별 사용 가능 수량입니다.
+  const sources = editableStockSources.value.map((source) => {
+    // 실제 재고 수량이 미확인이면 다른 값으로 대체하지 않습니다.
+    const rawAvailable = Object.prototype.hasOwnProperty.call(
+      source,
+      'editable_raw_quantity'
+    )
+      ? source.editable_raw_quantity
+      : source.remaining_quantity;
 
-  // 실제 서버에 전달할 사유 목록입니다.
+    const available =
+      rawAvailable == null || rawAvailable === ''
+        ? null
+        : Number(rawAvailable);
+
+    return {
+      ...source,
+      available: Number.isFinite(available) ? available : null,
+    };
+  });
+
   const allocatedRows = [];
 
-  /**
-   * 첫 번째 단계에서는 기존 생산 기록과의 연결을 우선 유지합니다.
-   *
-   * 다른 사유 행이 먼저 재고를 사용하여
-   * 기존 기록의 배분이 변경되는 상황을 방지합니다.
-   */
-  const pendingRows = [];
-
   for (const row of rows) {
-    let remaining = Number(row.quantity || 0);
+    const quantity = Number(row.quantity);
 
-    // 수량이 없는 행은 저장 대상에서 제외합니다.
-    if (remaining <= 0) {
+    // 올바른 수량인지 확인합니다.
+    if (
+      row.quantity == null ||
+      row.quantity === '' ||
+      !Number.isSafeInteger(quantity) ||
+      quantity < 0
+    ) {
+      throw new Error('처리 수량을 확인해 주세요.');
+    }
+
+    if (quantity === 0) {
       continue;
     }
 
-    /**
-     * 사용자가 선택한 재고 기록을 찾습니다.
-     *
-     * 오늘 생산은 오늘 생산 기록에서만 찾고,
-     * 이월 재고는 선택한 이월 기록에서만 찾습니다.
-     */
-    const selectedSource = sources.find((source) => (
-      source.source === row.stock_source
-      && Number(source.stock_lot_id) === Number(row.stock_lot_id)
+    // 사용할 생산 기록이 선택되어 있어야 합니다.
+    if (
+      !row.stock_source ||
+      row.stock_lot_id == null ||
+      row.stock_lot_id === ''
+    ) {
+      throw new Error('사용할 생산 기록을 선택해 주세요.');
+    }
+
+    // 선택한 생산 기록만 찾습니다.
+    const source = sources.find((item) => (
+      item.source === row.stock_source &&
+      item.stock_lot_id != null &&
+      String(item.stock_lot_id) === String(row.stock_lot_id)
     ));
 
-    /**
-     * 선택된 생산 기록에 우선 수량을 배분합니다.
-     *
-     * 기존 기록이 5개에서 4개로 변경된 경우
-     * 같은 생산 기록에 4개를 그대로 유지합니다.
-     */
-    if (selectedSource && selectedSource.available > 0) {
-      const quantity = Math.min(
-        remaining,
-        selectedSource.available,
-      );
-
-      allocatedRows.push({
-        ...row,
-        stock_source: selectedSource.source,
-        stock_lot_id: selectedSource.stock_lot_id,
-        quantity,
-      });
-
-      selectedSource.available -= quantity;
-      remaining -= quantity;
+    if (!source) {
+      throw new Error('선택한 생산 기록을 확인할 수 없습니다.');
     }
 
-    /**
-     * 선택된 기록에 배분하지 못한 수량은
-     * 두 번째 단계에서 처리합니다.
-     */
-    if (remaining > 0) {
-      pendingRows.push({
-        row,
-        remaining,
-      });
+    // 남은 수량이 확인되지 않으면 저장하지 않습니다.
+    if (source.available === null) {
+      throw new Error('선택한 재고의 남은 수량을 확인할 수 없습니다.');
     }
-  }
 
-  /**
-   * 두 번째 단계에서는 아직 배분하지 못한 수량을 처리합니다.
-   *
-   * 오늘 생산은 다른 당일 생산 기록을 사용할 수 있지만,
-   * 이월 재고는 사용자가 선택한 생산 기록 외에는 사용하지 않습니다.
-   */
-  for (const pending of pendingRows) {
-    const { row } = pending;
-    let remaining = pending.remaining;
+    // 선택한 기록의 재고를 초과할 수 없습니다.
+    if (quantity > source.available) {
+      throw new Error('선택한 생산 기록의 남은 수량이 부족합니다.');
+    }
 
-    const candidates = sources.filter((source) => {
-      if (row.stock_source === 'today') {
-        return source.source === 'today';
-      }
+    // 같은 재고를 여러 사유에서 사용해도 중복 차감되지 않도록 합니다.
+    source.available -= quantity;
 
-      return source.source === 'carryover'
-        && Number(source.stock_lot_id) === Number(row.stock_lot_id);
+    allocatedRows.push({
+      ...row,
+      stock_source: source.source,
+      stock_lot_id: source.stock_lot_id,
+      quantity,
     });
-
-    /**
-     * 사용 가능한 생산 기록을 순서대로 확인하면서
-     * 아직 배분하지 못한 수량을 처리합니다.
-     */
-    for (const source of candidates) {
-      if (remaining <= 0) {
-        break;
-      }
-
-      const quantity = Math.min(
-        remaining,
-        source.available,
-      );
-
-      if (quantity <= 0) {
-        continue;
-      }
-
-      allocatedRows.push({
-        ...row,
-        stock_source: source.source,
-        stock_lot_id: source.stock_lot_id,
-        quantity,
-      });
-
-      source.available -= quantity;
-      remaining -= quantity;
-    }
-
-    /**
-     * 모든 생산 기록을 확인한 후에도 수량이 남으면
-     * 재고 부족 오류를 발생시켜 저장을 중단합니다.
-     */
-    if (remaining > 0) {
-      throw new Error(
-        '선택한 재고의 사용 가능 수량이 부족합니다.',
-      );
-    }
   }
 
-  // 기존 기록을 우선 유지하면서 배분한 결과를 반환합니다.
   return allocatedRows;
 }
-
 
 /**
  * 다이얼로그가 열릴 때 기존 기록을 복원합니다.
@@ -761,6 +779,16 @@ watch(() => props.modelValue, (value) => {
 
   note.value = '';
   initialReasonSnapshot.value = JSON.stringify(reasonRows.value);
+
+  // 기존 이월 기록이 하나일 때만 해당 생산 기록을 복원합니다.
+  const existingLots = stockSources.filter(
+    (source) => Number(source.carryover_out_quantity || 0) > 0
+  );
+
+  selectedCarryoverLotId.value = existingLots.length === 1
+    ? existingLots[0].stock_lot_id
+    : null;
+
   initialCarryoverSource.value = carryoverSource.value;
 });
 
@@ -770,14 +798,21 @@ function setZero() {
   askSave();
 }
 
-// 사용자가 실제로 입력한 내용이 있는지 확인합니다.
+/**
+ * 입력한 내용이 처음 열었을 때와 달라졌는지 확인합니다.
+ */
 function isDirty() {
   if (props.type === 'carryover') {
+    const initialLotId = (props.product?.stock_sources || [])
+      .filter((source) => Number(source.carryover_out_quantity || 0) > 0);
+
+    const originalLotId = initialLotId.length === 1
+      ? initialLotId[0].stock_lot_id
+      : null;
+
     return carryoverQuantity.value !== Number(props.product?.carryover_out || 0)
-      || (
-        Number(carryoverQuantity.value || 0) > 0
-        && carryoverSource.value !== initialCarryoverSource.value
-      )
+      || carryoverSource.value !== initialCarryoverSource.value
+      || String(selectedCarryoverLotId.value ?? '') !== String(originalLotId ?? '')
       || Boolean(note.value);
   }
 
@@ -865,115 +900,100 @@ function askSave() {
     return;
   }
 
+  // 생산 기록을 선택했는지 확인합니다.
+  if (props.type === 'carryover' && currentQuantity.value > 0) {
+    if (selectedCarryoverLotId.value == null) {
+      emit('error', '이월할 생산 기록을 선택해 주세요.');
+      return;
+    }
+
+    // 선택한 기록의 남은 재고를 초과하면 저장하지 않습니다.
+    if (currentQuantity.value > carryoverSourceAvailable.value) {
+      emit('error', '선택한 생산 기록의 이월 가능 수량이 부족합니다.');
+      return;
+    }
+  }
+
   confirmSave.value = true;
 }
 
 /**
- * 현재 선택한 업무의 입력 내용을 서버에 저장합니다.
- *
- * 이월 업무는 기존 수량과 이월 구분을 그대로 전송하며,
- * 로스·폐기·기타 출고는 사유별 입력 수량을 생산 기록별로 배분합니다.
- *
- * 저장에 성공하면 다이얼로그를 닫고 최신 데이터를 부모 화면에 전달합니다.
- * 오류가 발생하면 다이얼로그를 유지하고 사용자에게 원인을 안내합니다.
- *
- * @returns {Promise<void>} 저장 요청 처리 결과
+ * 이월·로스·폐기 내역을 저장합니다.
+ * 저장 전 수량을 확인하고, 실패하면 입력 내용을 유지합니다.
  */
 async function save() {
-  // 중복 저장을 방지하기 위해 저장 진행 상태를 활성화합니다.
+  // 저장 중에는 중복 요청을 막습니다.
+  if (saving.value) {
+    return;
+  }
+
   saving.value = true;
 
   try {
-      /**
-       * 모든 업무에서 공통으로 사용하는 저장 데이터를 구성합니다.
-       *
-       * 점포, 제품, 작업 날짜, 업무 구분과 특이사항을 전달하며,
-       * 실제 수량 정보는 업무 유형에 따라 별도로 추가합니다.
-       */
-      const payload = {
-          store_id: props.storeId,
-          product_id: props.product.id,
-          work_date: props.workDate,
-          type: props.type,
-          note: note.value || null,
-      };
+    if (!props.product?.id || !props.storeId || !props.workDate) {
+      throw new Error('저장할 제품과 날짜를 확인해 주세요.');
+    }
 
-      /**
-       * 이월 업무는 기존 저장 방식을 그대로 유지합니다.
-       *
-       * 이월 수량과 재고 출처를 전송하며,
-       * 로스·폐기 등의 사유별 재고 배분 로직은 적용하지 않습니다.
-       */
-      if (props.type === 'carryover') {
-          payload.quantity = Number(carryoverQuantity.value || 0);
-          payload.carryover_source = carryoverSource.value;
-      } else {
-          /**
-           * 사유별 입력 수량을 실제 생산 기록별로 배분합니다.
-           *
-           * 오늘 생산이 여러 차례 이루어진 경우 각 생산 기록의
-           * 사용 가능 수량에 맞춰 수량을 나누어 저장합니다.
-           *
-           * 이월 재고는 사용자가 선택한 재고 기록만 사용하며,
-           * 기존 사유 코드와 직접입력 내용은 그대로 유지합니다.
-           *
-           * 재고가 부족하면 오류를 발생시켜
-           * 잘못된 수량이 서버에 저장되지 않도록 합니다.
-           */
-          payload.reasons = allocateReasonRows(reasonRows.value);
+    // 모든 업무에 공통으로 필요한 정보입니다.
+    const payload = {
+      store_id: props.storeId,
+      product_id: props.product.id,
+      work_date: props.workDate,
+      type: props.type,
+      note: note.value || null,
+    };
+
+    if (props.type === 'carryover') {
+      // 이월은 기존 저장 방식을 유지합니다.
+      const quantity = Number(carryoverQuantity.value);
+
+      if (
+        !Number.isSafeInteger(quantity) ||
+        quantity < 0
+      ) {
+        throw new Error('이월 수량을 확인해 주세요.');
       }
 
-      /**
-       * 구성한 데이터를 생산관리 API에 전송합니다.
-       *
-       * 기존 PUT 요청 방식과 API 주소를 유지하여
-       * 다른 업무의 저장 처리에 영향을 주지 않도록 합니다.
-       */
-      const { data } = await window.axios.put(
-          '/tillwhite/api/production-management/flow',
-          payload,
-      );
+      payload.quantity = quantity;
+      payload.carryover_source = carryoverSource.value;
 
-      /**
-       * 저장이 성공하면 확인창과 업무 다이얼로그를 닫습니다.
-       *
-       * 서버에서 반환한 최신 일별 데이터를 부모 화면에 전달하여
-       * 저장된 수량이 화면에 반영되도록 합니다.
-       */
-      confirmSave.value = false;
-      open.value = false;
+      // 선택한 생산 기록을 서버에 전달합니다.
+      payload.stock_lot_id = payload.quantity > 0
+        ? selectedCarryoverLotId.value
+        : null;
+    } else {
+      // 로스·폐기는 선택한 생산 기록에서만 처리합니다.
+      payload.reasons = allocateReasonRows(reasonRows.value);
+    }
 
-      emit(
-          'saved',
-          data.message || `${dialogTitle.value}을 저장했습니다.`,
-          data.daily || null,
-      );
+    // 기존 저장 주소와 요청 방식을 유지합니다.
+    const { data } = await window.axios.put(
+      '/tillwhite/api/production-management/flow',
+      payload
+    );
+
+    // 저장 성공 후 최신 현황을 반영합니다.
+    confirmSave.value = false;
+    open.value = false;
+
+    emit(
+      'saved',
+      data.message || `${dialogTitle.value}을 저장했습니다.`,
+      data.daily || null
+    );
   } catch (error) {
-      /**
-       * 저장 과정에서 발생한 오류를 사용자에게 안내합니다.
-       *
-       * 서버에서 반환한 오류 메시지를 우선 사용하고,
-       * 재고 배분 함수에서 발생한 오류도 표시할 수 있도록 합니다.
-       *
-       * 오류가 발생한 경우에는 다이얼로그를 닫지 않아
-       * 사용자가 입력 내용을 확인하고 수정할 수 있게 합니다.
-       */
-      emit(
-          'error',
-          error.response?.data?.message
-              || error.message
-              || `${dialogTitle.value}을 저장하지 못했습니다.`,
-      );
+    // 저장 실패 시 입력창은 닫지 않습니다.
+    emit(
+      'error',
+      error.response?.data?.message ||
+        error.message ||
+        `${dialogTitle.value}을 저장하지 못했습니다.`
+    );
   } finally {
-      /**
-       * 저장 성공 여부와 관계없이 진행 상태를 해제합니다.
-       *
-       * 오류가 발생한 뒤에도 저장 버튼을 다시 사용할 수 있도록
-       * 로딩 상태가 남지 않게 처리합니다.
-       */
-      saving.value = false;
+    saving.value = false;
   }
 }
+
 </script>
 
 <style scoped>
