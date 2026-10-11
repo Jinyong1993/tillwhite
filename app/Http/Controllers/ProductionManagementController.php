@@ -1662,7 +1662,7 @@ class ProductionManagementController extends Controller
         $label = $labels[$data['type']];
 
         // 저장한 업무 항목의 완료 상태만 확인합니다.
-        // 이월과 기타 처리는 서로 다른 완료 상태를 사용합니다.
+        // 로스·폐기·이월의 확인 상태를 각각 관리합니다.
         $confirmationField = [
             'loss' => 'loss_confirmed',
             'waste' => 'waste_confirmed',

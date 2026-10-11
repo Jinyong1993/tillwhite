@@ -267,9 +267,9 @@ class ProductionDailyService
                     );
 
                     /*
-                    * 이월과 기타 처리의 완료 상태를 각각 계산합니다.
-                    * 수량 기록이 있으면 해당 항목을 확인한 것으로 인정합니다.
-                    * 0개 확인은 별도로 저장한 완료 상태를 사용합니다.
+                    * 이월 완료 상태를 계산합니다.
+                    * 이월 기록이 있으면 완료로 인정합니다.
+                    * 0개 확인은 저장된 확인 상태를 사용합니다.
                     */
                     $dispositionConfirmed =
                         (bool) ($confirmation?->disposition_confirmed ?? false)

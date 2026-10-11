@@ -1946,8 +1946,8 @@ function reasonSummary(details, label) {
 }
 
 /**
- * 해당 날짜에 아직 확인하지 않은 작업 항목을 안내합니다.
- * 이월과 기타 처리를 서로 독립적으로 판단합니다.
+ * 해당 날짜의 생산·로스·폐기·이월 중
+ * 아직 확인하지 않은 항목을 안내합니다.
  */
 function missingReasonText(row) {
   const missing = [];
