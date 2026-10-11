@@ -72,9 +72,6 @@ class ProductionManagementSeeder extends Seeder
                     $wasteRecord = ProductionWaste::updateOrCreate(['store_id' => $store->id, 'product_id' => $product->id, 'work_date' => $dateString, 'attribution_date' => $dateString, 'note' => '검증용 폐기'], ['stock_lot_id' => $lot->id, 'quantity' => $waste, 'created_by' => $user->id]);
                     ProductionWasteReason::updateOrCreate(['production_waste_id' => $wasteRecord->id, 'reason_code' => 'unsold'], ['reason_text' => null, 'quantity' => $waste]);
                 }
-                if ($other > 0) {
-                    ProductionOtherOutflow::updateOrCreate(['store_id' => $store->id, 'product_id' => $product->id, 'work_date' => $dateString, 'reason_code' => 'tasting'], ['stock_lot_id' => $lot->id, 'quantity' => $other, 'reason_text' => null, 'note' => '시식 검증용', 'created_by' => $user->id]);
-                }
                 if ($carry > 0 && $date->lt($end)) {
                     ProductStockMovement::updateOrCreate(['stock_lot_id' => $lot->id, 'work_date' => $dateString, 'movement_type' => 'carryover_out'], ['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => $carry, 'created_by' => $user->id]);
                     ProductStockMovement::updateOrCreate(['stock_lot_id' => $lot->id, 'work_date' => $date->copy()->addDay()->toDateString(), 'movement_type' => 'carryover_in'], ['store_id' => $store->id, 'product_id' => $product->id, 'quantity' => $carry, 'created_by' => $user->id]);
