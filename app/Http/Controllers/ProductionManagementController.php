@@ -847,41 +847,59 @@ class ProductionManagementController extends Controller
                 );
 
                 /*
-                * 기존 수량보다 감소하는 경우에만
-                * 연결된 재고 처리 기록을 검사합니다.
+                * 생산 수량을 줄일 때 해당 생산 내역의 실제 사용 수량을 검사합니다.
+                *
+                * 원 생산일에 발생한 로스·폐기·이월 출고를 합산합니다.
+                * 이후 날짜의 재이월·로스·폐기는 최초 이월 출고에 포함되므로
+                * 다시 합산하지 않습니다.
                 */
                 $reducingQuantity = (int) $data['quantity']
                     < (int) $lockedBatch->quantity;
 
                 if ($reducingQuantity) {
-                    $lotIds = ProductStockLot::query()
-                        ->where(
-                            'production_batch_id',
-                            $lockedBatch->id
-                        )
-                        ->pluck('id');
+                    // 수정 대상 생산 기록과 연결된 재고 내역을 잠급니다.
+                    $lots = ProductStockLot::query()
+                        ->where('production_batch_id', $lockedBatch->id)
+                        ->lockForUpdate()
+                        ->get(['id']);
 
-                    // 기존 재고 이동 검사입니다.
-                    $hasMovement = ProductStockMovement::query()
-                        ->whereIn('stock_lot_id', $lotIds)
-                        ->exists();
-
-                    // 기존 로스 검사입니다.
-                    $hasLoss = ProductionLoss::query()
-                        ->whereIn('stock_lot_id', $lotIds)
-                        ->exists();
-
-                    // 기존 폐기 검사입니다.
-                    $hasWaste = ProductionWaste::query()
-                        ->whereIn('stock_lot_id', $lotIds)
-                        ->exists();
-
-                    abort_if(
-                        $hasMovement
-                            || $hasLoss
-                            || $hasWaste,
+                    // 현재 시스템은 생산 기록 1건에 재고 내역 1건을 생성합니다.
+                    abort_unless(
+                        $lots->count() === 1,
                         422,
-                        '이미 이월·로스·폐기 등 연결 기록이 있어 생산 수량을 줄일 수 없습니다. 연결 기록을 먼저 확인해주세요.'
+                        '생산 기록의 재고 연결을 확인할 수 없습니다.'
+                    );
+
+                    $lotId = (int) $lots->first()->id;
+                    $originDate = $lockedBatch->work_date->toDateString();
+
+                    // 해당 생산 내역에서 원 생산일에 발생한 로스를 계산합니다.
+                    $usedLoss = (int) ProductionLoss::query()
+                        ->where('stock_lot_id', $lotId)
+                        ->whereDate('work_date', $originDate)
+                        ->sum('quantity');
+
+                    // 해당 생산 내역에서 원 생산일에 발생한 폐기를 계산합니다.
+                    $usedWaste = (int) ProductionWaste::query()
+                        ->where('stock_lot_id', $lotId)
+                        ->whereDate('work_date', $originDate)
+                        ->sum('quantity');
+
+                    // 다음 날짜로 넘긴 수량을 계산합니다.
+                    $carriedOut = (int) ProductStockMovement::query()
+                        ->where('stock_lot_id', $lotId)
+                        ->whereDate('work_date', $originDate)
+                        ->where('movement_type', 'carryover_out')
+                        ->sum('quantity');
+
+                    // 기존 업무 기록을 유지하기 위해 필요한 최소 생산 수량입니다.
+                    $minimumQuantity = $usedLoss + $usedWaste + $carriedOut;
+
+                    // 수량이 부족하면 트랜잭션을 중단합니다.
+                    abort_if(
+                        (int) $data['quantity'] < $minimumQuantity,
+                        422,
+                        "이미 사용한 {$minimumQuantity}개보다 생산 수량을 적게 설정할 수 없습니다."
                     );
                 }
 
@@ -1039,16 +1057,20 @@ class ProductionManagementController extends Controller
                 ->where('production_batch_id', $lockedBatch->id)
                 ->pluck('id');
 
-            // 기존 동작: 다음 날짜의 이월 입고가 있으면 삭제를 차단합니다.
-            $hasCarryoverIn = ProductStockMovement::query()
+            // 이 생산 기록에 연결된 이월 출고·입고를 모두 검사합니다.
+            // 한쪽 기록만 남아 있는 경우에도 임의로 삭제하지 않습니다.
+            $hasCarryoverMovement = ProductStockMovement::query()
                 ->whereIn('stock_lot_id', $lotIds)
-                ->where('movement_type', 'carryover_in')
+                ->whereIn('movement_type', [
+                    'carryover_out',
+                    'carryover_in',
+                ])
                 ->exists();
 
             abort_if(
-                $hasCarryoverIn,
+                $hasCarryoverMovement,
                 422,
-                '이미 다음 날짜 이월과 연결된 생산 기록입니다. 연결 기록 수정 기능을 이용해주세요.'
+                '이월 기록이 연결된 생산 내역은 삭제할 수 없습니다. 연결된 이월 기록을 먼저 확인해주세요.'
             );
 
             // 로스 기록이 연결되어 있는지 확인합니다.
@@ -1073,11 +1095,6 @@ class ProductionManagementController extends Controller
                 422,
                 '이미 로스·폐기 기록이 연결되어 있어 생산 기록을 삭제할 수 없습니다. 연결 기록을 먼저 확인해주세요.'
             );
-
-            // 기존 동작을 유지하여 삭제 가능한 재고 이동 기록을 정리합니다.
-            ProductStockMovement::query()
-                ->whereIn('stock_lot_id', $lotIds)
-                ->delete();
 
             // 연결 재고의 잔여 수량을 0으로 설정하고 삭제 상태로 변경합니다.
             ProductStockLot::query()
@@ -1424,6 +1441,22 @@ class ProductionManagementController extends Controller
                 'integer',
                 'exists:product_stock_lots,id',
             ],
+
+            /*
+             * 로스 변경 대상인 생산 기록 ID 목록입니다.
+             * 비어 있는 배열도 허용해 로스 0개 확인을 유지합니다.
+             */
+            'affected_stock_lot_ids' => [
+                'sometimes',
+                'array',
+            ],
+            'affected_stock_lot_ids.*' => [
+                'required',
+                'integer',
+                'distinct',
+                'exists:product_stock_lots,id',
+            ],
+
             'note' => [
                 'nullable',
                 'string',
@@ -1567,13 +1600,22 @@ class ProductionManagementController extends Controller
              * 해당 업무의 확인 상태를 저장합니다.
              */
             if ($type === 'loss') {
+                // 화면에서 명시한 생산 기록의 로스만 변경합니다.
+                // 다른 생산 기록의 기존 로스는 그대로 보존합니다.
+                abort_unless(
+                    array_key_exists('affected_stock_lot_ids', $data),
+                    422,
+                    '변경할 생산 기록 목록이 누락되었습니다.'
+                );
+
                 $this->replaceLosses(
                     $storeId,
                     $productId,
                     $date,
                     $reasons,
                     $note,
-                    $user->id
+                    $user->id,
+                    $data['affected_stock_lot_ids']
                 );
 
                 $this->confirmFlowField(
@@ -1584,13 +1626,22 @@ class ProductionManagementController extends Controller
                     $user->id
                 );
             } elseif ($type === 'waste') {
+                // 폐기는 변경 대상 생산 내역만 교체합니다.
+                // 요청에서 변경 대상을 누락하면 기존 폐기를 보호하기 위해 중단합니다.
+                abort_unless(
+                    array_key_exists('affected_stock_lot_ids', $data),
+                    422,
+                    '변경할 생산 기록 목록이 누락되었습니다.'
+                );
+
                 $this->replaceWastes(
                     $storeId,
                     $productId,
                     $date,
                     $reasons,
                     $note,
-                    $user->id
+                    $user->id,
+                    $data['affected_stock_lot_ids']
                 );
 
                 $this->confirmFlowField(
@@ -3040,13 +3091,10 @@ class ProductionManagementController extends Controller
     }
 
     /**
-     * 로스 기록을 재고 출처별로 저장합니다.
+     * 지정한 생산 기록의 로스만 교체합니다.
      *
-     * 실제 처리일은 work_date에 기록하고,
-     * 생산 실적 귀속일은 해당 재고의 최초 생산일을 사용합니다.
-     *
-     * 재고 출처를 확인할 수 없는 경우에는
-     * 잘못된 생산일로 로스가 집계되지 않도록 저장을 중단합니다.
+     * 같은 날짜와 제품이라도 변경 대상으로 전달되지 않은
+     * 생산 기록의 로스는 삭제하거나 수정하지 않습니다.
      */
     private function replaceLosses(
         int $storeId,
@@ -3054,16 +3102,51 @@ class ProductionManagementController extends Controller
         string $date,
         array $reasons,
         ?string $note,
-        int $userId
+        int $userId,
+        array $affectedLotIds
     ): void {
-        // 선택한 날짜의 기존 로스 기록을 조회합니다.
-        $old = ProductionLoss::query()
-            ->where('store_id', $storeId)
-            ->where('product_id', $productId)
-            ->whereDate('work_date', $date)
-            ->get();
+        $affectedLotIds = collect($affectedLotIds)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
-        // 기존 로스 기록과 연결된 사유를 삭제합니다.
+        // 실제 해당 점포·제품의 생산 기록인지 확인합니다.
+        if (!empty($affectedLotIds)) {
+            $validCount = ProductStockLot::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereIn('id', $affectedLotIds)
+                ->count();
+
+            abort_unless(
+                $validCount === count($affectedLotIds),
+                422,
+                '변경할 생산 기록이 현재 제품과 일치하지 않습니다.'
+            );
+        }
+
+        // 전달받은 사유가 모두 변경 대상에 속하는지 검사합니다.
+        foreach ($reasons as $reason) {
+            $lotId = (int) ($reason['stock_lot_id'] ?? 0);
+
+            abort_unless(
+                in_array($lotId, $affectedLotIds, true),
+                422,
+                '로스 사유의 생산 기록이 변경 대상과 일치하지 않습니다.'
+            );
+        }
+
+        // 실제 변경 대상의 기존 로스만 삭제합니다.
+        $old = empty($affectedLotIds)
+            ? collect()
+            : ProductionLoss::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereDate('work_date', $date)
+                ->whereIn('stock_lot_id', $affectedLotIds)
+                ->get();
+
         foreach ($old as $record) {
             ProductionLossReason::query()
                 ->where('production_loss_id', $record->id)
@@ -3072,16 +3155,14 @@ class ProductionManagementController extends Controller
             $record->delete();
         }
 
-        // 입력된 로스 사유를 재고 출처별로 저장합니다.
+        // 선택한 생산 기록의 새 로스 수량과 사유를 저장합니다.
         foreach ($reasons as $reason) {
             $quantity = (int) ($reason['quantity'] ?? 0);
 
-            // 수량이 없는 사유는 기존과 동일하게 건너뜁니다.
             if ($quantity <= 0) {
                 continue;
             }
 
-            // 선택한 재고가 실제 어느 생산 기록에 속하는지 확인합니다.
             $lot = $this->resolveReasonLot(
                 $storeId,
                 $productId,
@@ -3089,17 +3170,15 @@ class ProductionManagementController extends Controller
                 $reason
             );
 
-            // 재고 출처가 없으면 잘못된 로스 기록을 저장하지 않습니다.
             abort_unless(
                 $lot,
                 422,
-                '처리할 재고의 생산일을 다시 확인해주세요.'
+                '처리할 생산 기록을 확인할 수 없습니다.'
             );
 
-            // 실제 처리일과 별개로 최초 생산일을 귀속일로 사용합니다.
-            $attributionDate = $lot->origin_production_date->toDateString();
+            $attributionDate = $lot->origin_production_date
+                ->toDateString();
 
-            // 로스 기록을 원 생산 재고에 연결하여 저장합니다.
             $loss = ProductionLoss::create([
                 'store_id' => $storeId,
                 'product_id' => $productId,
@@ -3112,7 +3191,6 @@ class ProductionManagementController extends Controller
                 'created_by' => $userId,
             ]);
 
-            // 로스 사유와 해당 수량을 기존 구조대로 저장합니다.
             ProductionLossReason::create([
                 'production_loss_id' => $loss->id,
                 'reason_code' => $reason['reason_code'],
@@ -3123,13 +3201,12 @@ class ProductionManagementController extends Controller
     }
     
     /**
-     * 폐기 기록을 재고 출처별로 저장합니다.
+     * 변경 대상으로 지정한 생산 내역의 폐기만 교체합니다.
      *
-     * 폐기 수량은 실제 처리한 날짜에 기록하지만,
-     * 폐기율 계산에 사용하는 귀속 날짜는 해당 빵의 최초 생산일로 저장합니다.
+     * 같은 제품·날짜에 여러 생산 내역이 있더라도
+     * 변경하지 않은 생산 내역의 폐기 기록은 유지합니다.
      *
-     * 재고 출처를 확인할 수 없는 경우에는 잘못된 생산일로
-     * 폐기량이 집계되지 않도록 저장을 중단합니다.
+     * 실제 폐기일과 최초 생산일은 기존과 같이 구분합니다.
      */
     private function replaceWastes(
         int $storeId,
@@ -3137,19 +3214,53 @@ class ProductionManagementController extends Controller
         string $date,
         array $reasons,
         ?string $note,
-        int $userId
+        int $userId,
+        array $affectedLotIds
     ): void {
-        // 선택한 업무일의 기존 폐기 기록을 조회합니다.
-        $old = ProductionWaste::query()
-            ->where('store_id', $storeId)
-            ->where('product_id', $productId)
-            ->whereDate('work_date', $date)
-            ->get();
+        // 전달된 생산 내역 ID를 정수 목록으로 정리합니다.
+        $affectedLotIds = collect($affectedLotIds)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
-        /**
-         * 기존 폐기 기록과 사유를 제거합니다.
-         * 이 함수는 기존과 동일하게 현재 입력값으로 교체 저장합니다.
-         */
+        // 변경 대상이 실제 해당 점포와 제품의 재고인지 확인합니다.
+        if (!empty($affectedLotIds)) {
+            $validCount = ProductStockLot::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereIn('id', $affectedLotIds)
+                ->count();
+
+            abort_unless(
+                $validCount === count($affectedLotIds),
+                422,
+                '변경할 생산 기록이 현재 제품과 일치하지 않습니다.'
+            );
+        }
+
+        // 새 폐기 사유는 반드시 변경 대상 생산 내역에 속해야 합니다.
+        foreach ($reasons as $reason) {
+            $lotId = (int) ($reason['stock_lot_id'] ?? 0);
+
+            abort_unless(
+                in_array($lotId, $affectedLotIds, true),
+                422,
+                '폐기 사유의 생산 기록이 변경 대상과 일치하지 않습니다.'
+            );
+        }
+
+        // 변경 대상에 해당하는 기존 폐기 기록만 조회합니다.
+        $old = empty($affectedLotIds)
+            ? collect()
+            : ProductionWaste::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereDate('work_date', $date)
+                ->whereIn('stock_lot_id', $affectedLotIds)
+                ->get();
+
+        // 선택한 생산 내역의 기존 폐기 기록과 사유만 제거합니다.
         foreach ($old as $record) {
             ProductionWasteReason::query()
                 ->where('production_waste_id', $record->id)
@@ -3158,21 +3269,15 @@ class ProductionManagementController extends Controller
             $record->delete();
         }
 
-        // 입력된 폐기 사유를 재고 출처별로 저장합니다.
+        // 변경 대상 생산 내역에 새 폐기 수량과 사유를 저장합니다.
         foreach ($reasons as $reason) {
             $quantity = (int) ($reason['quantity'] ?? 0);
 
-            // 폐기 수량이 없는 사유는 기존과 동일하게 저장하지 않습니다.
             if ($quantity <= 0) {
                 continue;
             }
 
-            /**
-             * 선택한 재고 출처를 실제 생산 재고와 연결합니다.
-             *
-             * 당일 생산 재고와 이월 재고를 구분하며,
-             * 이월 재고는 최초 생산일 정보를 유지합니다.
-             */
+            // 생산 내역 ID 및 재고 구분을 실제 재고와 대조합니다.
             $lot = $this->resolveReasonLot(
                 $storeId,
                 $productId,
@@ -3180,25 +3285,16 @@ class ProductionManagementController extends Controller
                 $reason
             );
 
-            /**
-             * 재고 출처를 찾지 못했다면 폐기 당일을
-             * 최초 생산일로 임의 지정하지 않습니다.
-             */
             abort_unless(
                 $lot,
                 422,
-                '폐기할 재고의 생산일을 확인할 수 없습니다. 재고 출처를 다시 선택해주세요.'
+                '폐기할 재고의 생산 기록을 확인할 수 없습니다.'
             );
 
-            // 폐기율 계산에 사용할 최초 생산일을 확정합니다.
+            // 폐기율 계산에 사용할 최초 생산일을 유지합니다.
             $attributionDate = $lot->origin_production_date->toDateString();
 
-            /**
-             * 폐기 기록을 저장합니다.
-             *
-             * work_date: 실제 폐기한 날짜
-             * attribution_date: 해당 빵을 최초 생산한 날짜
-             */
+            // 실제 처리일과 최초 생산일을 구분해 폐기 기록을 생성합니다.
             $waste = ProductionWaste::create([
                 'store_id' => $storeId,
                 'product_id' => $productId,
@@ -3210,7 +3306,7 @@ class ProductionManagementController extends Controller
                 'created_by' => $userId,
             ]);
 
-            // 기존 폐기 사유와 수량을 그대로 기록합니다.
+            // 선택한 생산 내역에 연결된 폐기 사유를 기록합니다.
             ProductionWasteReason::create([
                 'production_waste_id' => $waste->id,
                 'reason_code' => $reason['reason_code'],
@@ -3426,12 +3522,16 @@ class ProductionManagementController extends Controller
             ->addDay()
             ->toDateString();
 
-        // 기존 이월 출고를 확인합니다.
+        // 선택한 생산 기록에 연결된 기존 이월만 조회합니다.
+        // 같은 제품의 다른 생산 기록은 변경 대상에서 제외합니다.
         $existing = ProductStockMovement::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
             ->whereDate('work_date', $date)
             ->where('movement_type', 'carryover_out')
+            ->when($stockLotId !== null, fn ($query) =>
+                $query->where('stock_lot_id', $stockLotId)
+            )
             ->get();
 
         // 생산 기록 ID가 없는 과거 이월 내역은 자동 삭제하지 않습니다.
@@ -3450,12 +3550,20 @@ class ProductionManagementController extends Controller
             ->unique()
             ->values();
 
-        // 과거에 여러 생산 기록으로 나눠 이월한 내역을 보호합니다.
-        abort_if(
-            $existingLotIds->count() > 1,
-            422,
-            '여러 생산 기록에 나누어 저장된 이월 내역입니다. 기존 기록을 확인해 주세요.'
-        );
+        // 생산 기록을 선택하지 않은 상태에서
+        // 기존 이월 기록을 실수로 초기화하지 못하도록 보호합니다.
+        if ($stockLotId === null) {
+            abort_if(
+                ProductStockMovement::query()
+                    ->where('store_id', $storeId)
+                    ->where('product_id', $productId)
+                    ->whereDate('work_date', $date)
+                    ->where('movement_type', 'carryover_out')
+                    ->exists(),
+                422,
+                '기존 이월 기록이 있습니다. 수정할 생산 기록을 선택해 주세요.'
+            );
+        }
 
         if ($quantity > 0) {
             abort_if(
@@ -3503,22 +3611,34 @@ class ProductionManagementController extends Controller
             );
         }
 
-        // 기존 이월 출고와 다음 날 입고만 교체합니다.
-        foreach ($existingLotIds as $lotId) {
-            ProductStockMovement::query()
-                ->where('store_id', $storeId)
-                ->where('product_id', $productId)
-                ->where('stock_lot_id', $lotId)
-                ->whereDate('work_date', $nextDate)
-                ->where('movement_type', 'carryover_in')
-                ->delete();
-        }
+        /*
+         * 선택한 생산 기록의 이월만 교체합니다.
+         *
+         * 동일 제품을 여러 번 생산한 경우에도
+         * 다른 생산 기록에 연결된 이월은 유지합니다.
+         */
+        abort_if(
+            $stockLotId === null,
+            422,
+            '이월할 생산 기록을 선택해 주세요.'
+        );
 
+        // 선택한 생산 기록의 현재 날짜 이월만 제거합니다.
         ProductStockMovement::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
+            ->where('stock_lot_id', $stockLotId)
             ->whereDate('work_date', $date)
             ->where('movement_type', 'carryover_out')
+            ->delete();
+
+        // 선택한 생산 기록의 다음 날짜 연결만 제거합니다.
+        ProductStockMovement::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->where('stock_lot_id', $stockLotId)
+            ->whereDate('work_date', $nextDate)
+            ->where('movement_type', 'carryover_in')
             ->delete();
 
         // 0개 확인도 후속 날짜의 재고를 검사합니다.

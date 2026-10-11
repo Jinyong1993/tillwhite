@@ -255,7 +255,7 @@
                       type="button"
                       class="table-value production-value"
                       :class="{ pending: !row.production_confirmed }"
-                      @click="openInventoryDialog(row, 'production')"
+                      @click="openProduction(row)"
                     >
                       {{ row.production_confirmed ? row.production : '-' }}
                     </button>
@@ -267,7 +267,7 @@
                       type="button"
                       class="table-value carryover-value"
                       :class="{ pending: !row.disposition_confirmed }"
-                      @click="openInventoryDialog(row, 'carryover')"
+                      @click="openFlow(row, 'carryover')"
                     >
                       <template
                         v-if="
@@ -296,9 +296,9 @@
                       type="button"
                       class="table-value"
                       :class="{ pending: !row.loss_confirmed }"
-                      @click="openInventoryDialog(row, 'loss')"
+                      @click="openFlow(row, 'loss')"
                     >
-                      {{ row.loss_confirmed ? row.loss : '-' }}
+                      {{ row.loss_confirmed ? Number(row.operational_loss || 0) : '-' }}
                     </button>
                   </td>
 
@@ -312,7 +312,7 @@
                           !row.waste_confirmed &&
                           Number(row.attributed_waste || 0) === 0
                       }"
-                      @click="openInventoryDialog(row, 'waste')"
+                      @click="openFlow(row, 'waste')"
                     >
                       {{
                         row.waste_confirmed ||
@@ -328,7 +328,7 @@
                     <button
                       type="button"
                       class="table-value rate-value"
-                      @click="openInventoryDialog(row, 'waste_rate')"
+                      @click="openWasteRate(row, 'waste_rate')"
                     >
                       {{ row.waste_rate == null ? '-' : `${row.waste_rate}%` }}
                     </button>
@@ -951,7 +951,7 @@
               >
                 <span>로스</span>
                 <strong>
-                  {{ row.loss_confirmed ? `${row.loss}` : '-' }}
+                  {{ row.loss_confirmed ? `${Number(row.operational_loss || 0)}` : '-' }}
                 </strong>
               </button>
 

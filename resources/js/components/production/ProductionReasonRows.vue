@@ -28,6 +28,7 @@
         item-title="title"
         item-value="value"
         label="생산 기록 선택"
+        :ref="(el) => { newRowSelectRef[index] = el; }"
         placeholder="처리할 생산 기록을 선택하세요"
         variant="outlined"
         density="compact"
@@ -111,7 +112,9 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick, ref } from 'vue';
+
+const newRowSelectRef = ref([]);
 
 const props = defineProps({
   modelValue: {
@@ -138,6 +141,17 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+
+  // 로스 또는 폐기 중 현재 처리 중인 업무입니다.
+  flowType: {
+    type: String,
+    default: '',
+  },
+  // 실제 저장된 로스·폐기 상세 기록입니다.
+  savedDetails: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -155,6 +169,54 @@ const stockSourceOptions = computed(() => [
   { value: 'today', title: '오늘 생산' },
   { value: 'carryover', title: '이월 재고' },
 ]);
+
+/**
+ * 선택한 생산 내역에서 이미 처리 완료한 수량을 계산합니다.
+ *
+ * 현재 업무가 로스라면 로스 기록만,
+ * 폐기라면 폐기 기록만 계산합니다.
+ *
+ * 생산 내역 ID를 기준으로 집계하므로
+ * 같은 제품을 여러 번 생산해도 서로 섞이지 않습니다.
+ */
+function savedQuantityForLot(stockLotId) {
+  if (stockLotId == null) return 0;
+
+  return props.savedDetails.reduce((total, item) => {
+    if (
+      item.stock_lot_id == null ||
+      String(item.stock_lot_id) !== String(stockLotId)
+    ) {
+      return total;
+    }
+
+    const quantity = Number(item.quantity);
+
+    return Number.isSafeInteger(quantity) && quantity > 0
+      ? total + quantity
+      : total;
+  }, 0);
+}
+
+/**
+ * 실제 저장된 로스·폐기 기록을 기준으로
+ * 해당 생산 내역의 처리 상태를 표시합니다.
+ */
+function stockLotStatus(stockLotId) {
+  const quantity = savedQuantityForLot(stockLotId);
+
+  if (quantity <= 0) {
+    return '처리 전';
+  }
+
+  const label = props.flowType === 'loss'
+    ? '로스 완료'
+    : props.flowType === 'waste'
+      ? '폐기 완료'
+      : '처리 완료';
+
+  return `${label} ${quantity}개`;
+}
 
 /**
  * 선택한 재고 구분에 해당하는 제품 생산 내역을 표시합니다.
@@ -181,7 +243,7 @@ function stockLotOptions(type) {
       // 같은 날짜의 생산 내역도 목록에서 구분할 수 있도록 표시합니다.
       return {
         value: source.stock_lot_id,
-        title: `${formatOriginDate(source.origin_production_date)} 생산 · 생산 내역 ${index + 1} · ${amountText}`,
+        title: `${formatOriginDate(source.origin_production_date)} 생산 · 생산 내역 ${index + 1} · ${stockLotStatus(source.stock_lot_id)} · ${amountText}`,
       };
     });
 }
@@ -272,21 +334,85 @@ function update(index, key, value) {
 }
 
 /**
- * 재고 종류를 변경합니다.
- * 이전에 선택했던 생산 기록과 수량을 초기화합니다.
+ * 새로 추가된 로스·폐기 사유 행으로 자동 이동합니다.
+ *
+ * Vue가 새 행을 화면에 렌더링한 뒤
+ * 해당 행의 생산 기록 선택창으로 스크롤하고 포커스를 이동합니다.
+ */
+async function focusNewReasonRow() {
+  // 부모 컴포넌트의 배열 변경이 화면에 반영될 때까지 기다립니다.
+  await nextTick();
+
+  // 새로 추가한 행은 배열의 마지막에 위치합니다.
+  const index = props.modelValue.length - 1;
+
+  // 마지막 행에 연결된 생산 기록 선택 컴포넌트를 가져옵니다.
+  const target = newRowSelectRef.value[index];
+
+  // 선택 컴포넌트를 찾지 못하면 작업을 종료합니다.
+  if (!target) return;
+
+  // 새 행이 화면 중앙에 보이도록 부드럽게 스크롤합니다.
+  target.$el?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'center',
+  });
+
+  // 새 행의 생산 기록 선택 컴포넌트에 포커스를 이동합니다.
+  target.focus?.();
+
+  // 생산 기록 선택 목록을 자동으로 열도록 시도합니다.
+  // Vuetify 버전에 따라 별도 메뉴 상태 관리가 필요할 수 있습니다.
+  target.menu = true;
+}
+
+/**
+ * 선택한 사유 행의 재고 종류를 변경합니다.
+ *
+ * 이미 저장된 행이라면 기존 기록을 보존하고
+ * 변경한 재고 종류로 새 사유 행을 추가합니다.
+ *
+ * 아직 저장하지 않은 행이라면 해당 행만 수정합니다.
  */
 function updateStockSource(index, value) {
-  const next = props.modelValue.map((row, rowIndex) => (
+  // 사용자가 재고 종류를 변경한 행을 가져옵니다.
+  const row = props.modelValue[index];
+
+  // 행이 없거나 기존 선택과 같으면 변경하지 않습니다.
+  if (!row || row.stock_source === value) return;
+
+  // 이미 서버에 저장된 사유 행인지 확인합니다.
+  if (row._persisted === true) {
+    // 기존 행은 변경하지 않고 새 입력 행을 추가합니다.
+    emit('update:modelValue', [
+      ...props.modelValue,
+      {
+        reason_code: '',
+        reason_text: null,
+        quantity: 0,
+        stock_source: value,
+        stock_lot_id: null,
+      },
+    ]);
+
+    // 새 행이 렌더링되면 생산 기록 선택 위치로 이동합니다.
+    focusNewReasonRow();
+    return;
+  }
+
+  // 아직 저장되지 않은 행은 새 행을 만들지 않고 직접 수정합니다.
+  const next = props.modelValue.map((item, rowIndex) =>
     rowIndex === index
       ? {
-          ...row,
+          ...item,
           stock_source: value,
           stock_lot_id: null,
           quantity: 0,
         }
-      : row
-  ));
+      : item
+  );
 
+  // 변경된 사유 행 목록을 부모 컴포넌트에 전달합니다.
   emit('update:modelValue', next);
 }
 
@@ -295,25 +421,38 @@ function updateStockSource(index, value) {
  * 다른 기록에 입력한 수량이 남지 않도록 초기화합니다.
  */
 function updateStockLot(index, value) {
-  const next = props.modelValue.map((row, rowIndex) => {
-    if (rowIndex !== index) {
-      return row;
-    }
+  const row = props.modelValue[index];
+  if (!row) return;
 
-    if (
-      row.stock_lot_id != null &&
-      value != null &&
-      String(row.stock_lot_id) === String(value)
-    ) {
-      return row;
-    }
+  if (String(row.stock_lot_id ?? '') === String(value ?? '')) {
+    return;
+  }
 
-    return {
-      ...row,
-      stock_lot_id: value,
-      quantity: 0,
-    };
-  });
+  // 저장된 행에서 다른 생산 기록을 선택하면
+  // 기존 로스 기록을 보존하고 새 입력 행을 생성합니다.
+  if (row._persisted === true) {
+    emit('update:modelValue', [
+      ...props.modelValue,
+      {
+        reason_code: '',
+        reason_text: null,
+        quantity: 0,
+        stock_source: row.stock_source,
+        stock_lot_id: value,
+      },
+    ]);
+    return;
+  }
+
+  const next = props.modelValue.map((item, rowIndex) =>
+    rowIndex === index
+      ? {
+          ...item,
+          stock_lot_id: value,
+          quantity: 0,
+        }
+      : item
+  );
 
   emit('update:modelValue', next);
 }
