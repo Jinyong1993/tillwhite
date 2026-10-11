@@ -396,7 +396,7 @@ const editableStockSources = computed(() => {
 const available = computed(() => Number(props.product?.production || 0) + Number(props.product?.carryover_in || 0));
 
 /**
- * 로스·폐기·기타 출고에 입력한 재고 출처를 검사합니다.
+ * 로스·폐기에 입력한 재고 출처를 검사합니다.
  * 수량이 입력된 행은 생산 기록 ID와 출처가 모두 일치해야 합니다.
  * 잘못된 기록이나 사라진 재고를 다른 생산 기록으로 대체하지 않습니다.
  */
@@ -482,7 +482,7 @@ const sourceOverages = computed(() => {
 
 /**
  * 마지막 사유 행에서 선택한 생산 기록의 남은 수량을 계산합니다.
- * 로스·폐기·기타 출고를 각각 선택한 재고 기준으로 확인합니다.
+ * 로스·폐기를 각각 선택한 재고 기준으로 확인합니다.
  * 다른 생산 기록의 수량은 합산하지 않습니다.
  */
 const selectedSourceRemaining = computed(() => {
@@ -543,7 +543,7 @@ const reasonOptions = computed(() => ({
 
 /**
  * 다른 업무에서 이미 사용한 재고를 표시합니다.
- * 과거 기타 출고 기록도 차감 수량에 포함하여
+ * 과거 기록도 차감 수량에 포함하여
  * 기존 재고가 잘못 증가하지 않도록 합니다.
  */
 const otherAllocationDetails = computed(() => {
@@ -553,17 +553,14 @@ const otherAllocationDetails = computed(() => {
     carryover: [
       ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
       ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
-      ['기타', Number(row.other_outflow || 0)],
     ],
     loss: [
       ['폐기', Number(row.operational_waste ?? row.waste ?? 0)],
       ['이월 예정', Number(row.carryover_out || 0)],
-      ['기타', Number(row.other_outflow || 0)],
     ],
     waste: [
       ['로스', Number(row.operational_loss ?? row.loss ?? 0)],
       ['이월 예정', Number(row.carryover_out || 0)],
-      ['기타', Number(row.other_outflow || 0)],
     ],
   };
 
@@ -708,7 +705,7 @@ function savedReasonRow(item) {
 }
 
 /**
- * 로스·폐기·기타 출고의 새 입력 항목을 생성합니다.
+ * 로스·폐기의 새 입력 항목을 생성합니다.
  * 재고 구분은 기본값을 유지합니다.
  * 생산 내역은 자동 선택하지 않고 직접 선택하도록 합니다.
  */
@@ -925,7 +922,7 @@ function forceClose() {
 
 /**
  * 사유와 생산 기록별 재고 수량을 검증한 뒤 저장 확인창을 엽니다.
- * 로스·폐기·기타 출고는 선택한 생산 기록 기준으로 검사합니다.
+ * 로스·폐기는 선택한 생산 기록 기준으로 검사합니다.
  * 이월은 선택한 생산 기록의 이월 가능 수량을 검사합니다.
  */
 function askSave() {

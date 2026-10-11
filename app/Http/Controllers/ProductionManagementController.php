@@ -13,7 +13,6 @@ use App\Models\ProductionCorrection;
 use App\Models\ProductionDailyClosure;
 use App\Models\ProductionLoss;
 use App\Models\ProductionLossReason;
-use App\Models\ProductionOtherOutflow;
 use App\Models\ProductionWaste;
 use App\Models\ProductionWasteReason;
 use App\Models\Store;
@@ -814,7 +813,7 @@ class ProductionManagementController extends Controller
                 /*
                 * saveFlow()와 동일한 제품 행을 먼저 잠급니다.
                 *
-                * 생산 수량 변경과 로스·폐기·기타 출고·이월 저장이
+                * 생산 수량 변경과 로스·폐기·이월 저장이
                 * 동일 제품의 재고를 동시에 처리하지 않도록 합니다.
                 */
                 Product::query()
@@ -877,16 +876,10 @@ class ProductionManagementController extends Controller
                         ->whereIn('stock_lot_id', $lotIds)
                         ->exists();
 
-                    // 기존 기타 출고 검사입니다.
-                    $hasOtherOutflow = ProductionOtherOutflow::query()
-                        ->whereIn('stock_lot_id', $lotIds)
-                        ->exists();
-
                     abort_if(
                         $hasMovement
                             || $hasLoss
-                            || $hasWaste
-                            || $hasOtherOutflow,
+                            || $hasWaste,
                         422,
                         '이미 이월·로스·폐기 등 연결 기록이 있어 생산 수량을 줄일 수 없습니다. 연결 기록을 먼저 확인해주세요.'
                     );
@@ -926,7 +919,7 @@ class ProductionManagementController extends Controller
                 /*
                 * 생산 수량의 변경분을 계산합니다.
                 * 수정 전 수량은 이미 보관한 $before에서 가져옵니다.
-                * 기존 로스·폐기·기타 출고·이월 기록은 변경하지 않습니다.
+                * 기존 로스·폐기·이월 기록은 변경하지 않습니다.
                 */
                 $quantityDifference = (int) $data['quantity']
                     - (int) $before['quantity'];
@@ -985,7 +978,7 @@ class ProductionManagementController extends Controller
      * 마감 전 생산 기록을 삭제합니다.
      *
      * 기존 동작대로 다음 날짜의 이월 입고가 연결된 경우 삭제를 차단합니다.
-     * 로스·폐기·기타 출고가 연결된 경우에도 재고 불일치를 방지하기 위해
+     * 로스·폐기가 연결된 경우에도 재고 불일치를 방지하기 위해
      * 생산 기록 삭제를 허용하지 않습니다.
      *
      * 삭제 가능한 경우 기존 재고 이동 기록을 정리하고,
@@ -1074,16 +1067,11 @@ class ProductionManagementController extends Controller
                 ->whereIn('stock_lot_id', $lotIds)
                 ->exists();
 
-            // 기타 출고 기록이 연결되어 있는지 확인합니다.
-            $hasOtherOutflow = ProductionOtherOutflow::query()
-                ->whereIn('stock_lot_id', $lotIds)
-                ->exists();
-
             // 연결된 재고 처리 기록이 있다면 삭제를 차단합니다.
             abort_if(
-                $hasLoss || $hasWaste || $hasOtherOutflow,
+                $hasLoss || $hasWaste,
                 422,
-                '이미 로스·폐기·기타 출고 기록이 연결되어 있어 생산 기록을 삭제할 수 없습니다. 연결 기록을 먼저 확인해주세요.'
+                '이미 로스·폐기 기록이 연결되어 있어 생산 기록을 삭제할 수 없습니다. 연결 기록을 먼저 확인해주세요.'
             );
 
             // 기존 동작을 유지하여 삭제 가능한 재고 이동 기록을 정리합니다.
@@ -1243,7 +1231,7 @@ class ProductionManagementController extends Controller
                 ->sum('quantity');
 
             /*
-            * 해당 날짜의 로스, 폐기, 기타 출고,
+            * 해당 날짜의 로스, 폐기,
             * 이월 출고 수량을 기존 방식대로 합산합니다.
             */
             $allocated = (int) ProductionLoss::query()
@@ -1253,12 +1241,6 @@ class ProductionManagementController extends Controller
                 ->sum('quantity');
 
             $allocated += (int) ProductionWaste::query()
-                ->where('store_id', $storeId)
-                ->where('product_id', $productId)
-                ->whereDate('work_date', $workDate)
-                ->sum('quantity');
-
-            $allocated += (int) ProductionOtherOutflow::query()
                 ->where('store_id', $storeId)
                 ->where('product_id', $productId)
                 ->whereDate('work_date', $workDate)
@@ -1306,17 +1288,11 @@ class ProductionManagementController extends Controller
                     ->where('production_batch_id', $batch->id)
                     ->exists();
 
-                // 기존에 추가한 기타 출고 연결 검사를 유지합니다.
-                $hasOtherOutflow = ProductionOtherOutflow::query()
-                    ->whereIn('stock_lot_id', $lotIds)
-                    ->exists();
-
                 // 기존 차단 조건과 오류 메시지를 유지합니다.
                 abort_if(
                     $hasMovement
                         || $hasWaste
-                        || $hasLoss
-                        || $hasOtherOutflow,
+                        || $hasLoss,
                     422,
                     '이미 이월·로스·폐기와 연결된 생산 기록이 있어 바로 0개로 변경할 수 없습니다. 연결된 기록을 먼저 확인해주세요.'
                 );
@@ -1374,7 +1350,7 @@ class ProductionManagementController extends Controller
     /**
      * 제품의 한 가지 수량 처리 업무만 저장합니다.
      *
-     * 화면에서 로스·폐기·기타 출고·이월을 각각 독립적으로 수정하므로
+     * 화면에서 로스·폐기·이월을 각각 독립적으로 수정하므로
      * 선택하지 않은 업무 기록을 빈 배열로 덮어쓰지 않도록 서버에서도 분리 처리합니다.
      */
     public function saveFlow(Request $request): JsonResponse
@@ -1385,7 +1361,7 @@ class ProductionManagementController extends Controller
 
         /**
          * 처리할 점포, 제품, 날짜 및 업무 유형을 검증합니다.
-         * 로스·폐기·기타 출고는 사유와 수량을 사용하고,
+         * 로스·폐기는 사유와 수량을 사용하고,
          * 이월은 별도의 수량과 재고 출처를 사용합니다.
          */
         $data = $request->validate([
@@ -1471,7 +1447,7 @@ class ProductionManagementController extends Controller
 
         /**
          * 이월은 사유 목록을 사용하지 않으므로 직접입력 검증에서 제외합니다.
-         * 로스·폐기·기타 출고는 사유가 'other'일 때
+         * 로스·폐기는 사유가 'other'일 때
          * 직접입력 내용이 비어 있는지 확인합니다.
          */
         $missingDirectReason = $data['type'] !== 'carryover'
@@ -1526,7 +1502,7 @@ class ProductionManagementController extends Controller
 
             /**
              * 이월은 전체 사용 가능 수량을 확인합니다.
-             * 로스·폐기·기타 출고는 아래 생산 내역별 검사에서 확인합니다.
+             * 로스·폐기는 아래 생산 내역별 검사에서 확인합니다.
              */
             if ($data['type'] === 'carryover') {
                 $availableForType = $this->availableQuantityForDisposition(
@@ -1543,7 +1519,7 @@ class ProductionManagementController extends Controller
                 );
             }
 
-            // 로스, 폐기, 기타 출고의 재고 출처와 수량을 검증합니다.
+            // 로스, 폐기의 재고 출처와 수량을 검증합니다.
             if (in_array($data['type'], ['loss', 'waste'], true)) {
                 $this->validateReasonStockSources(
                     (int) $data['store_id'],
@@ -2319,7 +2295,7 @@ class ProductionManagementController extends Controller
         $this->accessService->assertStoreDepartment($user, (int) $data['store_id']);
         if ($data['status'] === 'closed') {
             $daily = $this->dailyService->build((int) $data['store_id'], $data['work_date']);
-            $hasBusinessData = collect($daily['rows'])->contains(fn(array $row) => $row['production'] + $row['loss'] + $row['waste'] + $row['other_outflow'] + $row['carryover_out'] > 0);
+            $hasBusinessData = collect($daily['rows'])->contains(fn(array $row) => $row['production'] + $row['loss'] + $row['waste'] + $row['carryover_out'] > 0);
             abort_if($hasBusinessData, 422, '이미 업무 기록이 있는 날짜는 바로 휴점 처리할 수 없습니다. 기록을 먼저 확인해주세요.');
         }
         StoreDailyStatus::updateOrCreate(['store_id' => $data['store_id'], 'work_date' => $data['work_date']], ['status' => $data['status'], 'reason' => $data['reason'] ?? null, 'created_by' => $user->id, 'updated_by' => $user->id]);
@@ -2754,7 +2730,6 @@ class ProductionManagementController extends Controller
                     'loss' => '로스',
                     'waste' => '폐기',
                     'carryover' => '이월',
-                    'other_outflow' => '기타 출고',
                 ];
 
                 if (isset($labels[$type])) {
@@ -3249,7 +3224,6 @@ class ProductionManagementController extends Controller
      * 선택한 업무에서 사용할 수 있는 수량을 계산합니다.
      *
      * 생산·이월 재고에서 다른 업무에 사용한 수량을 제외합니다.
-     * 기존 기타 출고 기록은 과거 재고 정확성을 위해 차감에 포함합니다.
      */
     private function availableQuantityForDisposition(array $row, string $type): int
     {
@@ -3260,17 +3234,14 @@ class ProductionManagementController extends Controller
         $allocatedByOtherTypes = match ($type) {
             'carryover' =>
                 (int) $row['operational_loss']
-                + (int) $row['operational_waste']
-                + (int) $row['other_outflow'],
+                + (int) $row['operational_waste'],
 
             'loss' =>
                 (int) $row['operational_waste']
-                + (int) $row['other_outflow']
                 + (int) $row['carryover_out'],
 
             'waste' =>
                 (int) $row['operational_loss']
-                + (int) $row['other_outflow']
                 + (int) $row['carryover_out'],
 
             default => throw new \InvalidArgumentException(
@@ -3346,7 +3317,6 @@ class ProductionManagementController extends Controller
         $modelClass = match ($type) {
             'loss' => ProductionLoss::class,
             'waste' => ProductionWaste::class,
-            'other_outflow' => ProductionOtherOutflow::class,
             default => throw new \InvalidArgumentException(
                 '지원하지 않는 재고 처리 유형입니다.'
             ),
@@ -3730,13 +3700,12 @@ class ProductionManagementController extends Controller
                 }
             }
 
-            // 후속 날짜의 로스·폐기·기타 출고를 합산합니다.
+            // 후속 날짜의 로스·폐기를 합산합니다.
             $usedByDate = [];
 
             foreach ([
                 ProductionLoss::class,
                 ProductionWaste::class,
-                ProductionOtherOutflow::class,
             ] as $model) {
                 $records = $model::query()
                     ->where('store_id', $storeId)
@@ -3801,7 +3770,7 @@ class ProductionManagementController extends Controller
      * 상위 DB 트랜잭션을 취소하여 다음 날의 기록이 고아 데이터가 되지 않게 합니다.
      *
      * @param int $incoming 다음 날 해당 원 생산 재고로 들어온 이월 수량
-     * @param int $used 다음 날 로스·폐기·기타 출고·재이월에 사용한 합계
+     * @param int $used 다음 날 로스·폐기·재이월에 사용한 합계
      */
     private function assertNextDayCarryoverQuantity(int $incoming, int $used): void
     {
@@ -3846,8 +3815,6 @@ class ProductionManagementController extends Controller
      */
     private function lotForProductDate(int $storeId, int $productId, string $date): ?ProductStockLot
     {
-        // 기타 출고도 임의의 최신 lot에 귀속시키지 않습니다. 출처가 여러 건이면
-        // 기존 요청 형식으로는 어느 생산 기록을 차감할지 판단할 수 없습니다.
         $todayLots = ProductStockLot::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
@@ -3890,7 +3857,6 @@ class ProductionManagementController extends Controller
                 // 실제 업무일에 처리한 수량을 합산합니다.
                 $processed = (int) $row['operational_loss']
                     + (int) $row['operational_waste']
-                    + (int) $row['other_outflow']
                     + (int) $row['carryover_out'];
 
                 $issues = collect();

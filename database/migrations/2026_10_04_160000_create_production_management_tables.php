@@ -140,21 +140,6 @@ return new class extends Migration
             $table->unsignedInteger('quantity');
             $table->timestamps();
         });
-        Schema::create('production_other_outflows', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('store_id')->constrained('stores')->restrictOnDelete();
-            $table->foreignId('product_id')->constrained('products')->restrictOnDelete();
-            $table->foreignId('stock_lot_id')->nullable()->constrained('product_stock_lots')->nullOnDelete();
-            $table->date('work_date');
-            $table->unsignedInteger('quantity');
-            $table->string('reason_code');
-            $table->string('reason_text')->nullable();
-            $table->text('note')->nullable();
-            $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
-            $table->timestamps();
-            $table->softDeletes();
-            $table->index(['store_id', 'work_date', 'product_id']);
-        });
         Schema::create('production_daily_closures', function (Blueprint $table) {
             $table->id();
             $table->foreignId('store_id')->constrained('stores')->restrictOnDelete();
@@ -288,7 +273,6 @@ return new class extends Migration
         Schema::dropIfExists('store_daily_statuses');
         Schema::dropIfExists('production_corrections');
         Schema::dropIfExists('production_daily_closures');
-        Schema::dropIfExists('production_other_outflows');
         Schema::dropIfExists('production_waste_reasons');
         Schema::dropIfExists('production_wastes');
         Schema::dropIfExists('product_stock_movements');

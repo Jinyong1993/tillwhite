@@ -23,20 +23,18 @@ class DispositionAvailabilityTest extends TestCase
     {
         yield 'loss excludes carryover reservation' => ['loss', 4];
         yield 'waste excludes carryover reservation' => ['waste', 5];
-        yield 'other outflow excludes carryover reservation' => ['other_outflow', 4];
         yield 'carryover replaces existing reservation' => ['carryover', 6];
     }
 
     #[DataProvider('dispositionCases')]
     public function test_available_quantity_respects_other_allocations(string $type, int $expected): void
     {
-        // 생산 8개 + 이월 2개, 로스 1개, 폐기 2개, 기타 출고 1개, 이월 예정 3개.
+        // 생산 8개 + 이월 2개, 로스 1개, 폐기 2개, 이월 예정 3개.
         $row = [
             'production' => 8,
             'carryover_in' => 2,
             'operational_loss' => 1,
             'operational_waste' => 2,
-            'other_outflow' => 1,
             'carryover_out' => 3,
         ];
 
@@ -54,7 +52,6 @@ class DispositionAvailabilityTest extends TestCase
             'carryover_in' => 0,
             'operational_loss' => 1,
             'operational_waste' => 1,
-            'other_outflow' => 1,
             'carryover_out' => 1,
         ];
 

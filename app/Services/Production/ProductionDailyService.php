@@ -9,7 +9,6 @@ use App\Models\ProductionBatch;
 use App\Models\ProductionConfirmation;
 use App\Models\ProductionDailyClosure;
 use App\Models\ProductionLoss;
-use App\Models\ProductionOtherOutflow;
 use App\Models\ProductionWaste;
 use App\Models\StoreDailyStatus;
 use Carbon\Carbon;
@@ -144,12 +143,6 @@ class ProductionDailyService
             ->get()
             ->groupBy('product_id');
 
-        $outflows = ProductionOtherOutflow::query()
-            ->where('store_id', $storeId)
-            ->whereDate('work_date', $date)
-            ->get()
-            ->groupBy('product_id');
-
         $incoming = ProductStockMovement::query()
             ->where('store_id', $storeId)
             ->whereDate('work_date', $date)
@@ -177,7 +170,6 @@ class ProductionDailyService
                 $operationalLosses,
                 $attributedWastes,
                 $operationalWastes,
-                $outflows,
                 $incoming,
                 $outgoing,
                 $confirmations,
@@ -225,10 +217,6 @@ class ProductionDailyService
 
                 $operationalWaste = $this->sum(
                     $operationalWastes->get($product->id)
-                );
-
-                $other = $this->sum(
-                    $outflows->get($product->id)
                 );
 
                 $carryOut = $this->sum(
@@ -489,40 +477,6 @@ class ProductionDailyService
                     // 폐기율과 생산 성과는 원 생산일에 귀속된 폐기만 사용합니다.
                     'attributed_waste' => $waste,
 
-                    'other_outflow' => $other,
-
-                    // 기타 출고도 로스·폐기와 동일하게 재고 출처별 수정 내역을 제공합니다.
-                    // 수정 다이얼로그가 기존 수량을 복원하지 못하면 서버의 교체 저장 검증과 달라집니다.
-                    'other_outflow_details' =>
-                        (
-                            $outflows->get($product->id)
-                            ?? collect()
-                        )
-                        ->map(
-                            fn ($outflow) => [
-                                'reason_code' =>
-                                    $outflow->reason_code,
-
-                                'reason_text' =>
-                                    $outflow->reason_text,
-
-                                'quantity' =>
-                                    (int) $outflow->quantity,
-
-                                'origin_production_date' =>
-                                    collect($stockSources)
-                                        ->firstWhere(
-                                            'stock_lot_id',
-                                            $outflow->stock_lot_id
-                                        )['origin_production_date']
-                                        ?? $date,
-
-                                'stock_lot_id' =>
-                                    $outflow->stock_lot_id,
-                            ]
-                        )
-                        ->values(),
-
                     'carryover_out' => $carryOut,
 
                     'stock_sources' => $stockSources,
@@ -567,8 +521,7 @@ class ProductionDailyService
                 || $row['carryover_in'] > 0
                 || $row['carryover_out'] > 0
                 || $row['loss'] > 0
-                || $row['waste'] > 0
-                || $row['other_outflow'] > 0;
+                || $row['waste'] > 0;
         })->values();
 
         $activeRows = $rows->where('is_active', true);
@@ -594,9 +547,6 @@ class ProductionDailyService
 
             'attributed_waste' =>
                 $activeRows->sum('attributed_waste'),
-
-            'other_outflow' =>
-                $activeRows->sum('other_outflow'),
         ];
 
         $totals['waste_rate'] = $this->wasteRate(
@@ -699,7 +649,7 @@ class ProductionDailyService
             ->groupBy('stock_lot_id');
 
         /**
-         * 로스·폐기·기타 출고는 기존 조건을 유지하면서
+         * 로스·폐기는 기존 조건을 유지하면서
          * 재고별 수량을 각각 한 번의 조회로 집계합니다.
          */
         $lossTotals = ProductionLoss::query()
@@ -722,23 +672,12 @@ class ProductionDailyService
             ->groupBy('stock_lot_id')
             ->pluck('total_quantity', 'stock_lot_id');
 
-        $outflowTotals = ProductionOtherOutflow::query()
-            ->where('store_id', $storeId)
-            ->where('product_id', $productId)
-            ->whereIn('stock_lot_id', $lotIds)
-            ->whereDate('work_date', $date)
-            ->select('stock_lot_id')
-            ->selectRaw('SUM(quantity) AS total_quantity')
-            ->groupBy('stock_lot_id')
-            ->pluck('total_quantity', 'stock_lot_id');
-
         // 기존 반환 키와 계산식을 변경하지 않습니다.
         return $lots->map(function (ProductStockLot $lot) use (
             $date,
             $movementTotals,
             $lossTotals,
             $wasteTotals,
-            $outflowTotals
         ) {
             $movements = $movementTotals->get($lot->id, collect());
 
@@ -758,10 +697,9 @@ class ProductionDailyService
 
             $loss = (int) ($lossTotals->get($lot->id) ?? 0);
             $waste = (int) ($wasteTotals->get($lot->id) ?? 0);
-            $outflow = (int) ($outflowTotals->get($lot->id) ?? 0);
 
             // 실제 차감 차이를 보존하고 화면용 잔여 수량만 0 이상으로 제한합니다.
-            $unallocated = $baseQuantity - $loss - $waste - $outflow - $carryover;
+            $unallocated = $baseQuantity - $loss - $waste - $carryover;
 
             /**
              * 기존 재고 정보와 잔여 수량 계산은 유지합니다.

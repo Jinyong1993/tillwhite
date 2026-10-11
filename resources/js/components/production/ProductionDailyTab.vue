@@ -2374,7 +2374,6 @@ function historyQuantityText(log) {
       loss: '로스',
       waste: '폐기',
       carryover: '이월',
-      other_outflow: '기타 출고'
     };
 
     const label = labels[type];
