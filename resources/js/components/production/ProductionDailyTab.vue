@@ -1543,7 +1543,8 @@ const filteredRows = computed(() => (props.daily.rows || []).filter((row) => {
 
   // 로스는 기존 기준을 유지하고 폐기는 원 생산일에 귀속된 수량으로 판단합니다.
   if (filter.value === 'occurred') {
-    return Number(row.loss || 0) > 0 || Number(row.attributed_waste || 0) > 0;
+    return Number(row.operational_loss || 0) > 0
+      || Number(row.operational_waste || 0) > 0;
   }
 
   return true;

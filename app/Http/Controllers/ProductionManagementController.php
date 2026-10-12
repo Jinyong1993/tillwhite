@@ -3565,6 +3565,12 @@ class ProductionManagementController extends Controller
             );
         }
 
+        // 기존 이월 기록이 없고 0개를 확인하는 경우입니다.
+        // 변경할 생산 내역이 없으므로 재고 기록은 수정하지 않습니다.
+        if ($quantity === 0 && $stockLotId === null) {
+            return;
+        }
+
         if ($quantity > 0) {
             abort_if(
                 $stockLotId === null,
