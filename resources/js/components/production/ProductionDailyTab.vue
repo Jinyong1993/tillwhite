@@ -2169,9 +2169,27 @@ function openInventoryDialog(row, type = '') {
   inventoryOpen.value = true;
 }
 
-// 기존 생산 버튼 및 마감 화면의 호출 방식을 유지합니다.
+/**
+ * 생산 버튼을 누르면 새 재고 관리 화면의
+ * 생산 메뉴를 선택한 상태로 엽니다.
+ *
+ * 기존 수정 권한, 이전 날짜 마감,
+ * 현재 날짜 마감 상태 검사는 그대로 유지합니다.
+ */
 function openProduction(row) {
-  openInventoryWork(row, 'production');
+  if (!ensureMutable()) {
+    return;
+  }
+
+  if (!row) {
+    return;
+  }
+
+  // 기존 생산 다이얼로그가 동시에 열리지 않도록 합니다.
+  batchOpen.value = false;
+
+  // 새 다이얼로그의 생산 메뉴를 엽니다.
+  openInventoryDialog(row, 'production');
 }
 
 // 기존 이월·로스·폐기 버튼 및 마감 화면의 호출 방식을 유지합니다.

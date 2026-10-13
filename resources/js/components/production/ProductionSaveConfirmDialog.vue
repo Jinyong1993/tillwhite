@@ -59,7 +59,7 @@
           </div>
 
           <div class="production-save-confirm__row">
-            <span>{{ editing ? '수정 후 예상 총생산량' : '등록 후 예상 총생산량' }}</span>
+            <span>{{ editing ? '수정 후 총생산량' : '등록 후 총생산량' }}</span>
             <strong class="production-save-confirm__expected">
               {{ formatQuantity(expectedTotal) }}
             </strong>
@@ -85,7 +85,30 @@
           </div>
         </div>
 
-        
+        <!-- 레시피 변경, 추천 생산량, 메모 통합 스타일 -->
+        <div
+          v-if="!editing && recipeDeviated"
+          class="production-save-confirm__detail"
+        >
+          <strong>레시피 변경</strong>
+          <div>{{ recipeDeviationNote || "변경 내용 없음" }}</div>
+        </div>
+
+        <div
+          v-if="!editing && recommendationReferenced"
+          class="production-save-confirm__detail"
+        >
+          <strong>추천 생산량 참고</strong>
+          <div>{{ recommendationDeviationReason || "추천 범위 변경 사유 없음" }}</div>
+        </div>
+
+        <div
+          v-if="typeof note === 'string' && note.trim()"
+          class="production-save-confirm__detail"
+        >
+          <strong>메모</strong>
+          <div>{{ note }}</div>
+        </div>
 
         <!-- 최근 생산량과 입력 수량의 차이를 구분해 표시합니다. -->
         <div class="production-save-confirm__comparison">
@@ -200,6 +223,33 @@ const props = defineProps({
     default: () => [],
   },
 
+  // 신규 생산 등록 시 레시피 변경 정보
+  recipeDeviated: {
+    type: Boolean,
+    default: false,
+  },
+
+  recipeDeviationNote: {
+    type: String,
+    default: "",
+  },
+
+  // 신규 생산 등록 시 추천 생산량 참고 정보
+  recommendationReferenced: {
+    type: Boolean,
+    default: false,
+  },
+
+  recommendationDeviationReason: {
+    type: String,
+    default: "",
+  },
+
+  note: {
+    type: String,
+    default: "",
+  },
+
   averageQuantity: {
     type: Number,
     default: null,
@@ -312,6 +362,29 @@ function formatComparison(baseline) {
 </script>
 
 <style scoped>
+/* 레시피 변경 · 추천 생산량 참고 · 메모 공통 스타일 */
+.production-save-confirm__detail {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.production-save-confirm__detail strong {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.production-save-confirm__detail > div {
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  white-space: pre-wrap;
+}
+
 /* 제품 정보와 등록 수량을 기존 다이얼로그에 맞춰 간결하게 정렬합니다. */
 .production-save-confirm__summary {
   display: flex;
@@ -355,9 +428,13 @@ function formatComparison(baseline) {
   font-variant-numeric: tabular-nums;
 }
 
-/* 생산량 비교 항목을 동일한 간격으로 정렬합니다. */
+/* 생산량 비교 영역 공통 박스 스타일 */
 .production-save-confirm__comparison {
-  padding: 2px 0;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
 }
 
 .production-save-confirm__group {
@@ -405,10 +482,11 @@ function formatComparison(baseline) {
   display: flex;
   flex-direction: column;
   gap: 9px;
+  margin-bottom: 12px;
   padding: 12px 14px;
-  margin-bottom: 16px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
 }
 
 .production-save-confirm__expected {
@@ -417,7 +495,11 @@ function formatComparison(baseline) {
 
 /* 선택한 작업자 이름을 작은 칩 형태로 표시합니다. */
 .production-save-confirm__workers {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
 }
 
 .production-save-confirm__workers-label {

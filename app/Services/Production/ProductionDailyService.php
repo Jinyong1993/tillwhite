@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\ProductStockLot;
 use App\Models\ProductStockMovement;
 use App\Models\ProductionBatch;
+use App\Models\ProductionRecommendationSnapshot;
 use App\Models\ProductionConfirmation;
 use App\Models\ProductionDailyClosure;
 use App\Models\ProductionLoss;
@@ -94,6 +95,17 @@ class ProductionDailyService
             ->get()
             ->groupBy('product_id');
 
+        // 해당 날짜 생산 기록에 연결된 추천 스냅샷을 일괄 조회합니다.
+        $recommendationSnapshots = ProductionRecommendationSnapshot::query()
+            ->whereIn(
+                'production_batch_id',
+                $batches->flatten()->pluck('id')
+            )
+            ->orderByDesc('id')
+            ->get()
+            ->unique('production_batch_id')
+            ->keyBy('production_batch_id');
+
         // 작업자는 생산 기록에 연결된 실제 사용자 정보를 일괄 조회해 N+1 쿼리를 방지합니다.
         $batchWorkerMap = DB::table('production_batch_workers')
             ->join(
@@ -177,7 +189,8 @@ class ProductionDailyService
                 $categoryHistories,
                 $date,
                 $storeId,
-                $batchWorkerMap
+                $batchWorkerMap,
+                $recommendationSnapshots
             ) {
                 $history = $productHistories->get($product->id);
 
@@ -334,6 +347,18 @@ class ProductionDailyService
 
                                 'recipe_deviation_note' =>
                                     $batch->recipe_deviation_note,
+
+                                'recommendation_referenced' =>
+                                    (bool) (
+                                        $recommendationSnapshots
+                                            ->get($batch->id)
+                                            ?->referenced ?? false
+                                    ),
+
+                                'recommendation_deviation_reason' =>
+                                    $recommendationSnapshots
+                                        ->get($batch->id)
+                                        ?->deviation_reason,
 
                                 'created_at' =>
                                     $batch->created_at,
