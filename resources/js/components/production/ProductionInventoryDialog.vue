@@ -157,11 +157,7 @@
               <div class="inventory-dialog__card-navigation">
                 <div class="inventory-dialog__card-steps">
                   <v-btn
-                    v-for="(title, index) in [
-                      '생산 입력',
-                      '레시피 · 추천',
-                      '메모 · 확인',
-                    ]"
+                    v-for="(title, index) in productionCardTitles"
                     :key="index"
                     size="small"
                     :variant="productionCardIndex === index ? 'flat' : 'outlined'"
@@ -183,13 +179,13 @@
                     이전
                   </v-btn>
 
-                  <span>{{ productionCardIndex + 1 }} / 3</span>
+                  <span>{{ productionCardIndex + 1 }} / {{ productionCardTitles.length }}</span>
 
                   <v-btn
                     size="small"
                     variant="text"
                     append-icon="mdi-chevron-right"
-                    :disabled="productionCardIndex === 2"
+                    :disabled="productionCardIndex === lastProductionCardIndex"
                     @click="productionCardIndex++"
                   >
                     다음
@@ -869,7 +865,6 @@ const wasteDetails = computed(() => {
  * 통합 다이얼로그의 생산 입력 상태입니다.
  *
  * 기존 ProductionBatchDialog의 필드 구조를 유지합니다.
- * 실제 저장 기능은 아직 연결하지 않습니다.
  */
 const productionForm = reactive({
   quantity: 1,
@@ -1341,6 +1336,7 @@ function resetProductionEditor() {
   productionCardIndex.value = 0;
   zeroCardOpen.value = false;
   editingBatch.value = null;
+  expandedBatchIds.value = [];
 
   productionForm.quantity = 1;
   productionForm.workerIds = [];
@@ -1390,6 +1386,14 @@ const productionFormOpen = ref(false);
 
 // 생산 0개 확인 영역 펼침 여부
 const zeroCardOpen = ref(false);
+
+const productionCardTitles = [
+  "생산 입력",
+  "레시피 · 추천",
+  "메모 · 확인",
+];
+
+const lastProductionCardIndex = productionCardTitles.length - 1;
 
 // 생산 입력 카드: 0 기본 입력, 1 레시피·추천, 2 메모
 const productionCardIndex = ref(0);
@@ -1466,7 +1470,10 @@ function onProductionSwipeEnd(event) {
   }
 
   if (deltaX < 0) {
-    productionCardIndex.value = Math.min(2, productionCardIndex.value + 1);
+    productionCardIndex.value = Math.min(
+      lastProductionCardIndex,
+      productionCardIndex.value + 1
+    );
   } else {
     productionCardIndex.value = Math.max(0, productionCardIndex.value - 1);
   }
@@ -1549,7 +1556,6 @@ function cancelEdit() {
 
 /**
  * 삭제 대상을 선택하고 확인창을 표시합니다.
- * 실제 삭제 API는 아직 호출하지 않습니다.
  */
 function askDelete(batch) {
   if (!props.canMutate || !batch) {
@@ -1636,6 +1642,7 @@ async function deleteBatch() {
 
     deletingBatch.value = null;
     editingBatch.value = null;
+    expandedBatchIds.value = [];
   } catch (error) {
     // 서버가 삭제를 거부한 경우 확인창과 기존 기록을 유지합니다.
     emit("error", error.response?.data?.message || "생산 기록을 삭제하지 못했습니다.");
@@ -1727,17 +1734,16 @@ function selectSection(value) {
  * 지정한 업무가 없으면 첫 번째 메뉴를 선택합니다.
  */
 watch(
-  () => [props.modelValue, props.initialSection, props.sections],
-  () => {
-    if (!props.modelValue) {
-      return;
-    }
+  () => props.modelValue,
+  (isOpen) => {
+    if (!isOpen) return;
 
     const requested = props.sections.find(
       (section) => section.value === props.initialSection
     );
 
-    selectedSection.value = requested?.value || props.sections[0]?.value || "";
+    selectedSection.value =
+      requested?.value || props.sections[0]?.value || "";
   },
   { immediate: true }
 );
@@ -1760,14 +1766,6 @@ function displayQuantity(value) {
 <style scoped>
 /* 다이얼로그 전체 기본 글씨 */
 .inventory-dialog {
-  font-size: 12px;
-}
-
-/* 제목, 숫자, 설명 등 텍스트 크기 통일 */
-.inventory-dialog strong,
-.inventory-dialog span,
-.inventory-dialog small,
-.inventory-dialog p {
   font-size: 12px;
 }
 
@@ -1800,6 +1798,7 @@ function displayQuantity(value) {
 .inventory-dialog__production-record-label {
   font-size: 0.8rem;
   font-weight: 600;
+  line-height: 1.6;
   color: rgb(var(--v-theme-on-surface));
 }
 
@@ -2077,21 +2076,9 @@ function displayQuantity(value) {
   line-height: 1.5;
 }
 
-.inventory-dialog__production-record-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
 .inventory-dialog__production-record-header strong {
   font-size: 0.8rem;
   font-weight: 600;
-}
-
-.inventory-dialog__production-record-header span {
-  font-size: 11px;
-  opacity: 0.6;
 }
 
 /* 생산 입력 카드 탐색 */
@@ -2151,10 +2138,6 @@ function displayQuantity(value) {
   border-radius: 14px;
   background: rgb(var(--v-theme-surface));
   text-align: left;
-}
-
-/* 생산 카드 등장 애니메이션 */
-.inventory-dialog__swipe-card {
   animation: inventory-card-enter 0.2s ease-out;
 }
 
@@ -2300,14 +2283,6 @@ function displayQuantity(value) {
   .inventory-dialog__zero-card-content {
     padding: 12px;
   }
-}
-
-/* 생산량 제목을 작업자·메모·레시피 변경과 동일하게 */
-.inventory-dialog__production-record-header
-.inventory-dialog__production-record-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  line-height: 1.6;
 }
 
 /* 오른쪽 생산 수량만 별도로 강조 */
