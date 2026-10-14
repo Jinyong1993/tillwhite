@@ -2196,12 +2196,9 @@ function openProduction(row) {
 
 // 로스·폐기 숫자를 누르면 통합 다이얼로그의 해당 탭을 엽니다.
 function openFlow(row, type) {
-  if (type === "loss" || type === "waste") {
+  if (['carryover', 'loss', 'waste'].includes(type)) {
     openInventoryDialog(row, type);
-    return;
   }
-
-  openInventoryWork(row, type);
 }
 
 // 기존 제품 상세정보와 선택 날짜 기준 최근 7일 생산 기록을 함께 조회합니다.
