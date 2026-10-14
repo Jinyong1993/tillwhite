@@ -6,18 +6,6 @@
         이월 관리
       </strong>
 
-      <div class="inventory-dialog__carryover-summary">
-        <div>
-          <span>이월 재고</span>
-          <strong>{{ displayQuantity(product?.carryover_in) }}</strong>
-        </div>
-
-        <div>
-          <span>이월 예정</span>
-          <strong>{{ displayQuantity(product?.carryover_out) }}</strong>
-        </div>
-      </div>
-
       <p class="inventory-dialog__form-help">
         생산 기록을 선택해 다음 영업일로 넘길 수량을 관리합니다.
         기존 기록은 '기록 확인'에서 선택하여 수정할 수 있습니다.
@@ -28,23 +16,54 @@
         <v-btn
           block
           variant="tonal"
-          :disabled="saving || (!canMutate && !editorOpen)"
+          :disabled="saving || !canMutate"
           :prepend-icon="editorOpen ? 'mdi-chevron-up' : 'mdi-plus'"
           @click="toggleEditor"
         >
-          {{ editorOpen ? "입력 닫기" : "추가 / 수정" }}
+          {{ editorOpen ? "취소" : "추가" }}
         </v-btn>
 
         <v-btn
           block
           variant="tonal"
-          :disabled="saving"
-          prepend-icon="mdi-clipboard-text-outline"
-          @click="toggleHistory"
+          :disabled="saving || !canMutate"
+          :prepend-icon="zeroCardOpen ? 'mdi-chevron-up' : 'mdi-minus-circle-outline'"
+          @click="toggleZeroCard"
         >
-          {{ historyOpen ? "기록 접기" : "기록 확인" }}
+          이월 없음
         </v-btn>
       </div>
+
+      <!-- 이월 없음 확인 카드 -->
+      <div v-if="zeroCardOpen" class="inventory-dialog__inner-card">
+        <strong>이월 없음 확인</strong>
+
+        <p class="inventory-dialog__form-help">
+          다음 영업일로 넘길 재고가 없다면 0개로 확인합니다.
+          이미 등록한 이월 기록은 기록 확인에서 개별 수정해야 합니다.
+        </p>
+
+        <v-btn
+          block
+          variant="outlined"
+          :disabled="saving || !canMutate || hasSavedCarryover"
+          @click="askZeroSave"
+        >
+          이월 0개 확인
+        </v-btn>
+      </div>
+
+      <!-- 기존 기록 확인 -->
+      <v-btn
+        block
+        size="small"
+        variant="text"
+        :disabled="saving"
+        prepend-icon="mdi-clipboard-text-outline"
+        @click="toggleHistory"
+      >
+        {{ historyOpen ? "기록 접기" : "기록 확인" }}
+      </v-btn>
 
       <!-- 기존 이월 기록 -->
       <div
@@ -132,11 +151,8 @@
           v-if="selectedCarryoverLotId == null"
           class="inventory-dialog__form-help"
         >
-          {{
-            savedCarryoverLots.length > 0
-              ? "기존 이월을 수정하려면 생산 기록을 선택해 주세요."
-              : "이월할 생산 기록을 선택해 주세요. 이월이 없다면 0개로 확인할 수 있습니다."
-          }}
+          이월할 생산 기록을 선택해 주세요.
+          이월할 재고가 없는 경우에는 상단의 '이월 없음' 버튼을 이용해 주세요.
         </p>
 
         <!-- 선택한 생산 기록의 재고 정보 -->
@@ -184,9 +200,12 @@
           :disabled="selectedCarryoverLotId == null"
         />
 
-        <!-- 이월 수량 0개 확인 안내 -->
+        <!-- 기존 이월 기록을 0개로 수정할 때 안내 -->
         <v-alert
           v-if="
+            selectedCarryoverLotId != null &&
+            selectedCarryoverLot &&
+            Number(selectedCarryoverLot.carryover_out_quantity || 0) > 0 &&
             carryoverQuantity !== null &&
             carryoverQuantity !== undefined &&
             String(carryoverQuantity).trim() !== '' &&
@@ -196,20 +215,8 @@
           variant="tonal"
           density="compact"
         >
-          <template v-if="selectedCarryoverLotId == null && !hasSavedCarryover">
-            이월할 제품이 없다면 생산 기록을 선택하지 않고
-            이월 없음(0개)으로 확인할 수 있습니다.
-          </template>
-
-          <template v-else-if="selectedCarryoverLotId != null">
-            현재 0개가 입력되어 있습니다.
-            저장하면 선택한 생산 기록의 이월 수량이 0개로 변경됩니다.
-          </template>
-
-          <template v-else>
-            기존 이월 기록을 0개로 변경하려면
-            수정할 생산 기록을 먼저 선택해 주세요.
-          </template>
+          현재 0개가 입력되어 있습니다.
+          저장하면 선택한 생산 기록의 기존 이월 처리가 취소됩니다.
         </v-alert>
 
         <!-- 이월 가능 수량 초과 안내 -->
@@ -284,6 +291,9 @@ const emit = defineEmits([
 // 이월 입력창 및 기록 확인창 상태
 const editorOpen = ref(false);
 const historyOpen = ref(false);
+
+// 이월 0개 확인 관련
+const zeroCardOpen = ref(false);
 
 // 저장 및 확인창 상태
 const saving = ref(false);
@@ -491,18 +501,18 @@ const hasSavedCarryover = computed(() => {
 
 // 이월 저장 전 최종 확인 문구
 const confirmMessage = computed(() => {
-  const quantity = Number(carryoverQuantity.value);
-
-  // 이월 없음(0개) 확인
-  if (quantity === 0 && selectedCarryoverLotId.value == null) {
+  // 별도의 이월 없음 카드에서 0개 확인
+  if (zeroCardOpen.value) {
     return (
-      "다음 영업일로 이월할 수량이 없습니다.\n\n" +
+      "다음 영업일로 이월할 재고가 없습니다.\n\n" +
       "이월 없음(0개)으로 확인하시겠습니까?"
     );
   }
 
-  // 기존 이월 기록을 0개로 수정
-  if (quantity === 0 && selectedCarryoverLotId.value != null) {
+  const quantity = Number(carryoverQuantity.value);
+
+  // 기존 이월 기록을 0개로 수정하여 취소
+  if (quantity === 0) {
     return (
       "선택한 생산 기록의 이월 수량을 0개로 변경하시겠습니까?\n\n" +
       "해당 생산 기록의 기존 이월 처리가 취소됩니다."
@@ -598,7 +608,13 @@ function changeCarryoverLot(value) {
 
 // 기록 확인에서 특정 이월 내역을 선택하여 수정
 function editCarryoverLot(item) {
+  // 수정 권한, 저장 상태, 선택 기록 확인
   if (!props.canMutate || saving.value || !item) {
+    return;
+  }
+
+  // 다른 확인창이 열려 있을 때 중복 동작 방지
+  if (confirmSave.value || confirmDiscard.value) {
     return;
   }
 
@@ -608,9 +624,11 @@ function editCarryoverLot(item) {
   }
 
   const openSelectedLot = () => {
+    // 기존 이월 기록의 재고 출처 복원
     carryoverSource.value =
       item.source === "carryover" ? "incoming" : "today";
 
+    // 수정할 생산 기록과 기존 이월 수량 복원
     selectedCarryoverLotId.value = item.stock_lot_id;
 
     carryoverQuantity.value = Number(
@@ -624,7 +642,9 @@ function editCarryoverLot(item) {
     initialCarryoverLotId.value = selectedCarryoverLotId.value;
     initialCarryoverQuantity.value = carryoverQuantity.value;
 
+    // 다른 화면을 닫고 기존 기록 수정 입력창 표시
     historyOpen.value = false;
+    zeroCardOpen.value = false;
     editorOpen.value = true;
   };
 
@@ -637,9 +657,14 @@ function editCarryoverLot(item) {
   openSelectedLot();
 }
 
-// 추가/수정 입력창 열기·닫기
+// 이월 추가 입력창 열기·닫기
 function toggleEditor() {
-  if (saving.value) {
+  // 저장 중이거나 확인창이 열려 있으면 중복 동작 방지
+  if (
+    saving.value ||
+    confirmSave.value ||
+    confirmDiscard.value
+  ) {
     return;
   }
 
@@ -651,14 +676,51 @@ function toggleEditor() {
     return;
   }
 
+  // 수정 권한이 없으면 입력창을 열지 않습니다.
   if (!props.canMutate) {
     emit("error", "현재 이월 기록을 수정할 수 없습니다.");
     return;
   }
 
-  // 기록 확인창은 닫고 입력창을 엽니다.
+  // 이월 없음 카드와 기록 확인창을 닫고 입력창을 엽니다.
+  zeroCardOpen.value = false;
   historyOpen.value = false;
   editorOpen.value = true;
+}
+
+// 이월 없음 확인 카드 열기·닫기
+function toggleZeroCard() {
+  // 저장 중이거나 확인창이 열려 있으면 중복 동작 방지
+  if (
+    saving.value ||
+    confirmSave.value ||
+    confirmDiscard.value
+  ) {
+    return;
+  }
+
+  // 수정 권한이 없으면 이월 없음 카드를 열지 않습니다.
+  if (!props.canMutate) {
+    emit("error", "현재 이월 기록을 수정할 수 없습니다.");
+    return;
+  }
+
+  const nextOpen = !zeroCardOpen.value;
+
+  // 이월 없음 카드가 열릴 때 다른 입력 영역을 닫습니다.
+  const changeView = () => {
+    editorOpen.value = false;
+    historyOpen.value = false;
+    zeroCardOpen.value = nextOpen;
+  };
+
+  // 기존 입력 중 변경 사항이 있으면 먼저 작성 취소 확인
+  if (editorOpen.value) {
+    requestLeave(changeView);
+    return;
+  }
+
+  changeView();
 }
 
 // 이월 기록 확인 화면 열기·닫기
@@ -674,20 +736,23 @@ function toggleHistory() {
 
   const nextOpen = !historyOpen.value;
 
-  // 입력창이 열려 있으면 먼저 작성 내용 확인
-  if (nextOpen && editorOpen.value) {
-    requestLeave(() => {
-      editorOpen.value = false;
-      historyOpen.value = true;
-    });
+  // 기록 확인창을 열 때 이월 없음 카드를 닫습니다.
+  const changeView = () => {
+    editorOpen.value = false;
+    zeroCardOpen.value = false;
+    historyOpen.value = nextOpen;
+  };
 
+  // 입력창이 열려 있으면 먼저 작성 내용 확인
+  if (editorOpen.value) {
+    requestLeave(changeView);
     return;
   }
 
-  historyOpen.value = nextOpen;
+  changeView();
 }
 
-// 이월 저장 요청에 사용할 입력값을 공통으로 검사합니다.
+// 일반 이월 저장 요청에 사용할 입력값을 검사합니다.
 // 문제가 없으면 null, 문제가 있으면 오류 문구를 반환합니다.
 function validateCarryoverInput() {
   const rawQuantity = carryoverQuantity.value;
@@ -699,36 +764,30 @@ function validateCarryoverInput() {
     rawQuantity === undefined ||
     String(rawQuantity).trim() === ""
   ) {
-    return "이월 수량을 입력해 주세요. 이월이 없다면 0을 입력해 주세요.";
+    return "이월 수량을 입력해 주세요.";
   }
 
   const quantity = Number(rawQuantity);
 
+  // 이월 수량은 0 이상의 정수만 허용합니다.
   if (!Number.isSafeInteger(quantity) || quantity < 0) {
     return "이월 수량은 0 이상의 정수로 입력해 주세요.";
   }
 
+  // 메모 길이 확인
   if (String(note.value || "").length > 1000) {
     return "메모는 1,000자 이내로 입력해 주세요.";
   }
 
+  // 저장에 필요한 기본 정보 확인
   if (!props.product?.id || !props.storeId || !props.workDate) {
     return "저장할 제품과 날짜를 확인해 주세요.";
   }
 
-  const existingLots = savedCarryoverLots.value;
-
-  // 생산 기록 선택 없이 이월 없음(0개) 확인
+  // 일반 추가에서는 생산 기록 선택이 필수입니다.
+  // 생산 기록 없이 0개 확인하는 기능은 '이월 없음'에서 처리합니다.
   if (lotId == null) {
-    if (quantity > 0) {
-      return "이월할 생산 기록을 선택해 주세요.";
-    }
-
-    if (existingLots.length > 0) {
-      return "기존 이월을 0개로 수정하려면 해당 생산 기록을 선택해 주세요.";
-    }
-
-    return null;
+    return "이월할 생산 기록을 선택해 주세요. 이월이 없다면 '이월 없음'을 이용해 주세요.";
   }
 
   // 선택한 생산 기록이 실제 재고 출처 목록에 있는지 확인
@@ -738,21 +797,21 @@ function validateCarryoverInput() {
     return "선택한 생산 기록을 찾을 수 없습니다. 다시 선택해 주세요.";
   }
 
-  // 기존 이월을 0개로 취소하는 경우에는
-  // 실제 이월 처리된 생산 기록인지 확인
-  if (quantity === 0 && existingLots.length > 0) {
-    const isExisting = existingLots.some(
+  // 0개 저장은 기존 이월 기록을 취소하는 경우에만 허용합니다.
+  // 신규 생산 기록을 0개로 확인하는 기능은 별도 '이월 없음'에서 처리합니다.
+  if (quantity === 0) {
+    const isExisting = savedCarryoverLots.value.some(
       (item) =>
         item.source === selected.source &&
         String(item.stock_lot_id) === String(lotId)
     );
 
     if (!isExisting) {
-      return "0개로 수정할 기존 이월 기록을 선택해 주세요.";
+      return "신규 이월 수량은 1개 이상 입력해 주세요. 이월이 없다면 '이월 없음'을 이용해 주세요.";
     }
   }
 
-  // 현재 선택 기록의 재고 부족 여부
+  // 현재 선택 기록의 이월 가능 수량 초과 여부
   if (
     !Number.isFinite(carryoverSourceAvailable.value) ||
     quantity > carryoverSourceAvailable.value
@@ -765,6 +824,7 @@ function validateCarryoverInput() {
 
 // 이월 저장 확인창 열기
 function askSave() {
+  // 일반 이월 입력창이 열려 있을 때만 저장 요청
   if (
     !props.canMutate ||
     saving.value ||
@@ -775,6 +835,7 @@ function askSave() {
     return;
   }
 
+  // 입력한 생산 기록 및 이월 수량 검사
   const errorMessage = validateCarryoverInput();
 
   if (errorMessage) {
@@ -785,19 +846,68 @@ function askSave() {
   confirmSave.value = true;
 }
 
-// 이월 저장 실행
-async function save() {
+// 이월 없음(0개) 저장 확인창 열기
+function askZeroSave() {
+  // 이월 없음 카드가 열려 있을 때만 저장 요청
   if (
     !props.canMutate ||
     saving.value ||
-    !editorOpen.value ||
+    !zeroCardOpen.value ||
+    confirmSave.value ||
+    confirmDiscard.value
+  ) {
+    return;
+  }
+
+  // 기존 이월 기록을 일괄적으로 삭제하지 않도록 보호
+  if (hasSavedCarryover.value) {
+    emit(
+      "error",
+      "기존 이월 기록이 있습니다. 기록 확인에서 개별 수정해 주세요."
+    );
+    return;
+  }
+
+  // 저장할 제품, 점포, 날짜 확인
+  if (!props.product?.id || !props.storeId || !props.workDate) {
+    emit("error", "저장할 제품과 날짜를 확인해 주세요.");
+    return;
+  }
+
+  // 최종 저장 확인창 표시
+  confirmSave.value = true;
+}
+
+// 이월 저장 실행
+async function save() {
+  // 별도의 이월 없음 카드에서 저장하는지 확인
+  const savingZero = zeroCardOpen.value;
+
+  // 일반 이월 입력창 또는 이월 없음 카드가 열려 있어야 저장 가능
+  if (
+    !props.canMutate ||
+    saving.value ||
+    !(editorOpen.value || savingZero) ||
     !confirmSave.value
   ) {
     return;
   }
 
-  // 실제 저장 직전에도 동일한 검증 수행
-  const errorMessage = validateCarryoverInput();
+  // 저장 유형별 입력값 검증
+  let errorMessage = null;
+
+  if (savingZero) {
+    // 기존 이월 기록이 있으면 일괄 0개 처리를 차단
+    if (hasSavedCarryover.value) {
+      errorMessage =
+        "기존 이월 기록이 있습니다. 기록 확인에서 개별 수정해 주세요.";
+    } else if (!props.product?.id || !props.storeId || !props.workDate) {
+      errorMessage = "저장할 제품과 날짜를 확인해 주세요.";
+    }
+  } else {
+    // 일반 이월 입력값 검사
+    errorMessage = validateCarryoverInput();
+  }
 
   if (errorMessage) {
     confirmSave.value = false;
@@ -808,6 +918,8 @@ async function save() {
   saving.value = true;
 
   try {
+    // 이월 없음일 경우 생산 기록 없이 0개로 저장
+    // 일반 이월일 경우 선택한 생산 기록과 수량으로 저장
     const response = await window.axios.put(
       "/tillwhite/api/production-management/flow",
       {
@@ -816,11 +928,11 @@ async function save() {
         work_date: props.workDate,
         type: "carryover",
 
-        quantity: Number(carryoverQuantity.value),
-        carryover_source: carryoverSource.value,
-        stock_lot_id: selectedCarryoverLotId.value,
+        quantity: savingZero ? 0 : Number(carryoverQuantity.value),
+        carryover_source: savingZero ? "today" : carryoverSource.value,
+        stock_lot_id: savingZero ? null : selectedCarryoverLotId.value,
 
-        note: note.value || null,
+        note: savingZero ? null : note.value || null,
       }
     );
 
@@ -839,7 +951,9 @@ async function save() {
     initialCarryoverSource.value = "today";
     initialCarryoverLotId.value = null;
 
+    // 일반 입력창, 이월 없음 카드, 기록 확인창 초기화
     editorOpen.value = false;
+    zeroCardOpen.value = false;
     historyOpen.value = false;
 
     // 최신 서버 데이터는 기존 부모의 saved 이벤트로 전달
@@ -903,6 +1017,7 @@ function resetCarryoverState() {
 
   // 화면 펼침 상태 초기화
   editorOpen.value = false;
+  zeroCardOpen.value = false;
   historyOpen.value = false;
 
   // 이전 확인창 및 보류 작업 제거
@@ -1035,33 +1150,6 @@ defineExpose({
   border-radius: 12px;
   background: transparent;
   text-align: left;
-}
-
-/* 이월 재고 및 이월 예정 */
-.inventory-dialog__carryover-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.inventory-dialog__carryover-summary > div {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
-}
-
-.inventory-dialog__carryover-summary span {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
-.inventory-dialog__carryover-summary strong {
-  font-size: 15px;
-  font-weight: 600;
 }
 
 /* 안내 문구 */
