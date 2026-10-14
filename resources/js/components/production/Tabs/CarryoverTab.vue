@@ -276,9 +276,10 @@
               <!-- 선택한 생산 기록의 이월 수량 -->
               <v-number-input
                 v-model="carryoverQuantity"
-                label="최종 이월 수량"
+                label="이월 수량"
                 variant="outlined"
                 density="compact"
+                hide-details
                 :min="0"
                 :max="carryoverSourceAvailable"
                 control-variant="stacked"
@@ -325,6 +326,16 @@
                 원래 생산일은 유지됩니다.
               </v-alert>
             </template>
+
+            <v-btn
+              block
+              variant="outlined"
+              prepend-icon="mdi-package-variant"
+              :disabled="saving || !canMutate"
+              @click="carryoverCardIndex = 0"
+            >
+              다른 재고 선택
+            </v-btn>
           </div>
 
           <!-- 카드 3: 메모 -->

@@ -454,17 +454,17 @@
               >
                 선택한 생산 기록의 사용 가능 수량을 초과했습니다.
               </v-alert>
-
-              <v-btn
-                block
-                variant="outlined"
-                prepend-icon="mdi-package-variant"
-                :disabled="saving || !canMutate"
-                @click="cardIndex = 0"
-              >
-                다른 재고 선택
-              </v-btn>
             </template>
+            
+            <v-btn
+              block
+              variant="outlined"
+              prepend-icon="mdi-package-variant"
+              :disabled="saving || !canMutate"
+              @click="cardIndex = 0"
+            >
+              다른 재고 선택
+            </v-btn>
           </div>
 
           <!-- 카드 3: 메모 입력 -->
