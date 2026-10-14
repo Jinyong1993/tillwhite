@@ -90,7 +90,6 @@
             :can-mutate="canMutate"
             :workers="workers"
             :product="product"
-            :stock-sources="stockSources"
             :work-date="workDate"
             @update:model-value="(value) => emit('update:modelValue', value)"
             @saved="(message) => emit('saved', message)"
@@ -110,46 +109,6 @@
             @saved="(message, daily) => emit('saved', message, daily)"
             @error="(message) => emit('error', message)"
           />
-
-          <!-- 서버에서 전달받은 생산 기록별 재고 목록입니다. -->
-          <section
-            v-if="selectedSection !== 'production' && selectedSection !== 'carryover'"
-            class="inventory-dialog__stock"
-          >
-            <div class="inventory-dialog__stock-heading">
-              <strong>생산 기록별 재고</strong>
-              <span>{{ stockSources.length }}건</span>
-            </div>
-
-            <div v-if="stockSources.length" class="inventory-dialog__stock-list">
-              <div
-                v-for="source in stockSources"
-                :key="source.stock_lot_id"
-                class="inventory-dialog__stock-item"
-              >
-                <div class="inventory-dialog__stock-item-top">
-                  <div class="inventory-dialog__stock-date">
-                    <v-icon icon="mdi-calendar-blank-outline" size="16" />
-                    <span>{{ source.origin_production_date || "미확인" }}</span>
-                  </div>
-
-                  <strong class="inventory-dialog__stock-quantity">
-                    {{
-                      displayQuantity(
-                        source.unallocated_quantity ?? source.remaining_quantity
-                      )
-                    }}
-                  </strong>
-                </div>
-
-                <small>최초 생산일 기준 재고</small>
-              </div>
-            </div>
-
-            <div v-else class="inventory-dialog__stock-empty">
-              표시할 재고 기록이 없습니다.
-            </div>
-          </section>
 
           <!-- 선택 업무의 조회 화면입니다. -->
           <div
@@ -331,12 +290,6 @@ const props = defineProps({
   product: {
     type: Object,
     default: null,
-  },
-
-  // 서버에서 전달받은 생산 기록별 재고 출처 목록입니다.
-  stockSources: {
-    type: Array,
-    default: () => [],
   },
 
   workDate: {
@@ -720,91 +673,5 @@ function displayQuantity(value) {
   .inventory-dialog__navigation {
     gap: 6px;
   }
-}
-
-/* 생산 기록별 재고 - 통합 카드 */
-.inventory-dialog__stock {
-  width: 100%;
-  margin-bottom: 16px;
-  padding: 14px 16px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 12px;
-  background: transparent;
-  text-align: left;
-}
-
-/* 제목 */
-.inventory-dialog__stock-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 12px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-
-.inventory-dialog__stock-heading strong,
-.inventory-dialog__stock-heading span {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-/* 재고 목록 */
-.inventory-dialog__stock-list {
-  display: flex;
-  flex-direction: column;
-}
-
-/* 개별 기록 - 카드 대신 구분선 */
-.inventory-dialog__stock-item {
-  padding: 14px 0;
-  border: none;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 0;
-  background: transparent;
-}
-
-.inventory-dialog__stock-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-/* 날짜와 수량 */
-.inventory-dialog__stock-item-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.inventory-dialog__stock-date {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.inventory-dialog__stock-quantity {
-  font-size: 17px;
-  font-weight: 600;
-  color: rgb(var(--v-theme-on-surface));
-  white-space: nowrap;
-}
-
-/* 설명 */
-.inventory-dialog__stock-item small {
-  display: block;
-  margin-top: 6px;
-  font-size: 11px;
-  color: rgba(var(--v-theme-on-surface), 0.6);
-}
-
-/* 기록 없음 */
-.inventory-dialog__stock-empty {
-  padding: 14px 0 0;
-  font-size: 12px;
-  text-align: center;
-  color: rgba(var(--v-theme-on-surface), 0.65);
 }
 </style>

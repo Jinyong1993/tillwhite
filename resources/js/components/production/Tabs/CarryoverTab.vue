@@ -2,27 +2,9 @@
   <div class="inventory-dialog inventory-dialog__carryover-tab">
     <!-- 이월 관리 -->
     <div class="inventory-dialog__placeholder">
-      <div class="inventory-dialog__management-heading">
-        <strong>이월 관리</strong>
-
-        <span
-          class="inventory-dialog__status"
-          :class="{
-            'inventory-dialog__status--confirmed': carryoverConfirmed
-          }"
-        >
-          <v-icon
-            :icon="
-              carryoverConfirmed
-                ? 'mdi-check-circle-outline'
-                : 'mdi-clock-outline'
-            "
-            size="15"
-          />
-
-          {{ carryoverConfirmed ? "확인 완료" : "미확인" }}
-        </span>
-      </div>
+      <strong>
+        이월 관리
+      </strong>
 
       <div class="inventory-dialog__carryover-summary">
         <div>
@@ -502,11 +484,6 @@ const quantityExceeded = computed(() => {
   );
 });
 
-// 서버에서 전달받은 이월 확인 상태
-const carryoverConfirmed = computed(() => {
-  return Boolean(props.product?.disposition_confirmed);
-});
-
 // 기존 이월 기록 보유 여부
 const hasSavedCarryover = computed(() => {
   return savedCarryoverLots.value.length > 0;
@@ -547,9 +524,16 @@ const confirmMessage = computed(() => {
 
 // 작성 중인 변경 사항 확인
 function isDirty() {
+  const rawQuantity = carryoverQuantity.value;
+
+  const quantityChanged =
+    rawQuantity === null ||
+    rawQuantity === undefined ||
+    String(rawQuantity).trim() === "" ||
+    Number(rawQuantity) !== initialCarryoverQuantity.value;
+
   return (
-    Number(carryoverQuantity.value) !==
-      initialCarryoverQuantity.value ||
+    quantityChanged ||
     carryoverSource.value !== initialCarryoverSource.value ||
     String(selectedCarryoverLotId.value ?? "") !==
       String(initialCarryoverLotId.value ?? "") ||
@@ -1129,11 +1113,6 @@ defineExpose({
   font-weight: 600;
 }
 
-.inventory-dialog__field-heading span {
-  font-size: 12px;
-  opacity: 0.7;
-}
-
 /* 입력 및 기록 확인 영역 */
 .inventory-dialog__inner-card {
   display: flex;
@@ -1230,39 +1209,6 @@ defineExpose({
 .inventory-dialog__selected-stock-row strong {
   font-weight: 600;
   text-align: right;
-}
-
-/* 이월 관리 제목 및 확인 상태 */
-.inventory-dialog__management-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.inventory-dialog__management-heading > strong {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-/* 기본: 미확인 */
-.inventory-dialog__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 9px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.06);
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-/* 확인 완료 */
-.inventory-dialog__status--confirmed {
-  background: rgba(var(--v-theme-success), 0.1);
-  color: rgb(var(--v-theme-success));
 }
 
 /* 모바일에서도 작업 버튼 2개 유지 */
