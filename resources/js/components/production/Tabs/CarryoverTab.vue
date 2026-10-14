@@ -2,13 +2,11 @@
   <div class="inventory-dialog inventory-dialog__carryover-tab">
     <!-- 이월 관리 -->
     <div class="inventory-dialog__placeholder">
-      <strong>
-        이월 관리
-      </strong>
+      <strong>이월 관리</strong>
 
       <p class="inventory-dialog__form-help">
         생산 기록을 선택해 다음 영업일로 넘길 수량을 관리합니다.
-        기존 기록은 '기록 확인'에서 선택하여 수정할 수 있습니다.
+        기존 기록은 아래 이월 기록 목록에서 수정할 수 있습니다.
       </p>
 
       <!-- 이월 업무 선택 버튼 -->
@@ -20,7 +18,7 @@
           :prepend-icon="editorOpen ? 'mdi-chevron-up' : 'mdi-plus'"
           @click="toggleEditor"
         >
-          {{ editorOpen ? "취소" : "추가" }}
+          {{ editorOpen ? "취소" : "이월 수량 설정" }}
         </v-btn>
 
         <v-btn
@@ -34,13 +32,333 @@
         </v-btn>
       </div>
 
+      <!-- 생산 탭과 동일한 3단계 이월 입력 카드 -->
+      <div
+        v-if="editorOpen"
+        class="inventory-dialog__production-form"
+      >
+        <!-- 이월 입력 카드 제목 -->
+        <div class="inventory-dialog__field-heading">
+          <strong>이월 수량 설정 / 수정</strong>
+          <span>
+            현재 이월 {{ displayQuantity(product?.carryover_out) }}
+          </span>
+        </div>
+
+        <!-- 이월 입력 카드 탐색 -->
+        <div class="inventory-dialog__card-navigation">
+          <div class="inventory-dialog__card-steps">
+            <v-btn
+              v-for="(title, index) in carryoverCardTitles"
+              :key="index"
+              size="small"
+              :variant="carryoverCardIndex === index ? 'flat' : 'outlined'"
+              :color="carryoverCardIndex === index ? 'primary' : undefined"
+              @click="carryoverCardIndex = index"
+            >
+              {{ title }}
+            </v-btn>
+          </div>
+
+          <div class="inventory-dialog__card-controls">
+            <v-btn
+              size="small"
+              variant="text"
+              prepend-icon="mdi-chevron-left"
+              :disabled="carryoverCardIndex === 0"
+              @click="carryoverCardIndex--"
+            >
+              이전
+            </v-btn>
+
+            <span>
+              {{ carryoverCardIndex + 1 }} /
+              {{ carryoverCardTitles.length }}
+            </span>
+
+            <v-btn
+              size="small"
+              variant="text"
+              append-icon="mdi-chevron-right"
+              :disabled="carryoverCardIndex === lastCarryoverCardIndex"
+              @click="carryoverCardIndex++"
+            >
+              다음
+            </v-btn>
+          </div>
+        </div>
+
+        <!-- 이월 입력 카드 스와이프 영역 -->
+        <div
+          class="inventory-dialog__swipe-area"
+          @pointerdown="onCarryoverSwipeStart"
+          @pointerup="onCarryoverSwipeEnd"
+          @pointercancel="onCarryoverSwipeCancel"
+        >
+          <!-- 카드 1: 재고 선택 -->
+          <div
+            v-show="carryoverCardIndex === 0"
+            class="inventory-dialog__swipe-card"
+          >
+            <!-- 이월할 재고 출처 선택 -->
+            <div class="inventory-dialog__field-heading">
+              <strong>재고 출처</strong>
+            </div>
+
+            <div class="inventory-dialog__action-grid">
+              <v-btn
+                block
+                :variant="carryoverSource === 'today' ? 'tonal' : 'outlined'"
+                @click="changeCarryoverSource('today')"
+              >
+                당일 생산분
+              </v-btn>
+
+              <v-btn
+                block
+                :variant="carryoverSource === 'incoming' ? 'tonal' : 'outlined'"
+                @click="changeCarryoverSource('incoming')"
+              >
+                기존 이월분
+              </v-btn>
+            </div>
+            
+            <!-- 이월할 재고 선택 -->
+            <div class="inventory-dialog__field-heading">
+              <strong>이월할 재고 선택</strong>
+              <span>{{ carryoverLotOptions.length }}건</span>
+            </div>
+
+            <!-- 이월 재고 카드 목록 -->
+            <div v-if="carryoverLotOptions.length">
+              <div
+                v-for="option in carryoverLotOptions"
+                :key="option.value"
+                class="inventory-dialog__production-record"
+              >
+                <button
+                  type="button"
+                  class="inventory-dialog__production-record-header"
+                  :class="{
+                    'inventory-dialog__production-record-header--selected':
+                      String(selectedCarryoverLotId) === String(option.value)
+                  }"
+                  :aria-pressed="
+                    String(selectedCarryoverLotId) === String(option.value)
+                  "
+                  @click="changeCarryoverLot(option.value)"
+                >
+                  <div class="inventory-dialog__carryover-record-content">
+                    <!-- 기록명 -->
+                    <strong class="inventory-dialog__production-record-label">
+                      {{ option.recordName }}
+                    </strong>
+
+                    <!-- 최초 생산일 -->
+                    <span class="inventory-dialog__carryover-record-date">
+                      최초 생산일 {{ option.productionDate }}
+                    </span>
+
+                    <!-- 이월 처리 및 가능 수량 -->
+                    <div class="inventory-dialog__carryover-record-quantity">
+                      <span>
+                        이월 처리
+                        <strong>
+                          {{
+                            option.processedQuantity === null
+                              ? "미확인"
+                              : `${option.processedQuantity}개`
+                          }}
+                        </strong>
+                      </span>
+
+                      <span class="inventory-dialog__carryover-record-divider">
+                        ·
+                      </span>
+
+                      <span>
+                        이월 가능
+                        <strong>
+                          {{
+                            option.availableQuantity === null
+                              ? "미확인"
+                              : `${option.availableQuantity}개`
+                          }}
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- 선택 상태 -->
+                  <v-icon
+                    :icon="
+                      String(selectedCarryoverLotId) === String(option.value)
+                        ? 'mdi-check-circle'
+                        : 'mdi-chevron-right'
+                    "
+                    size="20"
+                  />
+                </button>
+              </div>
+            </div>
+
+            <p v-else class="inventory-dialog__form-help">
+              선택할 수 있는 재고 기록이 없습니다.
+            </p>
+
+            <!-- 생산 기록을 선택하지 않은 경우 -->
+            <p
+              v-if="selectedCarryoverLotId == null"
+              class="inventory-dialog__form-help"
+            >
+              이월할 생산 기록을 선택해 주세요.
+              이월할 재고가 없는 경우에는 상단의 '이월 없음' 버튼을 이용해 주세요.
+            </p>
+          </div>
+
+          <!-- 카드 2: 이월 수량 입력 -->
+          <div
+            v-show="carryoverCardIndex === 1"
+            class="inventory-dialog__swipe-card"
+          >
+            <!-- 생산 기록 미선택 안내 -->
+            <v-alert
+              v-if="!selectedCarryoverLot"
+              type="info"
+              variant="tonal"
+              density="compact"
+            >
+              먼저 재고 선택 카드에서 이월할 생산 기록을 선택해 주세요.
+            </v-alert>
+
+            <!-- 선택한 생산 기록의 재고 정보 -->
+            <div
+              v-if="selectedCarryoverLot"
+              class="inventory-dialog__selected-stock"
+            >
+              <div class="inventory-dialog__selected-stock-row">
+                <span>최초 생산일</span>
+                <strong>
+                  {{
+                    selectedCarryoverLot.origin_production_date ||
+                    "생산일 미확인"
+                  }}
+                </strong>
+              </div>
+
+              <div class="inventory-dialog__selected-stock-row">
+                <span>기존 이월 처리</span>
+                <strong>
+                  {{
+                    displayQuantity(
+                      selectedCarryoverLot.carryover_out_quantity || 0
+                    )
+                  }}
+                </strong>
+              </div>
+
+              <div class="inventory-dialog__selected-stock-row">
+                <span>설정 가능한 최대 수량</span>
+                <strong>
+                  {{ displayQuantity(carryoverSourceAvailable) }}
+                </strong>
+              </div>
+            </div>
+
+            <!-- 이월 수량 설정 안내 -->
+            <p class="inventory-dialog__form-help">
+              입력한 수량이 해당 생산 기록의 최종 이월 수량으로 저장됩니다.
+              기존 이월 수량에 추가로 합산되지 않습니다.
+            </p>
+
+            <!-- 선택한 생산 기록의 이월 수량 -->
+            <v-number-input
+              v-model="carryoverQuantity"
+              label="최종 이월 수량"
+              variant="outlined"
+              density="compact"
+              :min="0"
+              :max="carryoverSourceAvailable"
+              control-variant="stacked"
+              :disabled="selectedCarryoverLotId == null"
+            />
+
+            <!-- 기존 이월 기록을 0개로 수정할 때 안내 -->
+            <v-alert
+              v-if="
+                selectedCarryoverLotId != null &&
+                selectedCarryoverLot &&
+                Number(selectedCarryoverLot.carryover_out_quantity || 0) > 0 &&
+                carryoverQuantity !== null &&
+                carryoverQuantity !== undefined &&
+                String(carryoverQuantity).trim() !== '' &&
+                Number(carryoverQuantity) === 0
+              "
+              type="info"
+              variant="tonal"
+              density="compact"
+            >
+              현재 0개가 입력되어 있습니다.
+              저장하면 선택한 생산 기록의 기존 이월 처리가 취소됩니다.
+            </v-alert>
+
+            <!-- 이월 가능 수량 초과 안내 -->
+            <v-alert
+              v-if="quantityExceeded"
+              type="error"
+              variant="tonal"
+              density="compact"
+            >
+              선택한 생산 기록의 이월 가능 수량을 초과했습니다.
+            </v-alert>
+
+            <!-- 재이월 안내 -->
+            <v-alert
+              v-if="carryoverQuantity > 0 && carryoverSource === 'incoming'"
+              type="warning"
+              variant="tonal"
+              density="compact"
+            >
+              이미 이월된 제품을 다시 이월합니다.
+              원래 생산일은 유지됩니다.
+            </v-alert>
+          </div>
+
+          <!-- 카드 3: 메모 -->
+          <div
+            v-show="carryoverCardIndex === 2"
+            class="inventory-dialog__swipe-card"
+          >
+            <p class="inventory-dialog__form-help">
+              특이사항을 메모로 남길 수 있습니다.
+            </p>
+
+            <!-- 이월 메모 -->
+            <v-textarea
+              v-model="note"
+              label="메모 · 선택"
+              variant="outlined"
+              density="compact"
+              rows="2"
+              maxlength="1000"
+              counter="1000"
+              hide-details="auto"
+              placeholder="특이사항이나 다음 근무자에게 전달할 내용을 입력하세요."
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- 이월 없음 확인 카드 -->
-      <div v-if="zeroCardOpen" class="inventory-dialog__inner-card">
+      <div
+        v-if="zeroCardOpen"
+        class="inventory-dialog__inner-card"
+      >
         <strong>이월 없음 확인</strong>
 
         <p class="inventory-dialog__form-help">
           다음 영업일로 넘길 재고가 없다면 0개로 확인합니다.
-          이미 등록한 이월 기록은 기록 확인에서 개별 수정해야 합니다.
+          이미 등록한 이월 기록은 아래 목록에서 개별 수정해야 합니다.
         </p>
 
         <v-btn
@@ -53,208 +371,112 @@
         </v-btn>
       </div>
 
-      <!-- 기존 기록 확인 -->
-      <v-btn
-        block
-        size="small"
-        variant="text"
-        :disabled="saving"
-        prepend-icon="mdi-clipboard-text-outline"
-        @click="toggleHistory"
-      >
-        {{ historyOpen ? "기록 접기" : "기록 확인" }}
-      </v-btn>
+      <!-- 이월 합계 및 기존 이월 기록 목록 -->
+      <section class="inventory-dialog__production">
+        <div class="inventory-dialog__production-summary">
+          <strong>이월 합계</strong>
+          <strong>
+            {{ displayQuantity(product?.carryover_out) }}
+          </strong>
+        </div>
 
-      <!-- 기존 이월 기록 -->
-      <div
-        v-if="historyOpen"
-        class="inventory-dialog__inner-card"
-      >
-        <strong>현재 이월 기록</strong>
+        <div class="inventory-dialog__production-heading">
+          <strong>이월 기록</strong>
+          <strong>{{ savedCarryoverLots.length }}건</strong>
+        </div>
 
-        <div v-if="savedCarryoverLots.length">
-          <button
+        <template v-if="savedCarryoverLots.length">
+          <div
             v-for="item in savedCarryoverLots"
             :key="`${item.source}-${item.stock_lot_id}`"
-            type="button"
-            class="inventory-dialog__detail-row inventory-dialog__history-button"
-            :disabled="saving || !canMutate"
-            @click="editCarryoverLot(item)"
+            class="inventory-dialog__production-record"
           >
-            <span>
-              {{ item.origin_production_date || "생산일 미확인" }}
-              ·
-              {{ item.source === "carryover" ? "기존 이월분 · 재이월" : "생산" }}
-            </span>
+            <!-- 이월 기록의 이월 수량 헤더 -->
+            <button
+              type="button"
+              class="inventory-dialog__production-record-header"
+              :aria-expanded="
+                expandedCarryoverKeys.includes(carryoverKey(item))
+              "
+              @click="toggleCarryoverRecord(item)"
+            >
+              <strong class="inventory-dialog__production-record-label">
+                이월 수량
+              </strong>
 
-            <strong>
-              {{ displayQuantity(item.carryover_out_quantity) }}
-              <v-icon
-                v-if="canMutate"
-                icon="mdi-pencil-outline"
-                size="16"
-                class="ml-1"
-              />
-            </strong>
-          </button>
-        </div>
+              <span class="inventory-dialog__production-record-header-right">
+                <strong class="inventory-dialog__production-record-quantity">
+                  {{ displayQuantity(item.carryover_out_quantity) }}
+                </strong>
 
-        <div v-else class="inventory-dialog__stock-empty">
+                <v-icon
+                  :icon="
+                    expandedCarryoverKeys.includes(carryoverKey(item))
+                      ? 'mdi-chevron-up'
+                      : 'mdi-chevron-down'
+                  "
+                  size="20"
+                />
+              </span>
+            </button>
+
+            <!-- 펼쳐진 이월 기록 상세 정보 -->
+            <div
+              v-if="expandedCarryoverKeys.includes(carryoverKey(item))"
+            >
+              <!-- 최초 생산일 -->
+              <div class="inventory-dialog__record-detail">
+                <strong>최초 생산일</strong>
+                <div>
+                  {{ item.origin_production_date || "생산일 미확인" }}
+                </div>
+              </div>
+
+              <!-- 이월 재고 출처 -->
+              <div class="inventory-dialog__record-detail">
+                <strong>재고 출처</strong>
+                <div>
+                  {{
+                    item.source === "carryover"
+                      ? "기존 이월분 · 재이월"
+                      : "당일 생산분"
+                  }}
+                </div>
+              </div>
+
+              <!-- 이월 기록별 수정·삭제 -->
+              <div class="inventory-dialog__record-actions">
+                <v-btn
+                  size="small"
+                  variant="outlined"
+                  prepend-icon="mdi-pencil-outline"
+                  :disabled="!canMutate || saving"
+                  @click="editCarryoverLot(item)"
+                >
+                  수정
+                </v-btn>
+
+                <v-btn
+                  size="small"
+                  variant="outlined"
+                  prepend-icon="mdi-delete-outline"
+                  :disabled="!canMutate || saving"
+                  @click="askDeleteCarryover(item)"
+                >
+                  삭제
+                </v-btn>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div
+          v-else
+          class="inventory-dialog__production-empty"
+        >
           등록된 이월 기록이 없습니다.
         </div>
-      </div>
-
-      <!-- 이월 입력창 -->
-      <div
-        v-if="editorOpen"
-        class="inventory-dialog__inner-card"
-      >
-        <div class="inventory-dialog__field-heading">
-          <strong>다음 영업일로 넘길 수량</strong>
-        </div>
-
-        <!-- 이월할 재고 출처 -->
-        <v-select
-          v-if="
-            Number(product?.carryover_in || 0) > 0 ||
-            (product?.stock_sources || []).some(
-              (source) => source.source === 'carryover'
-            )
-          "
-          v-model="carryoverSource"
-          :items="carryoverSources"
-          item-title="title"
-          item-value="value"
-          label="이월할 재고 출처"
-          variant="outlined"
-          density="compact"
-          @update:model-value="changeCarryoverSource"
-        />
-
-        <!-- 이월할 생산 기록 -->
-        <v-select
-          v-model="selectedCarryoverLotId"
-          :items="carryoverLotOptions"
-          item-title="title"
-          item-value="value"
-          label="이월할 생산 기록"
-          variant="outlined"
-          density="compact"
-          hide-details="auto"
-          clearable
-          :disabled="carryoverLotOptions.length === 0"
-          @update:model-value="changeCarryoverLot"
-        />
-
-        <!-- 생산 기록을 선택하지 않은 경우 -->
-        <p
-          v-if="selectedCarryoverLotId == null"
-          class="inventory-dialog__form-help"
-        >
-          이월할 생산 기록을 선택해 주세요.
-          이월할 재고가 없는 경우에는 상단의 '이월 없음' 버튼을 이용해 주세요.
-        </p>
-
-        <!-- 선택한 생산 기록의 재고 정보 -->
-        <div
-          v-if="selectedCarryoverLot"
-          class="inventory-dialog__selected-stock"
-        >
-          <div class="inventory-dialog__selected-stock-row">
-            <span>최초 생산일</span>
-            <strong>
-              {{
-                selectedCarryoverLot.origin_production_date ||
-                "생산일 미확인"
-              }}
-            </strong>
-          </div>
-
-          <div class="inventory-dialog__selected-stock-row">
-            <span>기존 이월 처리</span>
-            <strong>
-              {{
-                displayQuantity(
-                  selectedCarryoverLot.carryover_out_quantity || 0
-                )
-              }}
-            </strong>
-          </div>
-
-          <div class="inventory-dialog__selected-stock-row">
-            <span>수정 가능 최대 수량</span>
-            <strong>
-              {{ displayQuantity(carryoverSourceAvailable) }}
-            </strong>
-          </div>
-        </div>
-
-        <!-- 선택한 생산 기록의 이월 수량 -->
-        <v-number-input
-          v-model="carryoverQuantity"
-          label="이월 수량"
-          variant="outlined"
-          density="compact"
-          :min="0"
-          :max="carryoverSourceAvailable"
-          :disabled="selectedCarryoverLotId == null"
-        />
-
-        <!-- 기존 이월 기록을 0개로 수정할 때 안내 -->
-        <v-alert
-          v-if="
-            selectedCarryoverLotId != null &&
-            selectedCarryoverLot &&
-            Number(selectedCarryoverLot.carryover_out_quantity || 0) > 0 &&
-            carryoverQuantity !== null &&
-            carryoverQuantity !== undefined &&
-            String(carryoverQuantity).trim() !== '' &&
-            Number(carryoverQuantity) === 0
-          "
-          type="info"
-          variant="tonal"
-          density="compact"
-        >
-          현재 0개가 입력되어 있습니다.
-          저장하면 선택한 생산 기록의 기존 이월 처리가 취소됩니다.
-        </v-alert>
-
-        <!-- 이월 가능 수량 초과 안내 -->
-        <v-alert
-          v-if="quantityExceeded"
-          type="error"
-          variant="tonal"
-          density="compact"
-        >
-          선택한 생산 기록의 이월 가능 수량을 초과했습니다.
-        </v-alert>
-
-        <!-- 재이월 안내 -->
-        <v-alert
-          v-if="carryoverQuantity > 0 && carryoverSource === 'incoming'"
-          type="warning"
-          variant="tonal"
-          density="compact"
-        >
-          이미 이월된 제품을 다시 이월합니다. 원래 생산일은 유지됩니다.
-        </v-alert>
-
-        <p class="inventory-dialog__form-help">
-          특이사항을 메모로 남길 수 있습니다.
-        </p>
-
-        <v-textarea
-          v-model="note"
-          label="메모 · 선택"
-          variant="outlined"
-          density="compact"
-          rows="2"
-          maxlength="1000"
-          counter="1000"
-          hide-details="auto"
-          placeholder="특이사항이나 다음 근무자에게 전달할 내용을 입력하세요."
-        />
-      </div>
+      </section>
     </div>
   </div>
 
@@ -290,7 +512,6 @@ const emit = defineEmits([
 
 // 이월 입력창 및 기록 확인창 상태
 const editorOpen = ref(false);
-const historyOpen = ref(false);
 
 // 이월 0개 확인 관련
 const zeroCardOpen = ref(false);
@@ -336,16 +557,71 @@ const carryoverSource = ref("today");
 const selectedCarryoverLotId = ref(null);
 const note = ref("");
 
+// 생산 탭과 동일한 3단계 입력 카드 탐색
+const carryoverCardIndex = ref(0);
+const carryoverCardTitles = [
+  "재고 선택",
+  "이월 수량",
+  "메모",
+];
+
+// 마지막 카드 인덱스
+const lastCarryoverCardIndex = carryoverCardTitles.length - 1;
+
+// 모바일 카드 스와이프 시작 위치
+let carryoverSwipeStart = null;
+
+// 카드 스와이프 시작
+function onCarryoverSwipeStart(event) {
+  carryoverSwipeStart = null;
+
+  if (event.pointerType !== "touch" && event.pointerType !== "pen") {
+    return;
+  }
+
+  if (event.target.closest("button, input, textarea, select, a")) {
+    return;
+  }
+
+  carryoverSwipeStart = {
+    pointerId: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+  };
+}
+
+// 카드 스와이프 종료
+function onCarryoverSwipeEnd(event) {
+  const start = carryoverSwipeStart;
+  carryoverSwipeStart = null;
+
+  if (!start || start.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const dx = event.clientX - start.x;
+  const dy = event.clientY - start.y;
+
+  if (Math.abs(dx) < 55 || Math.abs(dx) <= Math.abs(dy)) {
+    return;
+  }
+
+  if (dx < 0 && carryoverCardIndex.value < lastCarryoverCardIndex) {
+    carryoverCardIndex.value++;
+  } else if (dx > 0 && carryoverCardIndex.value > 0) {
+    carryoverCardIndex.value--;
+  }
+}
+
+// 카드 스와이프 취소
+function onCarryoverSwipeCancel() {
+  carryoverSwipeStart = null;
+}
+
 // 최초 입력 상태
 const initialCarryoverSource = ref("today");
 const initialCarryoverLotId = ref(null);
 const initialCarryoverQuantity = ref(0);
-
-// 기존 이월 출처
-const carryoverSources = [
-  { value: "today", title: "생산" },
-  { value: "incoming", title: "기존 이월분 · 재이월" },
-];
 
 function displayQuantity(value) {
   if (value === null || value === undefined || value === "") {
@@ -361,7 +637,6 @@ function displayQuantity(value) {
 const carryoverLotOptions = computed(() => {
   const isIncoming = carryoverSource.value === "incoming";
   const sourceType = isIncoming ? "carryover" : "today";
-
   const countsByDate = new Map();
 
   return (props.product?.stock_sources || [])
@@ -384,40 +659,115 @@ const carryoverLotOptions = computed(() => {
         source.remaining_quantity;
 
       const remaining =
-        remainingRaw == null ? null : Number(remainingRaw);
+        remainingRaw === null ||
+        remainingRaw === undefined ||
+        remainingRaw === ""
+          ? null
+          : Number(remainingRaw);
 
       const existing =
-        Number(source.carryover_out_quantity || 0);
+        Number(source.carryover_out_quantity ?? 0);
 
-      const available =
-        remaining !== null && Number.isFinite(remaining)
-          ? remaining + existing
+      // 기존 이월 처리 수량
+      const processedQuantity =
+        Number.isSafeInteger(existing) && existing >= 0
+          ? existing
           : null;
 
-      const status =
-        existing > 0
-          ? `이월 완료 ${existing}개`
-          : "이월 전";
-
-      const quantityText =
-        available === null
-          ? "수량 미확인"
-          : available < 0
-            ? `초과 처리 ${Math.abs(available)}개`
-            : `이월 가능 ${available}개`;
+      // 추가 이월 가능 수량
+      // 잘못된 재고값을 임의로 0개로 표시하지 않음
+      const availableQuantity =
+        remaining !== null &&
+        Number.isSafeInteger(remaining) &&
+        remaining >= 0
+          ? remaining
+          : null;
 
       const recordType =
         isIncoming ? "이월 기록" : "생산 기록";
 
       return {
         value: source.stock_lot_id,
-        title:
-          `${recordType} ${sequence} · ` +
-          `최초 생산일 ${productionDate} · ` +
-          `${status} · ${quantityText}`,
+        recordName: `${recordType} ${sequence}`,
+        productionDate,
+        processedQuantity,
+        availableQuantity,
       };
     });
 });
+
+// 펼쳐진 이월 기록 카드의 고유 키 목록
+const expandedCarryoverKeys = ref([]);
+
+// 이월 기록의 재고 출처와 생산 기록 ID를 결합한 고유 키
+function carryoverKey(item) {
+  return `${item.source}-${item.stock_lot_id}`;
+}
+
+// 생산 탭과 동일하게 이월 기록 카드 펼침·접힘
+function toggleCarryoverRecord(item) {
+  const key = carryoverKey(item);
+
+  if (expandedCarryoverKeys.value.includes(key)) {
+    expandedCarryoverKeys.value = expandedCarryoverKeys.value.filter(
+      (value) => value !== key
+    );
+    return;
+  }
+
+  expandedCarryoverKeys.value.push(key);
+}
+
+// 기존 이월 기록 삭제 요청
+// 별도 삭제 API 대신 기존 이월 수량을 0개로 수정합니다.
+function askDeleteCarryover(item) {
+  if (
+    !props.canMutate ||
+    saving.value ||
+    confirmSave.value ||
+    confirmDiscard.value ||
+    !item ||
+    item.stock_lot_id == null
+  ) {
+    return;
+  }
+
+  // 삭제할 기록을 선택하고 이월 수량을 0개로 설정
+  const prepareDelete = () => {
+    // 기존 입력창을 닫고 삭제 대상 기록을 엽니다.
+    editorOpen.value = false;
+
+    editCarryoverLot(item);
+
+    // 삭제 대상이 정상적으로 선택되었는지 확인
+    const expectedSource =
+      item.source === "carryover" ? "incoming" : "today";
+
+    if (
+      !editorOpen.value ||
+      carryoverSource.value !== expectedSource ||
+      String(selectedCarryoverLotId.value) !==
+        String(item.stock_lot_id)
+    ) {
+      return;
+    }
+
+    // 삭제 대상 기록의 이월 수량을 0개로 변경
+    carryoverQuantity.value = 0;
+
+    // 기존 저장 확인창 표시
+    askSave();
+  };
+
+  // 다른 기록을 작성 중이라면 먼저 작성 취소 확인
+  if (editorOpen.value) {
+    requestLeave(prepareDelete);
+    return;
+  }
+
+  // 작성 중인 내용이 없다면 바로 삭제 확인
+  prepareDelete();
+}
 
 // 현재 이월 처리된 생산 기록 목록
 const savedCarryoverLots = computed(() => {
@@ -462,8 +812,6 @@ const carryoverSourceAvailable = computed(() => {
     source.unallocated_quantity ??
     source.remaining_quantity;
 
-  // 재고 계산에 필요한 값이 없거나 올바르지 않으면
-  // 임의로 이월 가능 수량을 만들지 않습니다.
   if (
     remainingRaw === null ||
     remainingRaw === undefined ||
@@ -473,17 +821,27 @@ const carryoverSourceAvailable = computed(() => {
   }
 
   const remaining = Number(remainingRaw);
-  const existing = Number(source.carryover_out_quantity ?? 0);
+  const existing = Number(
+    source.carryover_out_quantity ?? 0
+  );
 
+  // 잘못된 재고 데이터는 사용 가능한 수량으로 인정하지 않습니다.
   if (
     !Number.isSafeInteger(remaining) ||
+    remaining < 0 ||
     !Number.isSafeInteger(existing) ||
     existing < 0
   ) {
     return 0;
   }
 
-  return Math.max(0, remaining + existing);
+  const maximumQuantity = remaining + existing;
+
+  if (!Number.isSafeInteger(maximumQuantity)) {
+    return 0;
+  }
+
+  return maximumQuantity;
 });
 
 // 선택한 생산 기록의 이월 가능 수량 초과 여부
@@ -500,8 +858,8 @@ const hasSavedCarryover = computed(() => {
 });
 
 // 이월 저장 전 최종 확인 문구
+
 const confirmMessage = computed(() => {
-  // 별도의 이월 없음 카드에서 0개 확인
   if (zeroCardOpen.value) {
     return (
       "다음 영업일로 이월할 재고가 없습니다.\n\n" +
@@ -510,27 +868,31 @@ const confirmMessage = computed(() => {
   }
 
   const quantity = Number(carryoverQuantity.value);
+  const existing = Number(
+    selectedCarryoverLot.value?.carryover_out_quantity ?? 0
+  );
 
-  // 기존 이월 기록을 0개로 수정하여 취소
   if (quantity === 0) {
     return (
-      "선택한 생산 기록의 이월 수량을 0개로 변경하시겠습니까?\n\n" +
+      `현재 이월 ${existing}개를 0개로 변경하시겠습니까?\n\n` +
       "해당 생산 기록의 기존 이월 처리가 취소됩니다."
     );
   }
 
-  // 기존 이월분 재이월
-  if (carryoverSource.value === "incoming") {
-    return (
-      "이미 이월된 제품을 다시 이월합니다.\n" +
-      "최초 생산일은 그대로 유지됩니다.\n\n" +
-      `이월 수량을 ${quantity}개로 저장하시겠습니까?`
-    );
-  }
+  const sourceMessage =
+    carryoverSource.value === "incoming"
+      ? "기존 이월분을 다시 이월합니다.\n최초 생산일은 유지됩니다.\n\n"
+      : "";
 
-  // 일반 이월
-  return `선택한 생산 기록의 이월 수량을 ${quantity}개로 저장하시겠습니까?`;
+  return (
+    sourceMessage +
+    `현재 이월 ${existing}개 → 변경 후 ${quantity}개\n\n` +
+    "입력한 수량이 최종 이월 수량으로 저장됩니다.\n" +
+    "기존 수량에 추가로 합산되지 않습니다.\n\n" +
+    "저장하시겠습니까?"
+  );
 });
+
 
 // 작성 중인 변경 사항 확인
 function isDirty() {
@@ -556,6 +918,9 @@ function changeCarryoverSource(value) {
   carryoverSource.value = value;
   selectedCarryoverLotId.value = null;
   carryoverQuantity.value = 0;
+
+  // 출처 변경 시 재고 선택 카드 유지
+  carryoverCardIndex.value = 0;
 }
 
 // 생산 기록 변경 시 해당 기록의 기존 이월 수량 복원
@@ -604,6 +969,9 @@ function changeCarryoverLot(value) {
     existingQuantity >= 0
       ? existingQuantity
       : 0;
+
+  // 재고 선택 완료 후 이월 수량 카드로 이동
+  carryoverCardIndex.value = 1;
 }
 
 // 기록 확인에서 특정 이월 내역을 선택하여 수정
@@ -643,8 +1011,12 @@ function editCarryoverLot(item) {
     initialCarryoverQuantity.value = carryoverQuantity.value;
 
     // 다른 화면을 닫고 기존 기록 수정 입력창 표시
-    historyOpen.value = false;
     zeroCardOpen.value = false;
+
+    // 기존 기록 수정 시 두 번째 이월 수량 카드 표시
+    carryoverCardIndex.value = 1;
+    carryoverSwipeStart = null;
+
     editorOpen.value = true;
   };
 
@@ -676,15 +1048,30 @@ function toggleEditor() {
     return;
   }
 
-  // 수정 권한이 없으면 입력창을 열지 않습니다.
+  // 수정 권한 확인
   if (!props.canMutate) {
     emit("error", "현재 이월 기록을 수정할 수 없습니다.");
     return;
   }
 
-  // 이월 없음 카드와 기록 확인창을 닫고 입력창을 엽니다.
+  // 신규 추가를 위한 입력값 초기화
+  carryoverSource.value = "today";
+  selectedCarryoverLotId.value = null;
+  carryoverQuantity.value = 0;
+  note.value = "";
+
+  // 미저장 변경 감지 기준값 초기화
+  initialCarryoverSource.value = "today";
+  initialCarryoverLotId.value = null;
+  initialCarryoverQuantity.value = 0;
+
+  // 다른 입력 화면 닫기
   zeroCardOpen.value = false;
-  historyOpen.value = false;
+
+  // 첫 번째 재고 선택 카드부터 시작
+  carryoverCardIndex.value = 0;
+  carryoverSwipeStart = null;
+
   editorOpen.value = true;
 }
 
@@ -710,40 +1097,10 @@ function toggleZeroCard() {
   // 이월 없음 카드가 열릴 때 다른 입력 영역을 닫습니다.
   const changeView = () => {
     editorOpen.value = false;
-    historyOpen.value = false;
     zeroCardOpen.value = nextOpen;
   };
 
   // 기존 입력 중 변경 사항이 있으면 먼저 작성 취소 확인
-  if (editorOpen.value) {
-    requestLeave(changeView);
-    return;
-  }
-
-  changeView();
-}
-
-// 이월 기록 확인 화면 열기·닫기
-function toggleHistory() {
-  // 저장 중이거나 다른 확인창이 열려 있으면 중복 동작 방지
-  if (
-    saving.value ||
-    confirmSave.value ||
-    confirmDiscard.value
-  ) {
-    return;
-  }
-
-  const nextOpen = !historyOpen.value;
-
-  // 기록 확인창을 열 때 이월 없음 카드를 닫습니다.
-  const changeView = () => {
-    editorOpen.value = false;
-    zeroCardOpen.value = false;
-    historyOpen.value = nextOpen;
-  };
-
-  // 입력창이 열려 있으면 먼저 작성 내용 확인
   if (editorOpen.value) {
     requestLeave(changeView);
     return;
@@ -954,7 +1311,10 @@ async function save() {
     // 일반 입력창, 이월 없음 카드, 기록 확인창 초기화
     editorOpen.value = false;
     zeroCardOpen.value = false;
-    historyOpen.value = false;
+
+    // 저장 완료 후 카드 탐색 초기화
+    carryoverCardIndex.value = 0;
+    carryoverSwipeStart = null;
 
     // 최신 서버 데이터는 기존 부모의 saved 이벤트로 전달
     emit(
@@ -1018,7 +1378,10 @@ function resetCarryoverState() {
   // 화면 펼침 상태 초기화
   editorOpen.value = false;
   zeroCardOpen.value = false;
-  historyOpen.value = false;
+
+  // 카드 탐색 상태 초기화
+  carryoverCardIndex.value = 0;
+  carryoverSwipeStart = null;
 
   // 이전 확인창 및 보류 작업 제거
   confirmSave.value = false;
@@ -1109,6 +1472,10 @@ function confirmDiscardChanges() {
   carryoverQuantity.value = initialCarryoverQuantity.value;
   note.value = "";
 
+  // 취소 후 카드 탐색 초기화
+  carryoverCardIndex.value = 0;
+  carryoverSwipeStart = null;
+
   // 이전에 요청한 작업 실행
   if (typeof action === "function") {
     action();
@@ -1188,6 +1555,120 @@ defineExpose({
   line-height: 1.4;
 }
 
+/* 생산 탭과 동일한 이월 입력 폼 */
+.inventory-dialog__production-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+}
+
+/* 생산 입력 카드 탐색 */
+.inventory-dialog__card-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 12px;
+}
+
+.inventory-dialog__card-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.inventory-dialog__card-steps :deep(.v-btn) {
+  min-width: 0;
+  padding-inline: 4px;
+  font-size: 11px;
+}
+
+.inventory-dialog__card-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+
+.inventory-dialog__card-controls :deep(.v-btn) {
+  min-width: 76px;
+}
+
+.inventory-dialog__card-controls span {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.inventory-dialog__swipe-area {
+  width: 100%;
+  min-width: 0;
+  touch-action: pan-y;
+  margin-top: 4px;
+}
+
+/* 생산 탭과 동일한 입력 카드 */
+.inventory-dialog__swipe-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 220px;
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 14px;
+  background: rgb(var(--v-theme-surface));
+  text-align: left;
+  overflow-wrap: anywhere;
+  animation: inventory-card-enter 0.2s ease-out;
+}
+
+/* 생산 탭과 동일한 카드 등장 애니메이션 */
+@keyframes inventory-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 움직임 줄이기 설정 */
+@media (prefers-reduced-motion: reduce) {
+  .inventory-dialog__swipe-card {
+    animation: none;
+  }
+}
+
+/* 모바일 입력 카드 및 탐색 */
+@media (max-width: 600px) {
+  .inventory-dialog__swipe-card {
+    padding: 12px;
+    min-height: 200px;
+  }
+
+  .inventory-dialog__card-navigation {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .inventory-dialog__card-steps {
+    gap: 4px;
+  }
+
+  .inventory-dialog__card-controls :deep(.v-btn) {
+    min-width: 64px;
+  }
+}
+
 /* 생산 탭과 동일한 입력창 제목 */
 .inventory-dialog__field-heading {
   display: flex;
@@ -1199,6 +1680,28 @@ defineExpose({
 .inventory-dialog__field-heading strong {
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.6;
+}
+
+.inventory-dialog__field-heading span {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  opacity: 0.7;
+  text-align: right;
+}
+
+/* 생산 탭과 동일한 입력 필드 */
+.inventory-dialog__production-form :deep(.v-label) {
+  font-size: 13px;
+}
+
+.inventory-dialog__production-form :deep(.v-field__input) {
+  font-size: 13px;
+}
+
+.inventory-dialog__production-form :deep(.v-selection-control__wrapper) {
+  font-size: 16px;
 }
 
 /* 입력 및 기록 확인 영역 */
@@ -1212,56 +1715,176 @@ defineExpose({
   background: rgb(var(--v-theme-surface));
 }
 
-/* 기존 이월 기록 한 줄 */
-.inventory-dialog__detail-row {
+/* 생산 탭과 동일한 이월 기록 목록 */
+.inventory-dialog__production {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+}
+
+/* 생산 합계 및 기록 제목과 동일한 디자인 */
+.inventory-dialog__production-summary,
+.inventory-dialog__production-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
-  font-size: 12px;
+  padding: 14px 16px;
+  margin: 0;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+}
+
+.inventory-dialog__production-summary {
+  margin-top: 6px;
+  border-radius: 12px 12px 0 0;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.inventory-dialog__detail-row:last-child {
-  border-bottom: none;
+.inventory-dialog__production-heading {
+  margin-bottom: 6px;
+  border-radius: 0 0 12px 12px;
 }
 
-.inventory-dialog__detail-row strong {
-  text-align: right;
+.inventory-dialog__production-summary > strong,
+.inventory-dialog__production-heading > strong {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+  line-height: 1.6;
 }
 
-/* 기존 이월 기록 선택 버튼 */
-.inventory-dialog__history-button {
+/* 생산 탭과 동일한 기록 카드 */
+.inventory-dialog__production-record {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.07);
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 생산 탭과 동일한 기록 헤더 */
+.inventory-dialog__production-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
   width: 100%;
-  border-top: none;
-  border-right: none;
-  border-left: none;
-  background: transparent;
+  font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  font: inherit;
 }
 
-.inventory-dialog__history-button:hover:not(:disabled) {
-  background: rgba(var(--v-theme-on-surface), 0.04);
+.inventory-dialog__production-record-header:hover {
+  background: rgba(var(--v-theme-on-surface), 0.065);
 }
 
-.inventory-dialog__history-button:disabled {
-  cursor: default;
-  opacity: 1;
-}
-
-.inventory-dialog__history-button:focus-visible {
+.inventory-dialog__production-record-header:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: 2px;
 }
 
-@media (max-width: 600px) {
-  .inventory-dialog__inner-card {
-    padding: 12px;
-  }
+.inventory-dialog__production-record-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: rgb(var(--v-theme-on-surface));
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.inventory-dialog__production-record-quantity {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-on-surface));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 생산탭과 동일한 이월 기록 헤더 글씨 */
+.inventory-dialog__production
+  .inventory-dialog__production-record-header strong {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+
+.inventory-dialog__production-record-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 생산탭과 동일한 기록 수량 표시 */
+.inventory-dialog__production
+  .inventory-dialog__production-record-header-right {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+
+/* 선택한 생산 기록 강조 */
+.inventory-dialog__production-record-header--selected {
+  border-color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.08);
+  box-shadow: inset 0 0 0 1px rgb(var(--v-theme-primary));
+}
+
+/* 생산 탭과 동일한 이월 기록 상세 정보 */
+.inventory-dialog__production-record .inventory-dialog__record-detail {
+  display: block;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* 생산 탭과 동일한 상세 항목 제목 */
+.inventory-dialog__production-record .inventory-dialog__record-detail strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+/* 생산 탭과 동일한 상세 항목 내용 */
+.inventory-dialog__production-record .inventory-dialog__record-detail > div {
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  white-space: pre-wrap;
+}
+
+/* 생산 탭과 동일한 기록별 수정·삭제 버튼 */
+.inventory-dialog__record-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.inventory-dialog__production-empty {
+  padding: 14px;
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 /* 선택한 생산 기록의 재고 안내 */
@@ -1284,10 +1907,9 @@ defineExpose({
   font-size: 12px;
 }
 
-.inventory-dialog__selected-stock-row + 
+.inventory-dialog__selected-stock-row +
 .inventory-dialog__selected-stock-row {
-  border-top: 1px solid
-    rgba(var(--v-theme-on-surface), 0.08);
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .inventory-dialog__selected-stock-row span {
@@ -1317,6 +1939,109 @@ defineExpose({
 
   .inventory-dialog__selected-stock-row strong {
     overflow-wrap: anywhere;
+  }
+}
+
+/* 이월 재고 카드 정보 */
+.inventory-dialog__carryover-record-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* 최초 생산일 */
+.inventory-dialog__carryover-record-date {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.65);
+}
+
+/* 이월 처리 및 이월 가능 수량 */
+.inventory-dialog__carryover-record-quantity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+}
+
+/* 수량 강조 */
+.inventory-dialog__carryover-record-quantity strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+/* 수량 구분점 */
+.inventory-dialog__carryover-record-divider {
+  opacity: 0.5;
+}
+
+/* 1. 안내 문구 */
+.inventory-dialog__form-help {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.7;
+  text-align: left;
+}
+
+/* 2. 입력 항목 제목 */
+.inventory-dialog__field-heading strong {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: normal;
+}
+
+.inventory-dialog__field-heading span {
+  font-size: 12px;
+  font-weight: normal;
+  line-height: normal;
+  opacity: 0.7;
+}
+
+/* 3. 카드 탐색 컨트롤 */
+.inventory-dialog__card-controls {
+  min-height: 0;
+}
+
+/* 4. 이월 기록 헤더 간격 */
+.inventory-dialog__production-record-header {
+  margin-bottom: 10px;
+}
+
+/* 재고 선택 카드는 기존 간격 유지 */
+.inventory-dialog__swipe-card
+  .inventory-dialog__production-record-header {
+  margin-bottom: 0;
+}
+
+/* 5. 모바일 공통 여백 */
+@media (max-width: 600px) {
+  .inventory-dialog__placeholder {
+    padding: 12px;
+  }
+
+  .inventory-dialog__production-form {
+    padding: 10px;
+  }
+
+  .inventory-dialog__card-navigation {
+    padding: 10px;
+    gap: 12px;
+  }
+
+  .inventory-dialog__card-steps {
+    gap: 6px;
+  }
+
+  .inventory-dialog__card-controls {
+    min-height: 0;
   }
 }
 </style>

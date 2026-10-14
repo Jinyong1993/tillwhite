@@ -3,6 +3,11 @@
     <div class="inventory-dialog__placeholder">
       <strong>생산 관리</strong>
 
+      <p class="inventory-dialog__form-help">
+        생산 수량을 기록하고 생산 내역을 관리합니다.
+        등록한 생산 기록은 아래 목록에서 확인하거나 수정할 수 있습니다.
+      </p>
+
       <!-- 생산 입력 및 생산 0개 확인 버튼 -->
       <div class="inventory-dialog__action-grid">
         <v-btn
