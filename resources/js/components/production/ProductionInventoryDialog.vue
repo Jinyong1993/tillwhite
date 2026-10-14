@@ -110,12 +110,41 @@
             @error="(message) => emit('error', message)"
           />
 
-          <!-- 선택 업무의 조회 화면입니다. -->
+          <!-- 로스 관리 탭을 표시하고 저장 결과를 부모에게 전달합니다. -->
+          <LossTab
+            v-if="selectedSection === 'loss'"
+            ref="lossTabRef"
+            :model-value="modelValue"
+            :store-id="storeId"
+            :product="product"
+            :work-date="workDate"
+            :can-mutate="canMutate"
+            :reason-options="lossReasons"
+            @update:model-value="(value) => emit('update:modelValue', value)"
+            @saved="(message, daily) => emit('saved', message, daily)"
+            @error="(message) => emit('error', message)"
+          />
+
+          <!-- 폐기 관리 탭을 표시하고 저장 결과를 부모에게 전달합니다. -->
+          <DisposalTab
+            v-if="selectedSection === 'waste'"
+            ref="disposalTabRef"
+            :model-value="modelValue"
+            :store-id="storeId"
+            :product="product"
+            :work-date="workDate"
+            :can-mutate="canMutate"
+            :reason-options="wasteReasons"
+            @update:model-value="(value) => emit('update:modelValue', value)"
+            @saved="(message, daily) => emit('saved', message, daily)"
+            @error="(message) => emit('error', message)"
+          />
+
+          <!-- 실제 관리 탭이 없는 항목에만 기존 안내 화면을 표시합니다. -->
           <div
             v-if="
               activeSection &&
-              selectedSection !== 'production' &&
-              selectedSection !== 'carryover'
+              !['production', 'carryover', 'loss', 'waste'].includes(selectedSection)
             "
             class="inventory-dialog__placeholder"
           >
@@ -203,7 +232,9 @@
           variant="text"
           :disabled="
             (selectedSection === 'production' && productionTabRef?.isSaving) ||
-            (selectedSection === 'carryover' && carryoverTabRef?.isSaving)
+            (selectedSection === 'carryover' && carryoverTabRef?.isSaving) ||
+            (selectedSection === 'loss' && lossTabRef?.isSaving) ||
+            (selectedSection === 'waste' && disposalTabRef?.isSaving)
           "
           @click="requestClose"
         >
@@ -245,7 +276,29 @@
           "
           @click="carryoverTabRef?.askSave()"
         >
-          이월 저장
+          이월 기록 저장
+        </v-btn>
+
+        <!-- 로스탭에서 입력 중일 때 저장 버튼을 표시합니다. -->
+        <v-btn
+          v-if="selectedSection === 'loss' && lossTabRef?.editorOpen"
+          variant="flat"
+          :loading="lossTabRef?.isSaving"
+          :disabled="!canMutate || lossTabRef?.isSaving"
+          @click="lossTabRef?.askSave()"
+        >
+          로스 기록 저장
+        </v-btn>
+
+        <!-- 폐기탭에서 입력 중일 때 저장 버튼을 표시합니다. -->
+        <v-btn
+          v-if="selectedSection === 'waste' && disposalTabRef?.editorOpen"
+          variant="flat"
+          :loading="disposalTabRef?.isSaving"
+          :disabled="!canMutate || disposalTabRef?.isSaving"
+          @click="disposalTabRef?.askSave()"
+        >
+          폐기 기록 저장
         </v-btn>
       </v-card-actions>
     </v-card>
@@ -256,6 +309,8 @@
 import { computed, ref, watch } from "vue";
 import ProductionTab from "./Tabs/ProductionTab.vue";
 import CarryoverTab from "./Tabs/CarryoverTab.vue";
+import LossTab from "./Tabs/LossTab.vue";
+import DisposalTab from "./Tabs/DisposalTab.vue";
 
 const props = defineProps({
   modelValue: {
@@ -305,6 +360,15 @@ const props = defineProps({
   initialSection: {
     type: String,
     default: "",
+  },
+
+  lossReasons: {
+    type: Array,
+    default: () => [],
+  },
+  wasteReasons: {
+    type: Array,
+    default: () => [],
   },
 });
 
@@ -377,28 +441,33 @@ const selectedSection = ref("");
 
 // 생산 탭 컴포넌트 참조
 const productionTabRef = ref(null);
+
 const carryoverTabRef = ref(null);
+
+const lossTabRef = ref(null);
+const disposalTabRef = ref(null);
 
 // 부모의 업무 메뉴 설정에서 현재 선택된 항목을 조회합니다.
 const activeSection = computed(
   () => props.sections.find((section) => section.value === selectedSection.value) || null
 );
 
-/**
- * 작성 내용 검사를 거쳐 다이얼로그를 닫습니다.
- */
+// 다이얼로그를 닫기 전에 현재 탭의 작성 중인 내용을 확인합니다.
 function requestClose() {
-  const closeDialog = () => {
-    emit("update:modelValue", false);
+  const closeDialog = () => emit("update:modelValue", false);
+
+  // 각 탭의 작성 취소 확인 기능을 연결합니다.
+  const tabRefs = {
+    production: productionTabRef,
+    carryover: carryoverTabRef,
+    loss: lossTabRef,
+    waste: disposalTabRef,
   };
 
-  if (selectedSection.value === "production") {
-    productionTabRef.value?.requestLeave(closeDialog);
-    return;
-  }
+  const currentTab = tabRefs[selectedSection.value];
 
-  if (selectedSection.value === "carryover") {
-    carryoverTabRef.value?.requestLeave(closeDialog);
+  if (currentTab) {
+    currentTab.value?.requestLeave(closeDialog);
     return;
   }
 
@@ -415,10 +484,7 @@ function onDialogModelChange(value) {
   }
 }
 
-/**
- * 다른 업무 메뉴로 이동할 때
- * 생산 입력 중인 내용이 있으면 확인창을 표시합니다.
- */
+// 다른 탭으로 이동하기 전에 현재 탭의 미저장 내용을 확인합니다.
 function selectSection(value) {
   if (
     !props.sections.some((section) => section.value === value) ||
@@ -427,18 +493,24 @@ function selectSection(value) {
     return;
   }
 
+  // 탭 변경을 실제로 실행합니다.
   const changeSection = () => {
     selectedSection.value = value;
     emit("section-change", value);
   };
 
-  if (selectedSection.value === "production") {
-    productionTabRef.value?.requestLeave(changeSection);
-    return;
-  }
+  // 현재 탭의 작성 취소 확인 기능을 연결합니다.
+  const tabRefs = {
+    production: productionTabRef,
+    carryover: carryoverTabRef,
+    loss: lossTabRef,
+    waste: disposalTabRef,
+  };
 
-  if (selectedSection.value === "carryover") {
-    carryoverTabRef.value?.requestLeave(changeSection);
+  const currentTab = tabRefs[selectedSection.value];
+
+  if (currentTab) {
+    currentTab.value?.requestLeave(changeSection);
     return;
   }
 

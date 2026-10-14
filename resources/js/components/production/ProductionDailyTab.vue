@@ -480,6 +480,8 @@
     :work-date="workDate"
     :workers="options.workers || []"
     :zero-reasons="options.zero_reasons || []"
+    :loss-reasons="options.loss_reasons || []"
+    :waste-reasons="options.waste_reasons || []"
     :can-mutate="canMutate"
     :sections="inventorySections"
     :initial-section="inventoryInitialSection"
@@ -2192,22 +2194,13 @@ function openProduction(row) {
   openInventoryDialog(row, 'production');
 }
 
-// 이월은 통합 다이얼로그로, 로스·폐기는 기존 화면으로 연결
+// 로스·폐기 숫자를 누르면 통합 다이얼로그의 해당 탭을 엽니다.
 function openFlow(row, type) {
-  if (type === "carryover") {
-    if (!ensureMutable() || !row) {
-      return;
-    }
-
-    // 기존 이월 다이얼로그가 동시에 열리지 않도록 방지
-    flowOpen.value = false;
-
-    // 통합 다이얼로그의 이월 탭 열기
-    openInventoryDialog(row, "carryover");
+  if (type === "loss" || type === "waste") {
+    openInventoryDialog(row, type);
     return;
   }
 
-  // 로스·폐기는 기존 다이얼로그 호출 방식 유지
   openInventoryWork(row, type);
 }
 

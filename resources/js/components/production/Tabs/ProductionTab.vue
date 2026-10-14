@@ -20,7 +20,7 @@
             zeroCardOpen = false;
           "
         >
-          {{ productionFormOpen ? "취소" : editingBatch ? "수정" : "추가" }}
+          {{ productionFormOpen ? "취소" : editingBatch ? "생산 수량 수정" : "생산 수량 추가" }}
         </v-btn>
 
         <v-btn
@@ -283,6 +283,10 @@
             v-show="productionCardIndex === 2"
             class="inventory-dialog__swipe-card"
           >
+            <p class="inventory-dialog__form-help">
+              특이사항을 메모로 남길 수 있습니다.
+            </p>
+
             <v-textarea
               v-model="productionForm.note"
               label="메모 · 선택"
@@ -304,6 +308,8 @@
           v-show="zeroCardOpen"
           class="inventory-dialog__zero-card-content"
         >
+          <strong>생산 없음 확인</strong>
+
           <p class="inventory-dialog__form-help">
             실제 생산이 없었다면 사유를 선택해 0개로 확인합니다.
             목록에 없는 사유는 직접입력을 선택해 주세요.
@@ -382,7 +388,7 @@
               @click="toggleBatch(batch.id)"
             >
               <strong class="inventory-dialog__production-record-label">
-                생산량
+                생산 수량
               </strong>
 
               <span class="inventory-dialog__production-record-header-right">
@@ -469,10 +475,10 @@
               </div>
 
               <!-- 생산 기록별 수정·삭제 -->
-              <div class="inventory-dialog__record-actions">
+              <div class="inventory-dialog__action-grid">
                 <v-btn
-                  size="small"
                   variant="outlined"
+                  block
                   prepend-icon="mdi-pencil-outline"
                   :disabled="!canMutate"
                   @click="editBatch(batch)"
@@ -481,8 +487,8 @@
                 </v-btn>
 
                 <v-btn
-                  size="small"
                   variant="outlined"
+                  block
                   prepend-icon="mdi-delete-outline"
                   :disabled="!canMutate || saving"
                   @click="askDelete(batch)"
@@ -494,8 +500,17 @@
           </div>
         </template>
 
-        <div v-else class="inventory-dialog__production-empty">
-          등록된 생산 기록이 없습니다.
+        <!-- 생산 기록이 없을 때 생산 0개 확인 여부에 따라 문구를 표시합니다. -->
+        <div
+          v-else
+          class="inventory-dialog__production-empty"
+        >
+          {{
+            product?.production_confirmed &&
+            Number(product?.production ?? 0) === 0
+              ? "생산 없음"
+              : "생산 기록이 없습니다."
+          }}
         </div>
       </section>
     </div>
@@ -661,7 +676,7 @@ const pendingDiscardAction = ref(null);
 const productionCardTitles = [
   "생산 입력",
   "레시피 · 추천",
-  "메모 · 확인",
+  "메모",
 ];
 
 const lastProductionCardIndex = productionCardTitles.length - 1;
@@ -1885,7 +1900,7 @@ defineExpose({
   gap: 12px;
   padding: 16px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgb(var(--v-theme-surface));
 }
 
@@ -2016,5 +2031,14 @@ defineExpose({
   white-space: normal;
   text-align: center;
   line-height: 1.4;
+}
+
+.inventory-dialog__production-empty {
+  padding: 14px;
+  border: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 10px;
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: center;
 }
 </style>

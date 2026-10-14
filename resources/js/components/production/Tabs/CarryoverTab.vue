@@ -220,6 +220,7 @@
           <div
             v-show="carryoverCardIndex === 1"
             class="inventory-dialog__swipe-card"
+            :style="!selectedCarryoverLot ? { minHeight: 'auto' } : {}"
           >
             <!-- 생산 기록 미선택 안내 -->
             <v-alert
@@ -265,63 +266,65 @@
               </div>
             </div>
 
-            <!-- 이월 수량 설정 안내 -->
-            <p class="inventory-dialog__form-help">
-              입력한 수량이 해당 생산 기록의 최종 이월 수량으로 저장됩니다.
-              기존 이월 수량에 추가로 합산되지 않습니다.
-            </p>
+              <template v-if="selectedCarryoverLot">
+              <!-- 이월 수량 설정 안내 -->
+              <p class="inventory-dialog__form-help">
+                입력한 수량이 해당 생산 기록의 최종 이월 수량으로 저장됩니다.
+                기존 이월 수량에 추가로 합산되지 않습니다.
+              </p>
 
-            <!-- 선택한 생산 기록의 이월 수량 -->
-            <v-number-input
-              v-model="carryoverQuantity"
-              label="최종 이월 수량"
-              variant="outlined"
-              density="compact"
-              :min="0"
-              :max="carryoverSourceAvailable"
-              control-variant="stacked"
-              :disabled="selectedCarryoverLotId == null"
-            />
+              <!-- 선택한 생산 기록의 이월 수량 -->
+              <v-number-input
+                v-model="carryoverQuantity"
+                label="최종 이월 수량"
+                variant="outlined"
+                density="compact"
+                :min="0"
+                :max="carryoverSourceAvailable"
+                control-variant="stacked"
+                :disabled="selectedCarryoverLotId == null"
+              />
 
-            <!-- 기존 이월 기록을 0개로 수정할 때 안내 -->
-            <v-alert
-              v-if="
-                selectedCarryoverLotId != null &&
-                selectedCarryoverLot &&
-                Number(selectedCarryoverLot.carryover_out_quantity || 0) > 0 &&
-                carryoverQuantity !== null &&
-                carryoverQuantity !== undefined &&
-                String(carryoverQuantity).trim() !== '' &&
-                Number(carryoverQuantity) === 0
-              "
-              type="info"
-              variant="tonal"
-              density="compact"
-            >
-              현재 0개가 입력되어 있습니다.
-              저장하면 선택한 생산 기록의 기존 이월 처리가 취소됩니다.
-            </v-alert>
+              <!-- 기존 이월 기록을 0개로 수정할 때 안내 -->
+              <v-alert
+                v-if="
+                  selectedCarryoverLotId != null &&
+                  selectedCarryoverLot &&
+                  Number(selectedCarryoverLot.carryover_out_quantity || 0) > 0 &&
+                  carryoverQuantity !== null &&
+                  carryoverQuantity !== undefined &&
+                  String(carryoverQuantity).trim() !== '' &&
+                  Number(carryoverQuantity) === 0
+                "
+                type="info"
+                variant="tonal"
+                density="compact"
+              >
+                현재 0개가 입력되어 있습니다.
+                저장하면 선택한 생산 기록의 기존 이월 처리가 취소됩니다.
+              </v-alert>
 
-            <!-- 이월 가능 수량 초과 안내 -->
-            <v-alert
-              v-if="quantityExceeded"
-              type="error"
-              variant="tonal"
-              density="compact"
-            >
-              선택한 생산 기록의 이월 가능 수량을 초과했습니다.
-            </v-alert>
+              <!-- 이월 가능 수량 초과 안내 -->
+              <v-alert
+                v-if="quantityExceeded"
+                type="error"
+                variant="tonal"
+                density="compact"
+              >
+                선택한 생산 기록의 이월 가능 수량을 초과했습니다.
+              </v-alert>
 
-            <!-- 재이월 안내 -->
-            <v-alert
-              v-if="carryoverQuantity > 0 && carryoverSource === 'incoming'"
-              type="warning"
-              variant="tonal"
-              density="compact"
-            >
-              이미 이월된 제품을 다시 이월합니다.
-              원래 생산일은 유지됩니다.
-            </v-alert>
+              <!-- 재이월 안내 -->
+              <v-alert
+                v-if="carryoverQuantity > 0 && carryoverSource === 'incoming'"
+                type="warning"
+                variant="tonal"
+                density="compact"
+              >
+                이미 이월된 제품을 다시 이월합니다.
+                원래 생산일은 유지됩니다.
+              </v-alert>
+            </template>
           </div>
 
           <!-- 카드 3: 메모 -->
@@ -445,10 +448,10 @@
               </div>
 
               <!-- 이월 기록별 수정·삭제 -->
-              <div class="inventory-dialog__record-actions">
+              <div class="inventory-dialog__action-grid">
                 <v-btn
-                  size="small"
                   variant="outlined"
+                  block
                   prepend-icon="mdi-pencil-outline"
                   :disabled="!canMutate || saving"
                   @click="editCarryoverLot(item)"
@@ -457,8 +460,8 @@
                 </v-btn>
 
                 <v-btn
-                  size="small"
                   variant="outlined"
+                  block
                   prepend-icon="mdi-delete-outline"
                   :disabled="!canMutate || saving"
                   @click="askDeleteCarryover(item)"
@@ -470,11 +473,12 @@
           </div>
         </template>
 
+        <!-- 이월 기록이 없을 때 안내 문구를 표시합니다. -->
         <div
           v-else
           class="inventory-dialog__production-empty"
         >
-          등록된 이월 기록이 없습니다.
+          이월 기록이 없습니다.
         </div>
       </section>
     </div>
@@ -1883,8 +1887,11 @@ defineExpose({
 
 .inventory-dialog__production-empty {
   padding: 14px;
+  border: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 10px;
   font-size: 12px;
   opacity: 0.7;
+  text-align: center;
 }
 
 /* 선택한 생산 기록의 재고 안내 */
