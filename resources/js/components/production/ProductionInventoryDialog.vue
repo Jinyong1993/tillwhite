@@ -97,9 +97,23 @@
             @error="(message) => emit('error', message)"
           />
 
+          <!-- 이월 탭 -->
+          <CarryoverTab
+            v-if="selectedSection === 'carryover'"
+            ref="carryoverTabRef"
+            :model-value="modelValue"
+            :store-id="storeId"
+            :can-mutate="canMutate"
+            :product="product"
+            :work-date="workDate"
+            @update:model-value="(value) => emit('update:modelValue', value)"
+            @saved="(message, daily) => emit('saved', message, daily)"
+            @error="(message) => emit('error', message)"
+          />
+
           <!-- 서버에서 전달받은 생산 기록별 재고 목록입니다. -->
           <section
-            v-if="selectedSection !== 'production'"
+            v-if="selectedSection !== 'production' && selectedSection !== 'carryover'"
             class="inventory-dialog__stock"
           >
             <div class="inventory-dialog__stock-heading">
@@ -139,21 +153,19 @@
 
           <!-- 선택 업무의 조회 화면입니다. -->
           <div
-            v-if="activeSection && selectedSection !== 'production'"
+            v-if="
+              activeSection &&
+              selectedSection !== 'production' &&
+              selectedSection !== 'carryover'
+            "
             class="inventory-dialog__placeholder"
           >
             <strong>
               {{ activeSection.title }}
             </strong>
 
-            <!-- 이월 현황 -->
-            <template v-if="selectedSection === 'carryover'">
-              <span> 이월 재고 {{ displayQuantity(product?.carryover_in) }} </span>
-              <span> 이월 예정 {{ displayQuantity(product?.carryover_out) }} </span>
-            </template>
-
             <!-- 로스 현황 -->
-            <span v-else-if="selectedSection === 'loss'">
+            <span v-if="selectedSection === 'loss'">
               로스 {{ displayQuantity(product?.operational_loss ?? product?.loss) }}
             </span>
 
@@ -230,7 +242,10 @@
       <v-card-actions class="app-dialog-footer px-4 pb-4">
         <v-btn
           variant="text"
-          :disabled="selectedSection === 'production' && productionTabRef?.isSaving"
+          :disabled="
+            (selectedSection === 'production' && productionTabRef?.isSaving) ||
+            (selectedSection === 'carryover' && carryoverTabRef?.isSaving)
+          "
           @click="requestClose"
         >
           닫기
@@ -256,6 +271,23 @@
         >
           {{ productionTabRef?.editingBatch ? "수정 내용 저장" : "생산 기록 저장" }}
         </v-btn>
+
+        <!-- 이월 저장: 추가/수정 입력창을 열었을 때만 표시 -->
+        <v-btn
+          v-if="
+            selectedSection === 'carryover' &&
+            carryoverTabRef?.editorOpen
+          "
+          variant="flat"
+          :loading="carryoverTabRef?.isSaving"
+          :disabled="
+            !canMutate ||
+            carryoverTabRef?.isSaving
+          "
+          @click="carryoverTabRef?.askSave()"
+        >
+          이월 저장
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -264,6 +296,7 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import ProductionTab from "./Tabs/ProductionTab.vue";
+import CarryoverTab from "./Tabs/CarryoverTab.vue";
 
 const props = defineProps({
   modelValue: {
@@ -391,6 +424,7 @@ const selectedSection = ref("");
 
 // 생산 탭 컴포넌트 참조
 const productionTabRef = ref(null);
+const carryoverTabRef = ref(null);
 
 // 부모의 업무 메뉴 설정에서 현재 선택된 항목을 조회합니다.
 const activeSection = computed(
@@ -407,6 +441,11 @@ function requestClose() {
 
   if (selectedSection.value === "production") {
     productionTabRef.value?.requestLeave(closeDialog);
+    return;
+  }
+
+  if (selectedSection.value === "carryover") {
+    carryoverTabRef.value?.requestLeave(closeDialog);
     return;
   }
 
@@ -442,6 +481,11 @@ function selectSection(value) {
 
   if (selectedSection.value === "production") {
     productionTabRef.value?.requestLeave(changeSection);
+    return;
+  }
+
+  if (selectedSection.value === "carryover") {
+    carryoverTabRef.value?.requestLeave(changeSection);
     return;
   }
 

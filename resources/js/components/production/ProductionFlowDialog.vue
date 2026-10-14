@@ -906,23 +906,21 @@ function setZero() {
   askSave();
 }
 
-/**
- * 현재 선택한 생산 기록의 변경 사항을 확인합니다.
- */
+// 작성 중인 변경 사항 확인
 function isDirty() {
-  if (props.type === 'carryover') {
-    return (
-      carryoverQuantity.value !== initialCarryoverQuantity.value ||
-      carryoverSource.value !== initialCarryoverSource.value ||
-      String(selectedCarryoverLotId.value ?? '') !==
-        String(initialCarryoverLotId.value ?? '') ||
-      Boolean(note.value)
-    );
-  }
+  const rawQuantity = carryoverQuantity.value;
+
+  const quantityChanged =
+    rawQuantity === null ||
+    rawQuantity === undefined ||
+    String(rawQuantity).trim() === "" ||
+    Number(rawQuantity) !== initialCarryoverQuantity.value;
 
   return (
-    JSON.stringify(reasonRows.value) !==
-      initialReasonSnapshot.value ||
+    quantityChanged ||
+    carryoverSource.value !== initialCarryoverSource.value ||
+    String(selectedCarryoverLotId.value ?? "") !==
+      String(initialCarryoverLotId.value ?? "") ||
     Boolean(note.value)
   );
 }

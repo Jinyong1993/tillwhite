@@ -2192,8 +2192,22 @@ function openProduction(row) {
   openInventoryDialog(row, 'production');
 }
 
-// 기존 이월·로스·폐기 버튼 및 마감 화면의 호출 방식을 유지합니다.
+// 이월은 통합 다이얼로그로, 로스·폐기는 기존 화면으로 연결
 function openFlow(row, type) {
+  if (type === "carryover") {
+    if (!ensureMutable() || !row) {
+      return;
+    }
+
+    // 기존 이월 다이얼로그가 동시에 열리지 않도록 방지
+    flowOpen.value = false;
+
+    // 통합 다이얼로그의 이월 탭 열기
+    openInventoryDialog(row, "carryover");
+    return;
+  }
+
+  // 로스·폐기는 기존 다이얼로그 호출 방식 유지
   openInventoryWork(row, type);
 }
 
