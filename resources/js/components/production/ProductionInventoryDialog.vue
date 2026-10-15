@@ -110,7 +110,7 @@
             @error="(message) => emit('error', message)"
           />
 
-          <!-- 로스 관리 탭을 표시하고 저장 결과를 부모에게 전달합니다. -->
+          <!-- 로스 탭 -->
           <LossTab
             v-if="selectedSection === 'loss'"
             ref="lossTabRef"
@@ -125,7 +125,7 @@
             @error="(message) => emit('error', message)"
           />
 
-          <!-- 폐기 관리 탭을 표시하고 저장 결과를 부모에게 전달합니다. -->
+          <!-- 폐기 탭 -->
           <DisposalTab
             v-if="selectedSection === 'waste'"
             ref="disposalTabRef"
@@ -140,11 +140,16 @@
             @error="(message) => emit('error', message)"
           />
 
+          <!-- 폐기율 탭 -->
+          <WasteRateTab
+            v-if="selectedSection === 'waste_rate'"
+          />
+
           <!-- 실제 관리 탭이 없는 항목에만 기존 안내 화면을 표시합니다. -->
           <div
             v-if="
               activeSection &&
-              !['production', 'carryover', 'loss', 'waste'].includes(selectedSection)
+              !['production', 'carryover', 'loss', 'waste', 'waste_rate'].includes(selectedSection)
             "
             class="inventory-dialog__placeholder"
           >
@@ -211,12 +216,6 @@
                 </div>
               </div>
             </template>
-
-            <!-- 폐기율은 서버 계산값을 사용하는 조회 전용 항목입니다. -->
-            <span v-else-if="selectedSection === 'waste_rate'">
-              폐기율
-              {{ product?.waste_rate == null ? "-" : `${product.waste_rate}%` }}
-            </span>
           </div>
 
           <v-empty-state
@@ -311,6 +310,7 @@ import ProductionTab from "./Tabs/ProductionTab.vue";
 import CarryoverTab from "./Tabs/CarryoverTab.vue";
 import LossTab from "./Tabs/LossTab.vue";
 import DisposalTab from "./Tabs/DisposalTab.vue";
+import WasteRateTab from "./Tabs/WasteRateTab.vue";
 
 const props = defineProps({
   modelValue: {

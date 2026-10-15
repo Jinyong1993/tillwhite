@@ -2249,10 +2249,7 @@ function openMetric(key) {
 
 // 선택한 제품의 폐기율 상세 내역을 표시합니다.
 function openWasteRate(row) {
-  detailSelectedRow.value = row;
-  detailMetricKey.value = 'waste_rate';
-  detailTitle.value = `폐기율 - ${row.name}`;
-  detailOpen.value = true;
+  openInventoryDialog(row, 'waste_rate');
 }
 
 // 요약 상세에서 선택한 제품의 정보 다이얼로그를 엽니다.
