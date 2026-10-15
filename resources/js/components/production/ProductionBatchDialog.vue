@@ -68,7 +68,7 @@
       <section v-if="!editingBatch" class="previous-production-reference">
         <div class="previous-production-reference__content">
           <span class="previous-production-reference__label">
-            전날 생산량 참고
+            전날 생산량
           </span>
 
           <strong v-if="previousProductionLoading">

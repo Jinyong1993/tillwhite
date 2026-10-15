@@ -110,7 +110,7 @@
               class="inventory-dialog__previous-production"
             >
               <div>
-                <span>전날 생산량 참고</span>
+                <span>전날 생산량</span>
 
                 <strong v-if="previousProductionLoading">
                   조회 중...
