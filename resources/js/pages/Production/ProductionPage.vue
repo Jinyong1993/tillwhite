@@ -41,9 +41,9 @@
             class="production-tabs"
         >
           <v-tab value="list">목록</v-tab>
-          <v-tab value="calendar">캘린더</v-tab>
-          <v-tab value="analysis">분석</v-tab>
-          <v-tab value="statistics">통계</v-tab>
+          <v-tab value="calendar" disabled>캘린더</v-tab>
+          <v-tab value="analysis" disabled>분석</v-tab>
+          <v-tab value="statistics" disabled>통계</v-tab>
         </v-tabs>
         <v-divider class="production-divider" />
 
