@@ -1,5 +1,5 @@
 <template>
-<div class="daily-page">
+<div ref="dailyPageRef" class="daily-page">
   <section class="daily-section date-section">
     <div class="app-date-toolbar">
       <div class="app-date-navigation">
@@ -447,7 +447,14 @@
     <v-btn variant="text" prepend-icon="mdi-history" @click="openHistory">변경 이력</v-btn>
     <v-spacer />
     <v-btn v-if="daily.closure_status === 'closed'" variant="outlined" :disabled="!canCorrect" @click="correctionOpen=true">마감 수정</v-btn>
-    <v-btn v-else variant="flat" :disabled="daily.closure_status === 'store_closed' || !canMutate" @click="previewClose">마감</v-btn>
+    <v-btn
+      v-else
+      variant="flat"
+      :disabled="daily.closure_status === 'store_closed' || !canMutate"
+      @click="previewClose"
+    >
+      마감
+    </v-btn>
   </div>
   <ProductionBatchDialog
       v-model="batchOpen"
@@ -865,174 +872,68 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <!-- 마감 다이얼로그 -->
+  <ProductionCloseDialog
+    v-model="closeOpen"
+    v-model:page="closePage"
+    :preview="closePreview"
+    :metrics="closeMetrics"
+    :rows="closeRows"
+    :work-date="workDate"
+    @production="openProduction"
+    @flow="openFlow"
+    @product="openProduct"
+    @confirm="confirmCloseOpen = true"
+  />
+
+  <!-- 마감 후 수정 사유 입력 -->
   <v-dialog
-      v-model="closeOpen"
-      max-width="720"
-      persistent
+    v-model="correctionOpen"
+    max-width="560"
+    persistent
   >
-    <v-card
-        rounded="lg"
-        class="app-dialog-card"
-    >
-      <v-card-title class="app-dialog-header">마감 최종확인</v-card-title>
+    <v-card rounded="lg" class="app-dialog-card">
+      <v-card-title class="app-dialog-header">
+        마감 후 수정
+      </v-card-title>
+
       <v-card-text class="app-dialog-body">
-        <div class="app-supporting-text text-medium-emphasis mb-3">저장 전에 생산·이월·로스·폐기와 미확인 항목을 다시 확인합니다.</div>
-        <div class="daily-metrics mb-4">
-          <div v-for="metric in closeMetrics" :key="metric.key" class="metric-item static">
-            <span>{{ metric.title }}</span>
-            <strong>{{ metric.value }}</strong>
-          </div>
+        <div class="app-supporting-text text-medium-emphasis mb-3">
+          과거 기록을 수정하면 통계와 현재 분석이 다시 계산됩니다.
+          당시 추천 스냅샷은 변경하지 않습니다.
         </div>
-        <v-alert
-            v-if="closePreview && !closePreview.can_close"
-            type="warning"
-            variant="tonal"
-            density="compact"
-            class="app-supporting-alert"
-        >
-          <template v-if="closePreview.stock_issues?.length">
-            <strong>재고 흐름을 확인해 주세요.</strong>
-            <div v-for="issue in closePreview.stock_issues" :key="issue">{{ issue }}</div>
-          </template>
-          <template v-else>
-            아직 확인할 제품이 {{ closePreview.incomplete?.length || 0 }}개 있습니다. 아래에서 필요한 항목을 바로 입력할 수 있습니다.
-          </template>
-        </v-alert>
-        <div class="close-progress-copy">
-          확인 {{ closeCompleteCount }} / {{ closeRows.length }} · 확인 필요 {{ closeIncompleteCount }}개
-        </div>
-        <div
-          v-if="closeRows.length"
-          ref="closeListRef"
-          class="close-check-list mt-3"
-        >
-          <article
-            v-for="row in pagedCloseRows"
-            :key="row.id"
-            class="close-check-item"
-          >
-            <div class="close-check-copy">
-              <strong>{{ row.name }}</strong>
-              <span>{{ row.complete ? '확인 완료' : missingReasonText(row) }}</span>
-            </div>
 
-            <div class="close-product-values">
-              <!-- 생산은 기존 확인 상태와 입력 동작을 유지합니다. -->
-              <button
-                class="production"
-                type="button"
-                @click="openProduction(row)"
-              >
-                <span>생산</span>
-                <strong>
-                  {{ row.production_confirmed ? `${row.production}` : '-' }}
-                </strong>
-              </button>
-
-              <!-- 이월: 기존 재고와 다음 날 이월 예정 수량의 합계만 표시 -->
-              <button
-                type="button"
-                @click="openFlow(row, 'carryover')"
-              >
-                <span>이월</span>
-                <strong>
-                  {{
-                    Number(row.carryover_in || 0) > 0 ||
-                    Number(row.carryover_out || 0) > 0
-                      ? Number(row.carryover_in || 0) +
-                        Number(row.carryover_out || 0)
-                      : row.disposition_confirmed ? 0 : '-'
-                  }}
-                </strong>
-              </button>
-
-              <!-- 로스는 기존 수량과 확인 상태를 유지합니다. -->
-              <button
-                type="button"
-                @click="openFlow(row, 'loss')"
-              >
-                <span>로스</span>
-                <strong>
-                  {{ row.loss_confirmed ? `${Number(row.operational_loss || 0)}` : '-' }}
-                </strong>
-              </button>
-
-              <!-- 폐기는 원 생산일 귀속 수량을 표시하고 실제 폐기 입력 기능은 유지합니다. -->
-              <button
-                class="waste"
-                type="button"
-                @click="openFlow(row, 'waste')"
-              >
-                <span>폐기</span>
-                <strong>
-                  {{
-                    row.waste_confirmed || Number(row.attributed_waste || 0) > 0
-                      ? `${Number(row.attributed_waste || 0)}`
-                      : '-'
-                  }}
-                </strong>
-              </button>
-            </div>
-
-            <div class="close-check-actions">
-              <v-btn
-                size="small"
-                variant="text"
-                @click="openProduct(row)"
-              >
-                제품 정보
-              </v-btn>
-            </div>
-          </article>
-        </div>
-        <v-pagination
-            v-if="closePageCount > 1"
-            v-model="closePage"
-            :length="closePageCount"
-            :total-visible="5"
-            density="compact"
-            class="close-pagination"
-            @update:model-value="scrollCloseTop"
-        />
-        <div v-if="closePreview?.can_close" class="close-ready mt-3">모든 제품 확인이 완료되었습니다. 입력 수량을 마지막으로 확인한 뒤 마감해 주세요.</div>
-      </v-card-text>
-      <v-card-actions class="app-dialog-footer px-4 pb-4">
-        <v-btn variant="text" @click="closeOpen=false">취소</v-btn>
-        <v-spacer />
-        <v-btn variant="flat" :disabled="!closePreview?.can_close" @click="confirmCloseOpen=true">마감</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
-  <v-dialog
-      v-model="correctionOpen"
-      max-width="560"
-      persistent
-  >
-    <v-card
-        rounded="lg"
-        class="app-dialog-card"
-    >
-      <v-card-title class="app-dialog-header">마감 후 수정</v-card-title>
-      <v-card-text class="app-dialog-body">
-        <div class="app-supporting-text text-medium-emphasis mb-3">과거 기록을 수정하면 통계와 현재 분석이 다시 계산됩니다. 당시 추천 스냅샷은 변경하지 않습니다.</div>
         <v-textarea
-            v-model="correctionReason"
-            label="수정 사유"
-            variant="outlined"
-            rows="3"
+          v-model="correctionReason"
+          label="수정 사유"
+          variant="outlined"
+          rows="3"
         />
       </v-card-text>
+
       <v-card-actions class="app-dialog-footer px-4 pb-4">
-        <v-btn variant="text" @click="correctionOpen=false">취소</v-btn>
-        <v-spacer/>
-        <v-btn variant="flat" :disabled="correctionReason.trim().length < 2" @click="correctionConfirmOpen=true">수정 시작</v-btn>
+        <v-btn variant="text" @click="correctionOpen = false">
+          취소
+        </v-btn>
+
+        <v-spacer />
+
+        <v-btn
+          variant="flat"
+          :disabled="correctionReason.trim().length < 2"
+          @click="correctionConfirmOpen = true"
+        >
+          수정 시작
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
+
   <ConfirmDialog
       v-model="correctionConfirmOpen"
       title="마감 후 수정"
-      message="마감된 기록의 수정을 시작하시겠습니까? 연결된 이월 기록이 있으면 영향 날짜도 함께 확인해야 합니다."
+      message="마감된 기록의 수정을 시작하시겠습니까? 연결된 이월, 로스, 폐기 기록이 있으면 함께 확인해야 합니다."
       @confirm="openCorrection"
   />
   <ConfirmDialog
@@ -1045,7 +946,7 @@
   <ConfirmDialog
       v-model="confirmCloseOpen"
       title="마감 최종확인"
-      message="현재 확인한 내용으로 하루 업무를 마감하시겠습니까? 마감 후 일반 수정은 제한됩니다."
+      message="현재 확인한 내용으로 업무를 마감하시겠습니까? 마감 후 일반 수정은 제한됩니다."
       :loading="closing"
       @confirm="closeDay"
   />
@@ -1065,6 +966,7 @@ import ProductionBatchDialog from './ProductionBatchDialog.vue';
 import ProductionFlowDialog from './ProductionFlowDialog.vue';
 // 제품별 생산 및 재고 관리를 위한 통합 다이얼로그입니다.
 import ProductionInventoryDialog from './ProductionInventoryDialog.vue';
+import ProductionCloseDialog from './ProductionCloseDialog.vue';
 
 import {
     addLocalDays,
@@ -1072,6 +974,7 @@ import {
     toLocalDateString,
 } from '../../utils/localDate';
 import { productionReasonLabel } from '../../utils/productionReasons';
+
 const props = defineProps({
   daily: {
     type: Object,
@@ -1194,6 +1097,7 @@ const expandedRows = ref(new Set());
 const correctionOpen = ref(false);
 const correctionConfirmOpen = ref(false);
 const correctionReason = ref('');
+const dailyPageRef = ref(null);
 const closeOpen = ref(false);
 const confirmCloseOpen = ref(false);
 const bulkZeroConfirmOpen = ref(false);
@@ -2567,9 +2471,14 @@ async function closeDay() {
     emit('success', data.message || '하루 업무를 마감했습니다.');
     emit('reload');
 
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
+    // 마감 완료 후 다이얼로그가 닫히면 조회 화면 상단으로 이동합니다.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        dailyPageRef.value?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      });
     });
   } catch (error) {
     emit(
