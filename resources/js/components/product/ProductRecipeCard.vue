@@ -228,7 +228,7 @@
     </div>
 
     <div
-      v-if="!parentDeleted"
+      v-if="canManage && !parentDeleted"
       class="recipe-actions mt-4"
     >
       <!-- 위험 동작은 왼쪽, 조회·수정 같은 주 동작은 오른쪽에 배치합니다. -->

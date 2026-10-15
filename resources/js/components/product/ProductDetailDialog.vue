@@ -225,7 +225,7 @@
               삭제·제품 보기·수정/복구는 공정 아래의 카드 액션 영역에서 제공합니다.
             -->
             <v-menu
-              v-if="activeRecipe && !product.deleted_at"
+              v-if="activeRecipe && !product.deleted_at && canManageRecipe"
               location="bottom end"
             >
               <template #activator="{ props: menuProps }">
