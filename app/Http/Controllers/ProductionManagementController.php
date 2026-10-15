@@ -640,9 +640,35 @@ class ProductionManagementController extends Controller
              * 추천을 참고한 경우에만 이전 28일의 기록을 조회합니다.
              * 추천 대상, 조회 순서 및 행사 적용 조건은 유지합니다.
              */
-            if ((bool) ($data['recommendation_referenced'] ?? false)) {
+            $recommendationReferenced =
+            (bool) ($data['recommendation_referenced'] ?? false);
+
+            $recommendationDeviationReason = trim(
+                (string) ($data['recommendation_deviation_reason'] ?? '')
+            );
+
+            if ($recommendationReferenced || $recommendationDeviationReason !== '') {
+                // 추천 대상 날짜 및 최근 28일 이력 준비
                 $history = collect();
                 $target = Carbon::parse($data['work_date']);
+
+                $storeId = (int) $data['store_id'];
+                $productId = (int) $data['product_id'];
+
+                $historyFrom = $target->copy()
+                    ->subDays(28)
+                    ->toDateString();
+
+                $historyTo = $target->copy()
+                    ->subDay()
+                    ->toDateString();
+
+                // 분석 탭과 동일한 판매·날씨 데이터 조회
+                $recommendationContext = $this->recommendationData(
+                    $storeId,
+                    $historyFrom,
+                    $historyTo
+                );
 
                 for ($i = 28; $i >= 1; $i--) {
                     $historyDate = $target->copy()
@@ -650,28 +676,39 @@ class ProductionManagementController extends Controller
                         ->toDateString();
 
                     $daily = $this->dailyService->build(
-                        (int) $data['store_id'],
+                        $storeId,
                         $historyDate
                     );
 
                     $row = collect($daily['rows'])
-                        ->firstWhere(
-                            'id',
-                            (int) $data['product_id']
+                        ->first(
+                            fn ($item) =>
+                                (int) ($item['id'] ?? 0)
+                                    === $productId
                         );
 
-                    if ($row && $row['production_confirmed']) {
-                        $history->push([
-                            'date' => $historyDate,
-                            ...$row,
-                            'special_day' => !empty(
-                                $this->eventsForDate(
-                                    (int) $data['store_id'],
-                                    $historyDate
-                                )
-                            ),
-                        ]);
+                    if (
+                        !$row ||
+                        !($row['production_confirmed'] ?? false)
+                    ) {
+                        continue;
                     }
+
+                    // 해당 날짜의 행사 정보
+                    $events = $this->eventsForDate(
+                        $storeId,
+                        $historyDate
+                    );
+
+                    // 판매량·날씨·행사를 동일한 방식으로 반영
+                    $history->push(
+                        $this->recommendationHistoryRow(
+                            $row,
+                            $historyDate,
+                            $events,
+                            $recommendationContext
+                        )
+                    );
                 }
 
                 // 대상 날짜의 행사 중 현재 제품에 적용되는 행사를 선택합니다.
@@ -692,6 +729,25 @@ class ProductionManagementController extends Controller
                     ->values()
                     ->all();
 
+                // 추천 대상 날짜의 날씨를 추가합니다.
+                $targetWeather = StoreDailyWeather::query()
+                    ->where('store_id', $storeId)
+                    ->whereDate(
+                        'work_date',
+                        $data['work_date']
+                    )
+                    ->first(['condition']);
+
+                if (
+                    $targetWeather
+                    && !empty($targetWeather->condition)
+                ) {
+                    $targetEvents[] = [
+                        'weather_code' =>
+                            (string) $targetWeather->condition,
+                    ];
+                }
+
                 // 기존 추천 계산과 추천 결과 저장을 유지합니다.
                 $recommendation = $this->recommendationService->recommend(
                     $history,
@@ -705,7 +761,10 @@ class ProductionManagementController extends Controller
                     $data['work_date'],
                     $recommendation,
                     $batch->id,
-                    $data['recommendation_deviation_reason'] ?? null
+                    $recommendationDeviationReason !== ''
+                        ? $recommendationDeviationReason
+                        : null,
+                    $recommendationReferenced
                 );
             }
 
@@ -2655,6 +2714,138 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
+    
+    /**
+     * 추천 생산량 계산에 필요한 판매량과 날씨를 조회합니다.
+     *
+     * 확정된 판매 기록만 사용합니다.
+     * 판매 기록이 없는 날짜와 판매량 0개를 구분합니다.
+     */
+    private function recommendationData(
+        int $storeId,
+        string $from,
+        string $to
+    ): array {
+        // 확정된 판매 기록이 있는 날짜
+        $confirmedDates = DB::table('sales')
+            ->where('store_id', $storeId)
+            ->where('status', 'confirmed')
+            ->whereBetween('sales_date', [$from, $to])
+            ->pluck('sales_date')
+            ->map(
+                fn ($date) =>
+                    Carbon::parse($date)->toDateString()
+            )
+            ->flip()
+            ->all();
+
+        // 날짜별, 제품별 판매 수량
+        $sales = DB::table('sale_items as si')
+            ->join('sales as s', 's.id', '=', 'si.sale_id')
+            ->where('s.store_id', $storeId)
+            ->where('s.status', 'confirmed')
+            ->whereBetween('s.sales_date', [$from, $to])
+            ->whereIn('si.sale_type', [
+                'regular',
+                'promotion',
+            ])
+            ->selectRaw(
+                's.sales_date AS sales_day, si.product_id, SUM(si.quantity) AS sold_quantity'
+            )
+            ->groupBy('s.sales_date', 'si.product_id')
+            ->get();
+
+        $salesByDay = [];
+
+        foreach ($sales as $sale) {
+            $day = Carbon::parse(
+                $sale->sales_day
+            )->toDateString();
+
+            $salesByDay[$day][
+                (int) $sale->product_id
+            ] = (int) $sale->sold_quantity;
+        }
+
+        // 저장된 날짜별 날씨
+        $weather = StoreDailyWeather::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', '>=', $from)
+            ->whereDate('work_date', '<=', $to)
+            ->whereNotNull('condition')
+            ->get([
+                'work_date',
+                'condition'
+            ]);
+
+        $weatherByDay = [];
+
+        foreach ($weather as $record) {
+            $day = Carbon::parse(
+                $record->work_date
+            )->toDateString();
+
+            $weatherByDay[$day] =
+                (string) $record->condition;
+        }
+
+        return [
+            'confirmed_dates' => $confirmedDates,
+            'sales' => $salesByDay,
+            'weather' => $weatherByDay,
+        ];
+    }
+
+    /**
+     * 기존 생산 기록에 판매량, 날씨, 행사 정보를 결합합니다.
+     */
+    private function recommendationHistoryRow(
+        array $row,
+        string $date,
+        array $events,
+        array $context
+    ): array {
+        $productId = (int) $row['id'];
+
+        // 현재 제품에 적용되는 행사만 추출
+        $productEvents = collect($events)
+            ->filter(
+                fn (array $event) =>
+                    empty($event['products'])
+                    || collect(
+                        $event['products']
+                    )->contains('id', $productId)
+            )
+            ->values();
+
+        $result = [
+            ...$row,
+            'product_id' => $productId,
+            'date' => $date,
+            'special_day' => $productEvents->isNotEmpty(),
+            'weather_code' =>
+                $context['weather'][$date] ?? null,
+            'is_holiday' => $productEvents->contains(
+                fn (array $event) =>
+                    ($event['event_type'] ?? null)
+                        === 'holiday'
+            ),
+            'discount_type' => $productEvents
+                ->pluck('discount_type')
+                ->filter()
+                ->first(),
+        ];
+
+        // 확정 판매 기록이 있는 날짜만 판매 수량 추가
+        if (isset($context['sales'][$date]) &&
+            array_key_exists($productId, $context['sales'][$date])) {
+            $result['sales_quantity'] =
+                (int) $context['sales'][$date][$productId];
+        }
+
+        return $result;
+    }
+
     // 선택 기간의 흐름과 제품별 현황을 반환하며 추천 계산은 최근 28일 이내 기록만 사용합니다.
     public function analysis(Request $request): JsonResponse
     {
@@ -2718,22 +2909,76 @@ class ProductionManagementController extends Controller
             'waste' => (int) ($productMetrics['waste'][$product->id] ?? 0),
         ])->values();
 
-        // 추천은 기존 의미를 보존하기 위해 최대 최근 28일의 확인된 생산 기록만 사용합니다.
+        // 추천 계산용 최근 생산·판매·날씨 기록
         $historyByProduct = collect();
-        $recommendationDays = min($days, 28);
-        for ($i = $recommendationDays - 1; $i >= 0; $i--) {
-            $date = $target->copy()->subDays($i)->toDateString();
-            $daily = $this->dailyService->build($storeId, $date);
-            $specialDay = ! empty($this->eventsForDate($storeId, $date));
+        
+        // 화면 조회 기간과 관계없이 추천은 최근 28일을 분석합니다.
+        $recommendationDays = 28;
+
+        $historyFrom = $target->copy()
+            ->subDays($recommendationDays)
+            ->toDateString();
+
+        $historyTo = $target->copy()
+            ->subDay()
+            ->toDateString();
+
+        // 판매량·날씨 정보를 기간 단위로 조회
+        $recommendationContext = $this->recommendationData(
+            $storeId,
+            $historyFrom,
+            $historyTo
+        );
+
+        for ($i = $recommendationDays; $i >= 1; $i--) {
+            $date = $target->copy()
+                ->subDays($i)
+                ->toDateString();
+
+            $daily = $this->dailyService->build(
+                $storeId,
+                $date
+            );
+
+            // 해당 날짜의 행사 정보
+            $events = $this->eventsForDate(
+                $storeId,
+                $date
+            );
+
             foreach ($daily['rows'] as $row) {
-                if (! $row['production_confirmed']) {
+                if (!($row['production_confirmed'] ?? false)) {
                     continue;
                 }
-                $historyByProduct->push(['product_id' => $row['id'], 'date' => $date, ...$row, 'special_day' => $specialDay]);
+
+                // 생산 기록에 판매·날씨·행사 정보를 결합
+                $historyByProduct->push(
+                    $this->recommendationHistoryRow(
+                        $row,
+                        $date,
+                        $events,
+                        $recommendationContext
+                    )
+                );
             }
         }
-        $historyByProduct = $historyByProduct->groupBy('product_id');
+
+        $historyByProduct = $historyByProduct
+            ->groupBy('product_id');
         $targetEvents = collect($this->eventsForDate($storeId, $data['date']));
+        
+        // 추천 대상 날짜의 날씨를 분석 탭에도 반영합니다.
+        $targetWeatherCode = StoreDailyWeather::query()
+            ->where('store_id', $storeId)
+            ->whereDate('work_date', $data['date'])
+            ->value('condition');
+
+        if (!empty($targetWeatherCode)) {
+            $targetEvents->push([
+                'weather_code' => (string) $targetWeatherCode,
+            ]);
+        }
+
         $items = $products->map(function (Product $product) use ($historyByProduct, $targetEvents, $target) {
             $history = collect($historyByProduct->get($product->id, []))->values();
             $productEvents = $targetEvents
@@ -2741,10 +2986,24 @@ class ProductionManagementController extends Controller
                 ->values()->all();
             $recommendation = $this->recommendationService->recommend($history, $target, $productEvents);
             $recent = $history->take(-5);
+            $recentCount = $recent->count();
+
             $flags = [];
-            if ($recent->where('waste', '>', 0)->count() >= 3) $flags[] = '최근 폐기가 반복되고 있습니다.';
-            if ($recent->where('carryover_out', '>', 0)->count() >= 3) $flags[] = '최근 이월이 반복되고 있습니다.';
-            if ($recommendation['warning']) $flags[] = $recommendation['warning'];
+
+            if ($recent->where('waste', '>', 0)->count() >= 3) {
+                $flags[] =
+                    "최근 생산 기록 {$recentCount}건 중 3건 이상에서 폐기가 발생했습니다. 생산량을 확인해 주세요.";
+            }
+
+            if ($recent->where('carryover_out', '>', 0)->count() >= 3) {
+                $flags[] =
+                    "최근 생산 기록 {$recentCount}건 중 3건 이상에서 재고를 다음 날로 이월했습니다.";
+            }
+
+            if ($recommendation['warning']) {
+                $flags[] = $recommendation['warning'];
+            }
+
             return [
                 'product_id' => $product->id,
                 'product_name' => $product->name,

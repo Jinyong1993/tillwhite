@@ -74,7 +74,24 @@
           <div class="analysis-item-head"><div><strong>{{ item.product_name }}</strong><span>{{ item.flags.length ? `확인할 내용 ${item.flags.length}건` : '특이사항 없음' }}</span></div><span class="confidence-chip">{{ confidenceText(item.recommendation.confidence) }}</span></div>
           <div class="product-metrics"><span>생산 <b>{{ totalsFor(item).production }}</b></span><span>이월 <b>{{ totalsFor(item).carryover }}</b></span><span>로스 <b>{{ totalsFor(item).loss }}</b></span><span>폐기 <b>{{ totalsFor(item).waste }}</b></span></div>
           <div v-if="item.flags.length" class="flag-list"><div v-for="flag in item.flags" :key="flag">{{ flag }}</div></div>
-          <div class="recommendation-row"><span>추천 생산량</span><strong>{{ recommendationText(item.recommendation) }}</strong></div>
+          
+          <div class="recommendation-row">
+            <span>추천 생산량</span>
+            <strong>{{ recommendationText(item.recommendation) }}</strong>
+          </div>
+
+          <div
+            v-if="item.recommendation?.reasons?.length"
+            class="recommendation-reasons"
+          >
+            <strong>추천 이유</strong>
+            <p
+              v-for="(reason, index) in item.recommendation.reasons"
+              :key="index"
+            >
+              {{ reason }}
+            </p>
+          </div>
         </article>
       </div>
       <div v-else class="empty-analysis"><v-icon icon="mdi-magnify" size="24"/><div><strong>{{ search ? '검색 결과가 없습니다.' : '분석할 제품이 없습니다.' }}</strong><span>{{ search ? '다른 제품명으로 검색해 주세요.' : '기록이 쌓이면 제품별 현황을 확인할 수 있습니다.' }}</span></div></div>
@@ -598,5 +615,24 @@ function mixColor(index) {
     .product-metrics {
         padding-inline:6px
     }
+}
+
+.recommendation-reasons {
+  padding: 10px;
+  border-top: 1px solid rgba(var(--v-border-color), 0.4);
+}
+
+.recommendation-reasons > strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.recommendation-reasons p {
+  margin: 4px 0;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.7);
 }
 </style>

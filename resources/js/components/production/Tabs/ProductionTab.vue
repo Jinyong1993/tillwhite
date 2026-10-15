@@ -138,6 +138,94 @@
               </v-btn>
             </div>
 
+            <!-- 추천 생산량 참고 -->
+            <div
+              v-if="!editingBatch"
+              class="inventory-dialog__previous-production"
+            >
+              <div>
+                <span>추천 생산량</span>
+
+                <strong v-if="recommendationLoading">
+                  조회 중...
+                </strong>
+
+                <strong v-else-if="recommendedQuantity !== null">
+                  {{ recommendationMin }}~{{ recommendationMax }}개
+                </strong>
+
+                <strong v-else>데이터 부족</strong>
+              </div>
+
+              <v-btn
+                size="small"
+                variant="outlined"
+                :disabled="
+                  !canMutate ||
+                  saving ||
+                  recommendationLoading ||
+                  recommendedQuantity === null
+                "
+                @click="applyRecommendedProduction"
+              >
+                불러오기
+              </v-btn>
+            </div>
+
+            <!-- 추천 생산량 계산 이유 -->
+            <div
+              v-if="!editingBatch && recommendedQuantity !== null"
+              class="inventory-dialog__recommendation-reasons"
+            >
+              <button
+                type="button"
+                class="inventory-dialog__recommendation-reasons-toggle"
+                :aria-expanded="recommendationReasonsOpen"
+                @click="recommendationReasonsOpen = !recommendationReasonsOpen"
+              >
+                <span class="inventory-dialog__recommendation-reasons-title">
+                  <v-icon
+                    icon="mdi-information-outline"
+                    size="11"
+                  />
+
+                  이 수량을 추천하는 이유
+                </span>
+
+                <v-icon
+                  :icon="
+                    recommendationReasonsOpen
+                      ? 'mdi-chevron-up'
+                      : 'mdi-chevron-down'
+                  "
+                  size="11"
+                />
+              </button>
+
+              <div
+                v-if="recommendationReasonsOpen"
+                class="inventory-dialog__recommendation-reasons-content"
+              >
+                <template v-if="shortRecommendationReasons.length">
+                  <p
+                    v-for="(reason, index) in shortRecommendationReasons"
+                    :key="index"
+                  >
+                    <v-icon
+                      icon="mdi-check"
+                      size="14"
+                    />
+
+                    <span>{{ reason }}</span>
+                  </p>
+                </template>
+
+                <p v-else>
+                  추천 이유를 확인할 수 없습니다.
+                </p>
+              </div>
+            </div>
+
             <v-number-input
               v-model="productionForm.quantity"
               :error="productionErrors.quantity"
@@ -256,21 +344,11 @@
               label="추천 생산량 참고"
               density="compact"
               hide-details
-              @update:model-value="
-                (value) => {
-                  if (!value) {
-                    productionForm.recommendationDeviationReason = '';
-                  }
-                }
-              "
             />
 
             <v-text-field
               v-model="productionForm.recommendationDeviationReason"
-              :disabled="
-                Boolean(editingBatch) ||
-                !productionForm.recommendationReferenced
-              "
+              :disabled="Boolean(editingBatch)"
               label="추천 범위와 다르게 생산한 이유 · 선택"
               variant="outlined"
               density="compact"
@@ -699,9 +777,49 @@ const productionHistoryStatus = ref("idle");
 const previousProduction = ref(null);
 const previousProductionLoading = ref(false);
 
+// 추천 생산량
+const recommendationMin = ref(null);
+const recommendationMax = ref(null);
+const recommendationLoading = ref(false);
+
+// 추천 생산량 계산 이유
+const recommendationReasons = ref([]);
+
+// 추천 이유 펼치기 여부
+const recommendationReasonsOpen = ref(false);
+
+// 작업자에게 핵심 이유 2개만 표시
+const shortRecommendationReasons = computed(() =>
+  recommendationReasons.value.slice(0, 2)
+);
+
 // 비동기 요청 구분
 let previousProductionRequestId = 0;
 let productionHistoryRequestId = 0;
+let recommendationRequestId = 0;
+
+// 추천 범위의 중간값을 실제 입력 수량으로 사용
+const recommendedQuantity = computed(() => {
+  const min = Number(recommendationMin.value);
+  const max = Number(recommendationMax.value);
+
+  if (
+    recommendationMin.value === null ||
+    recommendationMax.value === null ||
+    !Number.isFinite(min) ||
+    !Number.isFinite(max) ||
+    min < 0 ||
+    max < min
+  ) {
+    return null;
+  }
+
+  const quantity = Math.round((min + max) / 2);
+
+  return quantity >= DEFAULT_PRODUCTION_QUANTITY
+    ? quantity
+    : null;
+});
 
 // 생산 수량 경고
 const productionWarningTitle = "생산 수량 확인 필요";
@@ -916,6 +1034,102 @@ async function loadPreviousProduction() {
   }
 }
 
+// 기존 분석 API에서 제품별 추천 생산량 조회
+async function loadRecommendedProduction() {
+  const requestId = ++recommendationRequestId;
+
+  recommendationMin.value = null;
+  recommendationMax.value = null;
+  recommendationReasons.value = [];
+  recommendationReasonsOpen.value = false;
+
+  if (
+    !props.modelValue ||
+    !props.storeId ||
+    !props.workDate ||
+    !props.product?.id
+  ) {
+    recommendationLoading.value = false;
+    return;
+  }
+
+  recommendationLoading.value = true;
+
+  try {
+    const response = await window.axios.get(
+      "/tillwhite/api/production-management/analysis",
+      {
+        params: {
+          store_id: props.storeId,
+          date: props.workDate,
+          days: 30,
+        },
+      }
+    );
+
+    if (requestId !== recommendationRequestId) return;
+
+    const item = (response.data?.items ?? []).find(
+      (row) =>
+        Number(row.product_id) === Number(props.product.id)
+    );
+
+    const min = item?.recommendation?.min;
+    const max = item?.recommendation?.max;
+
+    if (
+      min == null ||
+      max == null ||
+      !Number.isFinite(Number(min)) ||
+      !Number.isFinite(Number(max)) ||
+      Number(min) < 0 ||
+      Number(max) < Number(min)
+    ) {
+      return;
+    }
+
+    recommendationMin.value = Number(min);
+    recommendationMax.value = Number(max);
+
+    recommendationReasons.value = Array.isArray(
+      item?.recommendation?.reasons
+    ) ? item.recommendation.reasons : [];
+  } catch (error) {
+    if (requestId !== recommendationRequestId) return;
+
+    emit(
+      "error",
+      error.response?.data?.message ||
+        "추천 생산량을 조회하지 못했습니다."
+    );
+  } finally {
+    if (requestId === recommendationRequestId) {
+      recommendationLoading.value = false;
+    }
+  }
+}
+
+// 추천 생산량을 생산 입력창에 적용
+function applyRecommendedProduction() {
+  const quantity = recommendedQuantity.value;
+
+  if (
+    editingBatch.value ||
+    !props.canMutate ||
+    saving.value ||
+    recommendationLoading.value ||
+    quantity === null
+  ) {
+    return;
+  }
+
+  productionForm.quantity = quantity;
+  productionErrors.quantity = false;
+
+  // 실제 추천 수량을 참고했음을 기존 저장 항목에 반영
+  productionForm.recommendationReferenced = true;
+}
+
 // 전날 생산량 입력창에 적용
 function applyPreviousProduction() {
   if (
@@ -993,6 +1207,29 @@ async function loadProductionHistory() {
     productionHistoryStatus.value = "error";
   }
 }
+
+// 다이얼로그 열림 / 제품·날짜 변경 시 추천 생산량 갱신
+watch(
+  () => [
+    props.modelValue,
+    props.product?.id,
+    props.storeId,
+    props.workDate,
+  ],
+  () => {
+    if (props.modelValue) {
+      loadRecommendedProduction();
+    } else {
+      recommendationRequestId++;
+      recommendationLoading.value = false;
+      recommendationMin.value = null;
+      recommendationMax.value = null;
+      recommendationReasons.value = [];
+      recommendationReasonsOpen.value = false;
+    }
+  },
+  { immediate: true }
+);
 
 // 다이얼로그 열림 / 제품 변경 시 전날 생산량 갱신
 watch(
@@ -2040,5 +2277,63 @@ defineExpose({
   font-size: 12px;
   opacity: 0.7;
   text-align: center;
+}
+
+
+/* 추천 이유 전체 영역 */
+.inventory-dialog__recommendation-reasons {
+  width: 100%;
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+}
+
+/* 추천 이유 펼치기 버튼 */
+.inventory-dialog__recommendation-reasons-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: rgb(var(--v-theme-on-surface));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* 추천 이유 제목 */
+.inventory-dialog__recommendation-reasons-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* 펼쳐진 추천 이유 */
+.inventory-dialog__recommendation-reasons-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+/* 추천 이유 한 줄 */
+.inventory-dialog__recommendation-reasons-content p {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgba(var(--v-theme-on-surface), 0.75);
+}
+
+/* 체크 아이콘 */
+.inventory-dialog__recommendation-reasons-content .v-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 </style>
