@@ -143,6 +143,9 @@
           <!-- 폐기율 탭 -->
           <WasteRateTab
             v-if="selectedSection === 'waste_rate'"
+            :product="product"
+            :work-date="workDate"
+            :reason-options="wasteReasons"
           />
 
           <!-- 실제 관리 탭이 없는 항목에만 기존 안내 화면을 표시합니다. -->

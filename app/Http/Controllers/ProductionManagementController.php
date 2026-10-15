@@ -2354,6 +2354,174 @@ class ProductionManagementController extends Controller
         return response()->json(['message' => $data['status'] === 'closed' ? '휴점일로 설정했습니다.' : '휴점을 해제했습니다.']);
     }
 
+    /**
+     * 선택 제품의 최근 7일 및 이전 7일 폐기율 통계를 조회합니다.
+     * 폐기량은 실제 폐기일이 아닌 최초 생산일 기준으로 집계합니다.
+     */
+    public function productWasteStatistics(
+        Request $request,
+        int $productId
+    ): JsonResponse {
+        $user = $this->user($request);
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.view'
+        );
+
+        $data = $request->validate([
+            'work_date' => ['required', 'date_format:Y-m-d'],
+        ]);
+
+        $product = Product::withTrashed()->findOrFail($productId);
+        $storeId = (int) $product->store_id;
+
+        $this->assertStoreReadable($user, $storeId);
+
+        // 선택 날짜를 기준으로 최근 7일과 이전 7일을 구성합니다.
+        $end = Carbon::createFromFormat('!Y-m-d', $data['work_date']);
+        $start = $end->copy()->subDays(13);
+
+        $from = $start->toDateString();
+        $to = $end->toDateString();
+
+        // 제품별 생산량 조회
+        $production = ProductionBatch::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('work_date', '>=', $from)
+            ->whereDate('work_date', '<=', $to)
+            ->get(['work_date', 'quantity'])
+            ->groupBy(fn ($row) => Carbon::parse($row->work_date)->toDateString())
+            ->map(fn ($rows) => (int) $rows->sum('quantity'));
+
+        // 최초 생산일에 귀속되는 폐기량 조회
+        $wastes = ProductionWaste::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereDate('attribution_date', '>=', $from)
+            ->whereDate('attribution_date', '<=', $to)
+            ->get(['id', 'attribution_date', 'quantity']);
+
+        $attributedWaste = $wastes
+            ->groupBy(fn ($row) => Carbon::parse($row->attribution_date)->toDateString())
+            ->map(fn ($rows) => (int) $rows->sum('quantity'));
+
+        // 생산 0개 확인과 미확인 날짜를 구분합니다.
+        $confirmedDates = ProductionConfirmation::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->where('production_confirmed', true)
+            ->whereDate('work_date', '>=', $from)
+            ->whereDate('work_date', '<=', $to)
+            ->get(['work_date'])
+            ->mapWithKeys(fn ($row) => [
+                Carbon::parse($row->work_date)->toDateString() => true,
+            ]);
+
+        $days = collect();
+
+        for ($day = $start->copy(); $day->lte($end); $day->addDay()) {
+            $date = $day->toDateString();
+
+            $hasProduction = $production->has($date);
+            $isConfirmed = $hasProduction || $confirmedDates->has($date);
+
+            $quantity = $hasProduction
+                ? (int) $production->get($date)
+                : ($isConfirmed ? 0 : null);
+
+            $wasteQuantity = (int) $attributedWaste->get($date, 0);
+
+            $days->push([
+                'date' => $date,
+                'production' => $quantity,
+                'attributed_waste' => $wasteQuantity,
+                'waste_rate' => $quantity !== null
+                    ? $this->wasteRate($wasteQuantity, $quantity)
+                    : null,
+                'confirmed' => $isConfirmed,
+            ]);
+        }
+
+        // 기간별 수량을 합산해 폐기율을 계산합니다.
+        $buildPeriod = function ($items) {
+            $productionTotal = (int) $items->sum('production');
+            $wasteTotal = (int) $items->sum('attributed_waste');
+
+            return [
+                'production' => $productionTotal,
+                'attributed_waste' => $wasteTotal,
+                'waste_rate' => $this->wasteRate(
+                    $wasteTotal,
+                    $productionTotal
+                ),
+                'complete' => $items->every(
+                    fn ($day) => $day['confirmed']
+                ),
+            ];
+        };
+
+        $previous = $buildPeriod($days->take(7));
+        $recentDays = $days->slice(7)->values();
+        $recent = $buildPeriod($recentDays);
+
+        // 최근 7일에 귀속된 폐기 기록의 사유별 수량
+        $reasonRows = DB::table('production_waste_reasons')
+            ->join(
+                'production_wastes',
+                'production_wastes.id',
+                '=',
+                'production_waste_reasons.production_waste_id'
+            )
+            ->where('production_wastes.store_id', $storeId)
+            ->where('production_wastes.product_id', $productId)
+            // 소프트 삭제된 폐기 기록은 사유별 통계에서 제외합니다.
+            ->whereNull('production_wastes.deleted_at')
+            ->whereDate(
+                'production_wastes.attribution_date',
+                '>=',
+                $end->copy()->subDays(6)->toDateString()
+            )
+            ->whereDate(
+                'production_wastes.attribution_date',
+                '<=',
+                $to
+            )
+            ->select(
+                'production_waste_reasons.reason_code',
+                'production_waste_reasons.reason_text'
+            )
+            ->selectRaw(
+                'SUM(production_waste_reasons.quantity) as quantity'
+            )
+            ->groupBy(
+                'production_waste_reasons.reason_code',
+                'production_waste_reasons.reason_text'
+            )
+            ->get();
+
+        $difference = (
+            $recent['waste_rate'] !== null &&
+            $previous['waste_rate'] !== null
+        )
+            ? round(
+                $recent['waste_rate'] - $previous['waste_rate'],
+                1
+            )
+            : null;
+
+        return response()->json([
+            'product_id' => $productId,
+            'work_date' => $to,
+            'recent' => $recent,
+            'previous' => $previous,
+            'difference_percentage_points' => $difference,
+            'daily' => $recentDays,
+            'reasons' => $reasonRows,
+        ]);
+    }
+
     // 기간별 생산·이월·로스·폐기 통계를 날짜별 집계 쿼리로 빠르게 반환합니다.
     public function statistics(Request $request): JsonResponse
     {
