@@ -1,3 +1,4 @@
+
 /*
  * 여러 관리 화면에서 반복되는 보조 텍스트 계층을 관리합니다.
  * 기능별 고유 레이아웃은 각 컴포넌트에서 관리합니다.
@@ -476,19 +477,49 @@ button.app-date-main {
     max-width: 100%;
 }
 
-/* 공통 폼 입력 간격 */
-.app-form-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    min-width: 0;
-}
-
-.app-form-stack > .v-input,
-.app-form-stack > .app-input,
-.app-form-stack > .app-select {
+/*
+ * 등록·수정 다이얼로그에서 반복되는 섹션 카드입니다.
+ */
+.app-form-section {
     min-width: 0;
     max-width: 100%;
+    border: 1px solid rgba(var(--v-border-color), 0.12);
+    box-shadow: none;
+}
+
+/*
+ * 공통 폼 섹션 제목입니다.
+ */
+.app-form-section-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+/*
+ * 공통 폼 안내 영역입니다.
+ * 본사 소속 안내, 권한 안내 등에서 재사용합니다.
+ * 아이콘 유무와 무관하게 동일한 레이아웃을 사용합니다.
+ */
+.app-form-notice {
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid rgba(var(--v-border-color), 0.12);
+    border-radius: 8px;
+    color: rgba(var(--v-theme-on-surface), 0.7);
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.app-form-notice-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: rgb(var(--v-theme-on-surface));
 }
 
 @media (max-width: 600px) {

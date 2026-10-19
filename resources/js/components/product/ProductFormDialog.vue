@@ -19,7 +19,7 @@
       <!-- 필수 입력 안내 -->
       <v-alert
         type="info"
-        :icon="false"
+        icon="mdi-information-outline"
         variant="tonal"
         density="compact"
         class="app-supporting-alert"
@@ -31,13 +31,13 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="product-form-section app-form-stack pa-3"
+        class="app-form-section app-form-stack pa-3"
       >
-        <div class="product-form-section-title font-weight-medium">
+        <div class="app-form-section-title">
           기본 정보
         </div>
 
-        <!-- 일반 점포 직원은 소속 점포를 읽기 전용으로 표시합니다. -->
+        <!-- 일반 점포 직원은 자신의 점포를 읽기 전용으로 표시합니다. -->
         <v-text-field
           v-if="storeLocked"
           :model-value="lockedStoreName"
@@ -50,7 +50,7 @@
           :disabled="loading"
         />
 
-        <!-- 최고 관리자는 접근 가능한 점포 중 선택합니다. -->
+        <!-- 최고 관리자는 접근 가능한 점포를 선택합니다. -->
         <v-select
           v-else
           v-model="form.store_id"
@@ -66,6 +66,7 @@
           :disabled="loading"
         />
 
+        <!-- 카테고리 -->
         <v-select
           v-model="form.product_category_id"
           :items="availableCategories"
@@ -79,6 +80,7 @@
           :disabled="!form.store_id || loading"
         />
 
+        <!-- 제품명 -->
         <v-text-field
           v-model.trim="form.name"
           label="제품명 *"
@@ -92,6 +94,7 @@
           :disabled="loading"
         />
 
+        <!-- 판매가 -->
         <v-number-input
           v-model="form.price"
           label="판매가 *"
@@ -110,12 +113,13 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="product-form-section app-form-stack pa-3"
+        class="app-form-section app-form-stack pa-3"
       >
-        <div class="product-form-section-title font-weight-medium">
+        <div class="app-form-section-title">
           담당 부서
         </div>
 
+        <!-- 생산 부서 -->
         <v-select
           v-model="form.production_department"
           :items="departments"
@@ -127,7 +131,7 @@
           :disabled="loading"
         />
 
-        <!-- 제품의 관리 부서는 사용자 소속 부서와 별개입니다. -->
+        <!-- 관리 부서: 로그인 사용자의 소속 부서와 별개입니다. -->
         <v-select
           v-model="form.management_department"
           :items="departments"
@@ -144,12 +148,13 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="product-form-section app-form-stack pa-3"
+        class="app-form-section app-form-stack pa-3"
       >
-        <div class="product-form-section-title font-weight-medium">
+        <div class="app-form-section-title">
           판매 정보
         </div>
 
+        <!-- 판매 유형 -->
         <v-select
           v-model="form.sales_type"
           :items="salesTypes"
@@ -161,7 +166,7 @@
           :disabled="loading"
         />
 
-        <!-- 기간 한정 제품에서만 날짜 입력창을 표시합니다. -->
+        <!-- 기간 한정 제품의 판매 기간 -->
         <div
           v-if="form.sales_type === 'limited'"
           class="product-form-date-fields app-form-stack"
@@ -231,7 +236,7 @@
           </v-btn>
         </template>
 
-        <!-- 기존 폼 검증 조건에 따라 저장 가능 여부를 제어합니다. -->
+        <!-- 기존 필수값과 변경 여부 조건을 그대로 사용합니다. -->
         <template #confirm>
           <v-btn
             block
@@ -262,7 +267,7 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="product-form-section pa-3"
+        class="app-form-section pa-3"
       >
         <div class="app-supporting-text">
           저장하지 않은 내용은 사라집니다.
@@ -375,14 +380,14 @@ const isSuperAdmin = computed(() => {
 const storeLocked = computed(() => !isSuperAdmin.value);
 
 /*
- * 일반 점포 사용자는 자신의 점포를 읽기 전용으로 확인합니다.
+ * 일반 점포 직원은 소속 점포명을 읽기 전용으로 확인합니다.
  */
 const lockedStoreName = computed(() => {
   return props.user?.store?.name ?? '-';
 });
 
 /*
- * 선택한 점포의 사용 중인 카테고리만 표시합니다.
+ * 현재 선택한 점포의 활성 카테고리만 표시합니다.
  * 기존 자연 정렬을 유지합니다.
  */
 const availableCategories = computed(() => {
@@ -403,16 +408,18 @@ const hasChanges = computed(() => {
 });
 
 /*
- * 서버에 저장된 임시저장 또는 현재 작성 중인 내용이
- * 있는지 확인합니다.
+ * 서버에 저장된 임시저장 데이터 또는
+ * 현재 작성 중인 변경사항이 있는지 확인합니다.
  */
 const hasDraftAndInput = computed(() => {
   return hasChanges.value || Boolean(props.draft);
 });
 
 /*
- * 기존 필수값과 판매 기간 검증 조건을 유지합니다.
- * 판매가 0원도 정상적인 값으로 인정합니다.
+ * 필수값과 기간 한정 날짜 조건을 만족해야 등록할 수 있습니다.
+ * 판매가는 0원도 유효한 값입니다.
+ *
+ * 수정 시에는 실제 변경사항이 있어야 저장할 수 있습니다.
  */
 const canSubmit = computed(() => {
   const hasRequiredFields = Boolean(
@@ -448,8 +455,8 @@ const canSubmit = computed(() => {
 });
 
 /*
- * 다이얼로그가 열릴 때 기존 제품 데이터 또는
- * Laravel Session 임시저장 데이터를 입력 폼에 반영합니다.
+ * 다이얼로그를 열 때 기존 제품 또는
+ * Laravel Session 임시저장 내용을 적용합니다.
  */
 watch(
   () => [
@@ -484,7 +491,7 @@ watch(
 );
 
 /*
- * 점포가 변경되면 이전 점포에서 선택한 카테고리를 정리합니다.
+ * 점포를 변경하면 이전 점포의 카테고리를 제거합니다.
  */
 watch(
   () => form.store_id,
@@ -494,7 +501,7 @@ watch(
 );
 
 /*
- * 상시 제품으로 변경하면 기간 한정 날짜를 초기화합니다.
+ * 상시 제품으로 변경하면 판매 기간 입력값을 초기화합니다.
  */
 watch(
   () => form.sales_type,
@@ -529,7 +536,8 @@ const priceRule = (value) => {
 };
 
 /*
- * 제품 등록 임시저장은 기존 부모 API 호출을 사용합니다.
+ * 임시저장은 기존 Laravel Session API를 사용하는
+ * 부모 컴포넌트에 이벤트를 전달합니다.
  */
 function saveDraft() {
   if (isEdit.value || props.loading || !hasChanges.value) {
@@ -540,7 +548,7 @@ function saveDraft() {
 }
 
 /*
- * 전체삭제 확인 및 실제 임시저장 삭제는
+ * 전체삭제 확인과 실제 Session 임시저장 삭제는
  * 기존 부모 컴포넌트에서 처리합니다.
  */
 function clearDraft() {
@@ -590,7 +598,7 @@ function createFormFromProduct(product) {
 }
 
 /*
- * 현재 점포에서 사용할 수 없는 카테고리 선택값을 정리합니다.
+ * 선택한 점포에서 사용할 수 없는 카테고리 ID를 초기화합니다.
  */
 function clearUnavailableCategory() {
   const available = availableCategories.value.some((category) => {
@@ -603,7 +611,7 @@ function clearUnavailableCategory() {
 }
 
 /*
- * 입력 내용의 실제 변경 여부를 비교합니다.
+ * 입력 상태를 문자열로 만들어 변경 여부를 비교합니다.
  */
 function snapshot() {
   return JSON.stringify({
@@ -612,7 +620,7 @@ function snapshot() {
 }
 
 /*
- * 변경사항이 있으면 이탈 확인창을 표시합니다.
+ * 변경사항이 있을 때는 폐기 확인창을 표시합니다.
  */
 function requestClose() {
   if (props.loading) {
@@ -645,7 +653,7 @@ function handleDiscardDialogChange(value) {
 }
 
 /*
- * 기존 폼 검증에 통과한 경우에만 부모 저장 이벤트를 전달합니다.
+ * 기존 저장 검증을 통과하면 부모 저장 이벤트를 전달합니다.
  */
 function submit() {
   if (!canSubmit.value || props.loading) {
@@ -656,7 +664,7 @@ function submit() {
 }
 
 /*
- * 최종 등록·수정 및 임시저장에 사용하는 기존 Payload입니다.
+ * 등록·수정·임시저장 요청의 기존 Payload 구조입니다.
  */
 function createPayload() {
   return {
@@ -678,8 +686,8 @@ function createPayload() {
 
 <style scoped>
 /*
- * 제품 등록·수정 화면에 필요한 고유 레이아웃만 관리합니다.
- * 헤더, 바깥 카드, 푸터는 공통 컴포넌트를 사용합니다.
+ * 제품 등록·수정 화면 고유 레이아웃입니다.
+ * 다이얼로그와 카드 디자인은 글로벌 CSS를 사용합니다.
  */
 .product-form-content {
   min-width: 0;
@@ -687,37 +695,21 @@ function createPayload() {
 }
 
 /*
- * 기본 정보·담당 부서·판매 정보 섹션 디자인입니다.
- * 입력 간격은 공통 app-form-stack에서 관리합니다.
+ * 기간 한정 판매 입력 그룹의 가로 넘침을 방지합니다.
  */
-.product-form-section {
-  min-width: 0;
-  max-width: 100%;
-  border: 1px solid rgba(var(--v-border-color), 0.12);
-  box-shadow: none;
-}
-
-.product-form-section-title {
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
 .product-form-date-fields {
   min-width: 0;
 }
 
 /*
- * 판매가 0원 허용 및 100원 단위 증감은 기존 설정을 유지합니다.
+ * 판매가 입력은 v-number-input을 사용하므로
+ * 모바일 글꼴 크기를 별도로 보장합니다.
  */
 .product-form-number {
   min-width: 0;
   max-width: 100%;
 }
 
-/*
- * 모바일에서 숫자 입력창 포커스 시
- * iOS 자동 확대를 방지하기 위한 글꼴 크기입니다.
- */
 @media (max-width: 600px) {
   .product-form-number :deep(input) {
     font-size: 16px;
@@ -725,7 +717,7 @@ function createPayload() {
 }
 
 /*
- * 이탈 확인 다이얼로그의 설명 영역입니다.
+ * 작성 내용 폐기 확인창의 설명 영역입니다.
  */
 .product-form-discard-content {
   min-width: 0;
@@ -733,16 +725,11 @@ function createPayload() {
 }
 
 /*
- * 320px에서도 카드와 입력창이
- * 부모 영역을 넘지 않도록 합니다.
+ * 좁은 모바일 화면에서 카드 간격을 조정합니다.
  */
 @media (max-width: 360px) {
   .product-form-content {
     gap: 8px !important;
-  }
-
-  .product-form-section {
-    border-radius: 8px;
   }
 }
 </style>

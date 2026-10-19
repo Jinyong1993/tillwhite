@@ -16,9 +16,9 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section app-form-stack pa-3"
+        class="app-form-section app-form-stack pa-3"
       >
-        <div class="category-section-title font-weight-medium">
+        <div class="app-form-section-title">
           카테고리 등록
         </div>
 
@@ -78,9 +78,9 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section app-form-stack pa-3"
+        class="app-form-section app-form-stack pa-3"
       >
-        <div class="category-section-title font-weight-medium">
+        <div class="app-form-section-title">
           검색 및 필터
         </div>
 
@@ -116,12 +116,12 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section category-list-panel d-flex flex-column"
+        class="app-form-section category-list-panel d-flex flex-column"
       >
         <div
           class="category-list-heading d-flex align-center justify-space-between ga-2 pa-3"
         >
-          <div class="category-section-title font-weight-medium">
+          <div class="app-form-section-title">
             카테고리 목록
           </div>
 
@@ -245,7 +245,7 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section app-form-stack pa-3"
+        class="app-form-section app-form-stack pa-3"
       >
         <v-text-field
           v-model="renameName"
@@ -301,7 +301,7 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section pa-3"
+        class="app-form-section pa-3"
       >
         <div class="app-supporting-text">
           저장하지 않은 카테고리 입력 내용은 사라집니다.
@@ -723,7 +723,7 @@ function submitRename() {
 
 <style scoped>
 /*
- * 공통 다이얼로그와 공통 폼 간격을 사용하며,
+ * 공통 다이얼로그·공통 폼 간격·공통 카드 디자인을 사용합니다.
  * 이 파일에는 카테고리 관리 전용 스타일만 정의합니다.
  */
 .category-workspace {
@@ -734,20 +734,8 @@ function submitRename() {
 }
 
 /*
- * 카테고리 등록·검색·목록 전용 카드입니다.
- * 입력 간격은 공통 app-form-stack에서 관리합니다.
+ * 카테고리 등록·검색 영역의 내부 행입니다.
  */
-.category-section {
-  min-width: 0;
-  border: 1px solid rgba(var(--v-border-color), 0.12);
-  box-shadow: none;
-}
-
-.category-section-title {
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
 .category-create-row {
   min-width: 0;
 }
@@ -879,7 +867,7 @@ function submitRename() {
     gap: 8px !important;
   }
 
-  .category-section {
+  .app-form-section {
     border-radius: 8px;
   }
 
