@@ -231,6 +231,23 @@
     overflow-wrap: anywhere;
 }
 
+/*
+ * 공통 다이얼로그 푸터의 비활성화 버튼은
+ * 밝게 떠 보이지 않도록 테마 기반의 은은한 회색으로 표시합니다.
+ *
+ * Vuetify가 비활성화 버튼에 적용하는 밝은 오버레이도 제거합니다.
+ * 실제 disabled 상태나 클릭 차단 동작은 변경하지 않습니다.
+ */
+.app-dialog-layout .app-dialog-footer .v-btn.v-btn--disabled {
+    background: rgba(var(--v-theme-on-surface), 0.06) !important;
+    color: rgba(var(--v-theme-on-surface), 0.38) !important;
+    opacity: 1;
+}
+
+.app-dialog-layout .app-dialog-footer .v-btn.v-btn--disabled .v-btn__overlay {
+    opacity: 0 !important;
+}
+
 .app-dialog-layout .app-dialog-footer-actions > .v-btn {
     flex: 1 1 0;
     min-width: 0;
@@ -437,6 +454,41 @@ button.app-date-main {
 
 .app-date-today {
     min-width: 48px;
+}
+
+/*
+ * 공통 폼 입력 영역
+ * 입력 필드 간격: 8px
+ * 입력 검증 메시지는 각 Vuetify 컴포넌트에서 관리합니다.
+ */
+.app-form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.app-form-stack > .v-input,
+.app-form-stack > .v-field,
+.app-form-stack > .app-input,
+.app-form-stack > .app-select {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* 공통 폼 입력 간격 */
+.app-form-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.app-form-stack > .v-input,
+.app-form-stack > .app-input,
+.app-form-stack > .app-select {
+    min-width: 0;
+    max-width: 100%;
 }
 
 @media (max-width: 600px) {

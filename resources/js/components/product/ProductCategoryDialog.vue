@@ -16,7 +16,7 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section d-flex flex-column ga-3 pa-3"
+        class="category-section app-form-stack pa-3"
       >
         <div class="category-section-title font-weight-medium">
           카테고리 등록
@@ -47,8 +47,7 @@
           hide-details
         />
 
-        
-        <div class="category-create-row d-flex flex-column ga-2">
+        <div class="category-create-row app-form-stack">
           <v-text-field
             v-model="newName"
             label="새 카테고리명 *"
@@ -79,13 +78,13 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section d-flex flex-column ga-3 pa-3"
+        class="category-section app-form-stack pa-3"
       >
         <div class="category-section-title font-weight-medium">
           검색 및 필터
         </div>
 
-        <div class="category-filter-row d-flex flex-column ga-2">
+        <div class="category-filter-row app-form-stack">
           <v-text-field
             v-model="searchQuery"
             label="검색"
@@ -246,7 +245,7 @@
       <v-card
         variant="flat"
         rounded="lg"
-        class="category-section d-flex flex-column pa-3"
+        class="category-section app-form-stack pa-3"
       >
         <v-text-field
           v-model="renameName"
@@ -255,6 +254,7 @@
           variant="outlined"
           density="compact"
           class="app-input"
+          hide-details="auto"
           :disabled="loading"
           autofocus
           @keyup.enter="submitRename"
@@ -407,8 +407,7 @@ watch([storeId, searchQuery, statusFilter], () => {
 });
 
 /*
- * 검색창의 지우기 버튼이 실행되면 빈 문자열로 초기화합니다.
- * clearable이 null을 전달하는 상황도 필터에서 처리합니다.
+ * 검색창의 지우기 버튼으로 검색어를 초기화합니다.
  */
 function clearSearch() {
   searchQuery.value = '';
@@ -426,7 +425,8 @@ const orderedStoreCategories = computed(() => {
 });
 
 /*
- * 검색어와 사용 상태를 함께 적용합니다.
+ * 검색어와 상태 필터를 함께 적용합니다.
+ * 검색값이 null인 경우도 처리합니다.
  */
 const filteredCategories = computed(() => {
   const query = String(searchQuery.value ?? '')
@@ -487,7 +487,7 @@ const paginatedCategories = computed(() => {
 });
 
 /*
- * 검색 결과가 줄면 현재 페이지를 보정합니다.
+ * 검색 결과가 줄면 현재 페이지 번호를 보정합니다.
  */
 watch(totalPages, (value) => {
   if (currentPage.value > value) {
@@ -496,7 +496,7 @@ watch(totalPages, (value) => {
 });
 
 /*
- * 기존 수동 정렬 로직을 보존합니다.
+ * 기존 수동 정렬 기능은 유지합니다.
  */
 const canReorderCategories = computed(() => {
   return !String(searchQuery.value ?? '').trim()
@@ -523,8 +523,8 @@ const canRenameCategory = computed(() => {
 });
 
 /*
- * 서버 결과가 카테고리 목록에 실제로 반영된 후에만
- * 등록 입력값을 지우거나 수정창을 닫습니다.
+ * 서버 결과가 categories 목록에 반영된 뒤에만
+ * 입력값을 초기화하거나 수정창을 닫습니다.
  */
 watch(
   () => props.categories,
@@ -561,9 +561,6 @@ watch(
   },
 );
 
-/*
- * 다이얼로그 닫기를 요청할 때 기존 입력 폐기 확인을 유지합니다.
- */
 function handleMainDialogChange(value) {
   if (value || props.loading) {
     return;
@@ -586,6 +583,9 @@ function handleDiscardDialogChange(value) {
   }
 }
 
+/*
+ * 새 카테고리명이 남아 있다면 입력 폐기 확인을 표시합니다.
+ */
 function requestCloseMainDialog() {
   if (props.loading) {
     return;
@@ -601,6 +601,9 @@ function requestCloseMainDialog() {
   emit('update:modelValue', false);
 }
 
+/*
+ * 수정 내용이 원래 이름과 다르면 입력 폐기 확인을 표시합니다.
+ */
 function requestCloseRenameDialog() {
   if (props.loading) {
     return;
@@ -619,6 +622,9 @@ function requestCloseRenameDialog() {
   closeRenameDialog();
 }
 
+/*
+ * 폐기 확인을 요청한 화면에 해당하는 입력 상태만 정리합니다.
+ */
 function discardChanges() {
   const target = discardTarget.value;
 
@@ -638,8 +644,7 @@ function discardChanges() {
 }
 
 /*
- * 현재 화면에서 표시하지 않는 정렬 버튼의
- * 내부 기능과 이벤트는 기존대로 유지합니다.
+ * UI에서 현재 노출하지 않는 수동 정렬 기능도 보존합니다.
  */
 function canMoveCategory(category, direction) {
   if (!canReorderCategories.value) {
@@ -667,6 +672,9 @@ function requestMoveCategory(category, direction) {
   emit('reorder', { category, direction });
 }
 
+/*
+ * 카테고리 등록 이벤트를 상위 화면으로 전달합니다.
+ */
 function add() {
   const name = newName.value.trim();
 
@@ -698,6 +706,9 @@ function closeRenameDialog() {
   renameName.value = '';
 }
 
+/*
+ * 카테고리명 수정 이벤트를 상위 화면으로 전달합니다.
+ */
 function submitRename() {
   if (!canRenameCategory.value) {
     return;
@@ -711,6 +722,10 @@ function submitRename() {
 </script>
 
 <style scoped>
+/*
+ * 공통 다이얼로그와 공통 폼 간격을 사용하며,
+ * 이 파일에는 카테고리 관리 전용 스타일만 정의합니다.
+ */
 .category-workspace {
   flex: 1 1 auto;
   min-width: 0;
@@ -718,6 +733,10 @@ function submitRename() {
   width: 100%;
 }
 
+/*
+ * 카테고리 등록·검색·목록 전용 카드입니다.
+ * 입력 간격은 공통 app-form-stack에서 관리합니다.
+ */
 .category-section {
   min-width: 0;
   border: 1px solid rgba(var(--v-border-color), 0.12);
@@ -733,23 +752,13 @@ function submitRename() {
   min-width: 0;
 }
 
-.category-create-input {
-  min-width: 0;
-}
-
-.category-add-button {
-  min-width: 56px;
-  min-height: 44px;
-}
-
 .category-filter-row {
   min-width: 0;
 }
 
-.category-filter-row > * {
-  min-width: 0;
-}
-
+/*
+ * 목록과 페이지네이션의 스크롤 영역을 분리합니다.
+ */
 .category-list-panel {
   flex: 1 1 auto;
   min-width: 0;
@@ -776,6 +785,9 @@ function submitRename() {
   min-width: 0;
 }
 
+/*
+ * 카테고리 목록 행과 상태 표시입니다.
+ */
 .category-row {
   min-width: 0;
   border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
@@ -815,6 +827,9 @@ function submitRename() {
   background: currentColor;
 }
 
+/*
+ * 수정·중단·재사용 버튼은 동일한 너비를 사용합니다.
+ */
 .category-row-actions {
   min-width: 0;
   width: 100%;
@@ -830,6 +845,9 @@ function submitRename() {
   min-height: 160px;
 }
 
+/*
+ * 페이지네이션은 목록 스크롤 영역 밖에 고정합니다.
+ */
 .category-pagination-area {
   flex: 0 0 auto;
   min-width: 0;
@@ -853,6 +871,9 @@ function submitRename() {
   width: 100%;
 }
 
+/*
+ * 320px 화면에서도 카드와 버튼이 가로로 넘치지 않도록 합니다.
+ */
 @media (max-width: 360px) {
   .category-workspace {
     gap: 8px !important;
