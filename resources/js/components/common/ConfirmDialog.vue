@@ -2,103 +2,71 @@
   <!--
     Till White 애플리케이션 공통 확인창
 
-    데이터 저장, 수정, 삭제, 작성 취소 등
-    사용자의 최종 확인이 필요한 작업에서 공통으로 사용합니다.
+    등록, 수정, 삭제, 작성 취소 등
+    사용자의 최종 확인이 필요한 작업에서 사용합니다.
 
-    특정 업무 화면에 종속되지 않으며
-    애플리케이션 전체에서 재사용할 수 있습니다.
-
-    처리 중(loading)에는:
-    - 확인 버튼만 로딩 표시
+    처리 중에는:
+    - 확인 버튼 로딩 표시
     - 취소 버튼 비활성화
-    - 우측 상단 닫기 버튼 비활성화
-    - ESC로 닫기 차단
-    - 바깥 영역 클릭으로 닫기 차단
-
-    이를 통해 처리 중인 요청이 중복 실행되거나
-    확인창이 의도치 않게 닫히는 것을 방지합니다.
+    - ESC 및 바깥 영역 클릭으로 닫기 차단
+    - 중복 확인 요청 차단
   -->
-  <v-dialog
+  <AppDialogLayout
     :model-value="modelValue"
-    persistent
-    max-width="420"
+    :title="title"
+    :persistent="true"
+    :busy="loading"
+    :max-width="420"
+    card-class="app-dialog-card--compact"
     @update:model-value="handleModelValue"
   >
-    <v-card
-        rounded="lg"
-        class="app-dialog-card"
+    <!-- 공통 확인 메시지 -->
+    <div
+      class="confirm-dialog-content d-flex align-start ga-2"
+      role="note"
     >
-      <!-- 확인창 제목 -->
-      <v-card-title
-        class="app-dialog-header d-flex align-center justify-space-between"
-      >
-        <span>{{ title }}</span>
-
-      </v-card-title>
-
-      <!-- 확인 메시지 -->
-      <v-card-text class="app-supporting-text confirm-message">
+      <div class="app-supporting-text confirm-message">
         {{ message }}
-      </v-card-text>
+      </div>
+    </div>
 
-      <!-- 확인창 버튼 -->
-      <v-card-actions class="app-dialog-footer px-4 pb-4">
-        <!--
-          아니오 버튼
-
-          처리 중에는 비활성화하지만
-          로딩 아이콘은 표시하지 않습니다.
-        -->
-        <v-btn
-          variant="text"
-          :disabled="loading"
-          @click="cancel"
-        >
-          아니오
-        </v-btn>
-
-        <v-spacer />
-
-        <!--
-          예 버튼
-
-          실제 작업을 실행하는 버튼이므로
-          처리 중에는 이 버튼에만 로딩을 표시합니다.
-        -->
-        <v-btn
-          variant="flat"
-          :loading="loading"
-          :disabled="loading"
-          @click="confirm"
-        >
-          예
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+    <!-- 공통 확인 버튼 -->
+    <template #footer>
+      <AppDialogFooter
+        :loading="loading"
+        :cancel-text="cancelText"
+        :confirm-text="confirmText"
+        @cancel="cancel"
+        @confirm="confirm"
+      />
+    </template>
+  </AppDialogLayout>
 </template>
 
 <script setup>
+import { onBeforeUnmount, ref, watch } from 'vue';
+
+import AppDialogLayout from './AppDialogLayout.vue';
+import AppDialogFooter from './AppDialogFooter.vue';
+
 /**
  * 공통 확인창 속성
  *
  * modelValue:
- * - 확인창의 열림/닫힘 상태
+ * - 확인창 열림/닫힘 상태
  *
  * title:
- * - 확인창 상단 제목
+ * - 확인창 제목
  *
  * message:
  * - 사용자에게 확인할 내용
  *
  * confirmText / cancelText:
- * - 기존 호출부와의 호환성을 위해 속성은 유지합니다.
- * - 실제 버튼 문구는 시스템 전체에서 헷갈리지 않도록 `예 / 아니오`로 통일합니다.
+ * - 기본값은 예 / 아니오
+ * - 호출부에서 전달한 문구는 그대로 유지
  *
  * loading:
- * - 확인 후 실제 작업이 진행 중인지 여부
- * - true인 동안 확인 버튼만 로딩 표시
- * - 나머지 닫기 동작은 차단
+ * - 실제 작업 진행 여부
  */
 const props = defineProps({
   modelValue: {
@@ -133,16 +101,7 @@ const props = defineProps({
 });
 
 /**
- * 부모 컴포넌트에 전달할 이벤트
- *
- * update:modelValue:
- * - 확인창의 열림/닫힘 상태 변경
- *
- * confirm:
- * - 사용자가 확인 버튼을 눌렀을 때 전달
- *
- * cancel:
- * - 사용자가 취소하거나 확인창을 닫았을 때 전달
+ * 기존 이벤트 인터페이스 유지
  */
 const emit = defineEmits([
   'update:modelValue',
@@ -151,9 +110,82 @@ const emit = defineEmits([
 ]);
 
 /**
- * 확인창을 닫습니다.
+ * 확인 버튼 연속 클릭 방지
  *
- * 처리 중(loading)에는 닫지 않습니다.
+ * 부모 컴포넌트의 loading 반영이 늦어져도
+ * 동일한 확인 이벤트가 연속 전송되지 않도록 합니다.
+ */
+const actionLocked = ref(false);
+
+let unlockTimer = null;
+
+function releaseAction() {
+  if (unlockTimer !== null) {
+    clearTimeout(unlockTimer);
+  }
+
+  unlockTimer = null;
+  actionLocked.value = false;
+}
+
+function lockAction() {
+  actionLocked.value = true;
+
+  if (unlockTimer !== null) {
+    clearTimeout(unlockTimer);
+  }
+
+  unlockTimer = setTimeout(() => {
+    unlockTimer = null;
+
+    if (!props.loading) {
+      actionLocked.value = false;
+    }
+  }, 700);
+}
+
+/**
+ * 로딩 상태 변경 감시
+ */
+watch(
+  () => props.loading,
+  (loading, wasLoading) => {
+    if (loading && unlockTimer !== null) {
+      clearTimeout(unlockTimer);
+      unlockTimer = null;
+    }
+
+    if (wasLoading && !loading) {
+      releaseAction();
+    }
+  },
+);
+
+/**
+ * 확인창이 닫히면 클릭 잠금 해제
+ */
+watch(
+  () => props.modelValue,
+  (visible) => {
+    if (!visible) {
+      releaseAction();
+    }
+  },
+);
+
+/**
+ * 컴포넌트 제거 시 타이머 정리
+ */
+onBeforeUnmount(() => {
+  if (unlockTimer !== null) {
+    clearTimeout(unlockTimer);
+  }
+});
+
+/**
+ * 확인창 닫기
+ *
+ * 로딩 중에는 닫기 차단
  */
 function close() {
   if (props.loading) {
@@ -164,44 +196,48 @@ function close() {
 }
 
 /**
- * 사용자가 취소하거나
- * 닫기 버튼을 눌렀을 때 실행합니다.
+ * 취소 버튼 처리
  *
- * 부모가 필요한 추가 처리를 할 수 있도록
- * cancel 이벤트도 함께 전달합니다.
+ * 부모 컴포넌트의 기존 취소 로직을 유지합니다.
  */
 function cancel() {
-  if (props.loading) {
+  if (
+    props.loading
+    || actionLocked.value
+  ) {
     return;
   }
+
+  lockAction();
 
   close();
   emit('cancel');
 }
 
 /**
- * 사용자가 확인 버튼을 눌렀을 때 실행합니다.
+ * 확인 버튼 처리
  *
  * 실제 API 요청이나 데이터 변경은
- * 공통 확인창에서 직접 처리하지 않습니다.
- *
- * 부모 화면이 confirm 이벤트를 받아
- * 필요한 업무 작업을 실행합니다.
+ * 부모 컴포넌트에서 처리합니다.
  */
 function confirm() {
-  if (props.loading) {
+  if (
+    props.loading
+    || actionLocked.value
+  ) {
     return;
   }
+
+  lockAction();
 
   emit('confirm');
 }
 
 /**
- * Vuetify Dialog에서 발생하는
- * modelValue 변경 요청을 처리합니다.
+ * 다이얼로그 열림/닫힘 요청 처리
  *
- * 바깥 영역 클릭과 ESC는 persistent 설정으로 차단합니다.
- * 모델 변경은 명시적인 버튼 동작에서만 처리합니다.
+ * persistent 설정으로 ESC 및
+ * 바깥 영역 클릭에 의한 닫기를 방지합니다.
  */
 function handleModelValue(value) {
   if (value) {
@@ -212,12 +248,22 @@ function handleModelValue(value) {
   cancel();
 }
 </script>
+
 <style scoped>
-.v-card-text {
-    white-space: pre-line;
+/*
+ * 공통 확인 메시지 영역
+ */
+.confirm-dialog-content {
+  min-width: 0;
 }
+
+/*
+ * 긴 메시지와 줄바꿈 대응
+ */
 .confirm-message {
-    white-space: pre-line;
-    overflow-wrap: anywhere;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 </style>
