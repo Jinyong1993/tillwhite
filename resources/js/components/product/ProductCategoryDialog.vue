@@ -1,45 +1,27 @@
 <template>
-  <v-dialog
+  <!-- 카테고리 관리 -->
+  <AppDialogLayout
     :model-value="modelValue"
-    max-width="620"
+    title="카테고리 관리"
+    subtitle="점포별 카테고리를 관리합니다. 사용중단해도 기존 제품과 기록은 유지됩니다."
+    :max-width="620"
     persistent
+    card-class="category-dialog"
+    body-class="category-dialog-body"
+    :busy="loading"
     @update:model-value="handleMainDialogChange"
   >
-    <v-card
-      class="app-dialog-card category-dialog"
-      rounded="lg"
-    >
-      <!--
-        헤더와 관리 도구는 목록 스크롤과 분리합니다.
-        목록이 길어져도 제목과 관리 영역은 항상 같은 위치를 유지합니다.
-      -->
-      <div class="app-dialog-header category-header">
-        <div class="category-header-icon">
-          <v-icon
-            icon="mdi-shape-outline"
-            size="22"
-          />
+    <div class="category-workspace d-flex flex-column ga-3">
+      <!-- 카테고리 등록 -->
+      <v-card
+        variant="flat"
+        rounded="lg"
+        class="category-section d-flex flex-column ga-3 pa-3"
+      >
+        <div class="category-section-title font-weight-medium">
+          카테고리 등록
         </div>
 
-        <div class="min-width-0">
-          <div class="text-h6 font-weight-bold">
-            카테고리 관리
-          </div>
-
-          <div class="category-description text-medium-emphasis mt-1">
-            점포별 카테고리를 관리합니다. 사용중단해도 기존 제품과 기록은 유지됩니다.
-          </div>
-        </div>
-      </div>
-
-      <v-divider />
-
-      <!--
-        점포 선택과 카테고리 등록, 검색 기능을 한 영역에서 관리합니다.
-        실제 카테고리 목록과 분리해 목록 스크롤의 영향을 받지 않도록 합니다.
-      -->
-      <div class="category-controls">
-        <!-- 여러 점포를 관리하는 경우에만 점포를 직접 선택할 수 있습니다. -->
         <v-select
           v-if="stores.length > 1"
           v-model="storeId"
@@ -47,304 +29,307 @@
           item-title="name"
           item-value="id"
           label="점포 *"
-          prepend-inner-icon="mdi-store-outline"
           variant="outlined"
           density="compact"
+          class="app-select"
           hide-details
           :disabled="loading"
         />
 
-        <!--
-          관리 가능한 점포가 하나뿐이면 선택 기능이 필요하지 않습니다.
-          현재 점포를 읽기 전용으로 표시해 변경할 수 없는 값임을 명확히 합니다.
-        -->
         <v-text-field
           v-else
           :model-value="stores[0]?.name ?? '-'"
           label="점포"
-          prepend-inner-icon="mdi-store-outline"
-          append-inner-icon="mdi-lock-outline"
           readonly
           variant="outlined"
           density="compact"
+          class="app-input"
           hide-details
         />
 
-        <!-- 새 카테고리 등록 -->
-        <div class="category-create-row">
+        
+        <div class="category-create-row d-flex flex-column ga-2">
           <v-text-field
             v-model="newName"
             label="새 카테고리명 *"
             placeholder="카테고리명을 입력하세요"
             maxlength="100"
-            prepend-inner-icon="mdi-shape-plus-outline"
             variant="outlined"
             density="compact"
+            class="app-input w-100"
             hide-details
             :disabled="loading"
             @keyup.enter="add"
           />
 
           <v-btn
-            class="category-add-button"
-            icon="mdi-plus"
-            variant="flat"
+            block
+            variant="outlined"
+            color="success"
+            min-height="44"
             :disabled="!canCreateCategory"
-            aria-label="카테고리 추가"
-            title="카테고리 추가"
             @click="add"
-          />
+          >
+            추가
+          </v-btn>
+        </div>
+      </v-card>
+
+      <!-- 검색 및 필터 -->
+      <v-card
+        variant="flat"
+        rounded="lg"
+        class="category-section d-flex flex-column ga-3 pa-3"
+      >
+        <div class="category-section-title font-weight-medium">
+          검색 및 필터
         </div>
 
-        <!-- 카테고리 검색 및 상태 필터 -->
-        <div class="category-filter-row">
+        <div class="category-filter-row d-flex flex-column ga-2">
           <v-text-field
             v-model="searchQuery"
-            label="카테고리명 검색"
-            prepend-inner-icon="mdi-magnify"
+            label="검색"
             clearable
             variant="outlined"
             density="compact"
+            class="app-input"
             hide-details
+            @click:clear="clearSearch"
           />
 
           <v-select
             v-model="statusFilter"
             :items="statusItems"
             label="상태"
-            prepend-inner-icon="mdi-list-status"
             variant="outlined"
             density="compact"
+            class="app-select"
             hide-details
           />
         </div>
 
-        <div class="category-result-count app-result-count text-medium-emphasis">
+        <div class="app-result-count text-medium-emphasis text-end">
           검색 결과 {{ filteredCategories.length }}개
         </div>
-      </div>
+      </v-card>
 
-      <v-divider />
-
-      <!--
-        실제 카테고리 목록만 스크롤합니다.
-        헤더와 검색, 페이지네이션, 닫기 버튼의 위치는 그대로 유지됩니다.
-      -->
-      <div class="category-list-scroll">
+      <!-- 카테고리 목록 -->
+      <v-card
+        variant="flat"
+        rounded="lg"
+        class="category-section category-list-panel d-flex flex-column"
+      >
         <div
-          v-if="paginatedCategories.length"
-          class="category-list"
+          class="category-list-heading d-flex align-center justify-space-between ga-2 pa-3"
         >
+          <div class="category-section-title font-weight-medium">
+            카테고리 목록
+          </div>
+
+          <div class="app-result-count text-medium-emphasis">
+            총 {{ filteredCategories.length }}개
+          </div>
+        </div>
+
+        <v-divider />
+
+        <div class="category-list-scroll">
           <div
-            v-for="category in paginatedCategories"
-            :key="category.id"
-            class="category-row"
+            v-if="paginatedCategories.length"
+            class="category-list d-flex flex-column"
           >
-            <div class="category-main">
-              <div class="category-name">
-                {{ category.name }}
+            <div
+              v-for="category in paginatedCategories"
+              :key="category.id"
+              class="category-row d-flex flex-column ga-2 pa-3"
+            >
+              <div class="category-main">
+                <div class="category-name">
+                  {{ category.name }}
+                </div>
+
+                <div
+                  class="category-state d-flex align-center ga-1"
+                  :class="{
+                    'category-state--inactive': !category.is_active,
+                  }"
+                >
+                  <span class="category-state-dot" />
+
+                  {{ category.is_active ? '사용중' : '사용중단' }}
+                </div>
               </div>
 
-              <div
-                class="category-state"
-                :class="{
-                  'category-state--inactive': !category.is_active,
-                }"
-              >
-                <span class="category-state-dot" />
-                {{ category.is_active ? '사용중' : '사용중단' }}
+              <div class="category-row-actions d-flex align-center ga-2">
+                <v-btn
+                  variant="outlined"
+                  color="primary"
+                  class="category-row-button"
+                  min-height="44"
+                  :disabled="loading"
+                  @click="openRenameDialog(category)"
+                >
+                  수정
+                </v-btn>
+
+                <v-btn
+                  variant="outlined"
+                  :color="category.is_active ? 'warning' : 'success'"
+                  class="category-row-button"
+                  min-height="44"
+                  :disabled="loading"
+                  @click="emit('toggle', category)"
+                >
+                  {{ category.is_active ? '중단' : '재사용' }}
+                </v-btn>
               </div>
             </div>
+          </div>
 
-            <div class="category-row-actions">
-              <!--
-                수동 순서 변경 기능은 향후 필요할 수 있어 스크립트/API는 유지합니다.
-                현재 UI에서는 카테고리를 이름 기준 자연 정렬하므로 이동 버튼만 노출하지 않습니다.
-              -->
+          <div
+            v-else
+            class="category-empty d-flex flex-column align-center justify-center ga-2 pa-5"
+          >
+            <div class="text-body-2 font-weight-medium text-center">
+              조건에 맞는 카테고리가 없습니다.
+            </div>
 
-              <v-btn
-                size="small"
-                variant="text"
-                prepend-icon="mdi-pencil-outline"
-                :disabled="loading"
-                @click="openRenameDialog(category)"
-              >
-                수정
-              </v-btn>
-
-              <!--
-                사용중단과 재사용은 이 컴포넌트에서 바로 처리하지 않습니다.
-                상위 화면으로 대상을 전달해 공통 확인 다이얼로그를 거치도록 합니다.
-              -->
-              <v-btn
-                size="small"
-                variant="text"
-                :prepend-icon="
-                  category.is_active
-                    ? 'mdi-pause-circle-outline'
-                    : 'mdi-play-circle-outline'
-                "
-                :disabled="loading"
-                @click="$emit('toggle', category)"
-              >
-                {{ category.is_active ? '중단' : '재사용' }}
-              </v-btn>
+            <div class="app-supporting-text text-medium-emphasis text-center">
+              검색어나 상태 필터를 확인해주세요.
             </div>
           </div>
         </div>
 
-        <!-- 검색 또는 상태 조건에 맞는 카테고리가 없을 때 표시합니다. -->
+        <v-divider />
+
         <div
-          v-else
-          class="category-empty"
+          class="category-pagination-area d-flex flex-column align-center justify-center ga-1 pa-2"
         >
-          <v-icon
-            icon="mdi-shape-outline"
-            size="30"
-            class="mb-2 text-medium-emphasis"
+          <v-pagination
+            v-if="totalPages > 1"
+            v-model="currentPage"
+            :length="totalPages"
+            :total-visible="4"
+            density="compact"
+            rounded="circle"
           />
 
-          <div class="text-body-2 font-weight-medium">
-            조건에 맞는 카테고리가 없습니다.
-          </div>
-
-          <div class="text-caption text-medium-emphasis mt-1">
-            검색어나 상태 필터를 확인해주세요.
+          <div class="app-result-count text-medium-emphasis">
+            {{ pageStart }}–{{ pageEnd }} / {{ filteredCategories.length }}개
           </div>
         </div>
-      </div>
+      </v-card>
+    </div>
 
-      <v-divider />
-
-      <!--
-        페이지네이션은 목록 스크롤 영역 밖에 둡니다.
-        목록이 길어져도 페이지 이동 영역이 함께 움직이지 않도록 합니다.
-      -->
-      <div class="category-pagination-area">
-        <v-pagination
-          v-if="totalPages > 1"
-          v-model="currentPage"
-          :length="totalPages"
-          :total-visible="4"
-          density="compact"
-          rounded="circle"
-        />
-
-        <div class="text-caption text-medium-emphasis">
-          {{ pageStart }}–{{ pageEnd }} / {{ filteredCategories.length }}개
-        </div>
-      </div>
-
-      <v-divider />
-
-      <div class="app-dialog-footer category-actions">
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-close"
-          :disabled="loading"
-          @click="requestCloseMainDialog"
-        >
-          닫기
-        </v-btn>
-      </div>
-    </v-card>
-  </v-dialog>
+    <template #footer>
+      <AppDialogFooter
+        :button-count="1"
+        :show-confirm="false"
+        cancel-text="닫기"
+        :disabled="loading"
+        @cancel="requestCloseMainDialog"
+      />
+    </template>
+  </AppDialogLayout>
 
   <!-- 카테고리명 수정 -->
-  <v-dialog
-    v-model="renameDialog"
-    max-width="420"
+  <AppDialogLayout
+    :model-value="renameDialog"
+    title="카테고리명 수정"
+    :max-width="420"
     persistent
+    card-class="app-dialog-card--compact"
+    :busy="loading"
+    @update:model-value="handleRenameDialogChange"
   >
-    <v-card rounded="lg">
-      <v-card-title class="pa-5 pb-2">
-        카테고리명 수정
-      </v-card-title>
-
-      <v-card-text class="px-5">
+    <div class="category-simple-content d-flex flex-column pa-3">
+      <v-card
+        variant="flat"
+        rounded="lg"
+        class="category-section d-flex flex-column pa-3"
+      >
         <v-text-field
           v-model="renameName"
           label="카테고리명 *"
           maxlength="100"
           variant="outlined"
           density="compact"
+          class="app-input"
           :disabled="loading"
           autofocus
           @keyup.enter="submitRename"
         />
-      </v-card-text>
+      </v-card>
+    </div>
 
-      <v-card-actions class="px-5 pb-4">
-        <v-btn
-          variant="text"
-          :disabled="loading"
-          @click="requestCloseRenameDialog"
-        >
-          취소
-        </v-btn>
+    <template #footer>
+      <AppDialogFooter
+        cancel-text="취소"
+        confirm-text="저장"
+        confirm-action="save"
+        :loading="loading"
+        @cancel="requestCloseRenameDialog"
+        @confirm="submitRename"
+      >
+        <template #confirm>
+          <v-btn
+            block
+            color="success"
+            variant="flat"
+            min-height="44"
+            :disabled="!canRenameCategory"
+            :loading="loading"
+            @click="submitRename"
+          >
+            저장
+          </v-btn>
+        </template>
+      </AppDialogFooter>
+    </template>
+  </AppDialogLayout>
 
-        <v-spacer />
-
-        <v-btn
-          variant="flat"
-          prepend-icon="mdi-content-save-outline"
-          :disabled="!canRenameCategory"
-          :loading="loading"
-          @click="submitRename"
-        >
-          저장
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
-
-  <!--
-    새 카테고리명이나 수정 중인 이름이 남아 있을 때만 표시합니다.
-    사용자가 실수로 작성 중인 내용을 잃지 않도록 이탈 여부를 확인합니다.
-  -->
-  <v-dialog
-    v-model="discardDialog"
-    max-width="360"
+  <!-- 입력 취소 확인 -->
+  <AppDialogLayout
+    :model-value="discardDialog"
+    title="입력을 취소하시겠습니까?"
+    :max-width="360"
     persistent
+    card-class="app-dialog-card--compact"
+    @update:model-value="handleDiscardDialogChange"
   >
-    <v-card rounded="lg">
-      <v-card-title class="pa-5 pb-2">
-        입력을 취소하시겠습니까?
-      </v-card-title>
+    <div class="category-simple-content d-flex flex-column pa-3">
+      <v-card
+        variant="flat"
+        rounded="lg"
+        class="category-section pa-3"
+      >
+        <div class="app-supporting-text">
+          저장하지 않은 카테고리 입력 내용은 사라집니다.
+        </div>
+      </v-card>
+    </div>
 
-      <v-card-text class="px-5 pb-5 app-supporting-text">
-        저장하지 않은 카테고리 입력 내용은 사라집니다.
-      </v-card-text>
-
-      <v-divider />
-
-      <v-card-actions class="pa-4 px-5">
-        <v-btn
-          variant="text"
-          @click="discardDialog = false"
-        >
-          아니오
-        </v-btn>
-
-        <v-spacer />
-
-        <v-btn
-          variant="flat"
-          @click="discardChanges"
-        >
-          예
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+    <template #footer>
+      <AppDialogFooter
+        cancel-text="아니오"
+        confirm-text="예"
+        confirm-action="confirm"
+        @cancel="discardDialog = false"
+        @confirm="discardChanges"
+      />
+    </template>
+  </AppDialogLayout>
 </template>
 
 <script setup>
 import {
-    computed,
-    ref,
-    watch,
+  computed,
+  ref,
+  watch,
 } from 'vue';
+
+import AppDialogLayout from '../common/AppDialogLayout.vue';
+import AppDialogFooter from '../common/AppDialogFooter.vue';
 import { sortByDisplayName } from '../../utils/naturalSort';
 
 const props = defineProps({
@@ -352,14 +337,17 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+
   categories: {
     type: Array,
     default: () => [],
   },
+
   stores: {
     type: Array,
     default: () => [],
   },
+
   loading: {
     type: Boolean,
     default: false,
@@ -390,10 +378,6 @@ const renameName = ref('');
 const discardDialog = ref(false);
 const discardTarget = ref(null);
 
-/*
- * 등록 요청 직후 입력값을 지우지 않고 요청 내용을 임시로 보관합니다.
- * 실제 목록에 등록 결과가 반영된 것이 확인된 뒤에만 입력값을 초기화합니다.
- */
 const pendingCreate = ref(null);
 
 const statusItems = [
@@ -403,8 +387,7 @@ const statusItems = [
 ];
 
 /*
- * 다이얼로그를 처음 열었을 때 선택된 점포가 없다면
- * 현재 사용자가 접근할 수 있는 첫 번째 점포를 기본값으로 사용합니다.
+ * 관리 가능한 첫 번째 점포를 초기 선택값으로 사용합니다.
  */
 watch(
   () => [props.modelValue, props.stores],
@@ -417,28 +400,36 @@ watch(
 );
 
 /*
- * 점포나 검색 조건이 변경되면 기존 페이지 번호가
- * 새로운 검색 결과 범위를 벗어날 수 있으므로 첫 페이지로 이동합니다.
+ * 점포 또는 검색 조건이 바뀌면 첫 페이지로 이동합니다.
  */
 watch([storeId, searchQuery, statusFilter], () => {
   currentPage.value = 1;
 });
 
 /*
- * 현재 선택한 점포의 카테고리만 가져온 뒤
- * 카테고리명 검색과 사용 상태 필터를 함께 적용합니다.
+ * 검색창의 지우기 버튼이 실행되면 빈 문자열로 초기화합니다.
+ * clearable이 null을 전달하는 상황도 필터에서 처리합니다.
+ */
+function clearSearch() {
+  searchQuery.value = '';
+}
+
+/*
+ * 현재 점포에 속한 카테고리를 이름 기준으로 자연 정렬합니다.
  */
 const orderedStoreCategories = computed(() => {
   const categories = props.categories.filter(
     (category) => Number(category.store_id) === Number(storeId.value),
   );
 
-  // 수동 정렬 기능은 보존하지만 현재 UI는 카테고리명을 기준으로 자연 정렬합니다.
   return sortByDisplayName(categories);
 });
 
+/*
+ * 검색어와 사용 상태를 함께 적용합니다.
+ */
 const filteredCategories = computed(() => {
-  const query = searchQuery.value
+  const query = String(searchQuery.value ?? '')
     .trim()
     .toLocaleLowerCase('ko-KR');
 
@@ -462,10 +453,6 @@ const filteredCategories = computed(() => {
   });
 });
 
-/*
- * 검색 결과가 없는 경우에도 페이지 계산값이 0이 되지 않도록
- * 전체 페이지 수는 최소 1페이지를 유지합니다.
- */
 const totalPages = computed(() => {
   return Math.max(
     1,
@@ -500,8 +487,7 @@ const paginatedCategories = computed(() => {
 });
 
 /*
- * 검색 결과가 줄어 현재 페이지가 존재하지 않게 된 경우
- * 마지막으로 사용할 수 있는 페이지로 자동 이동합니다.
+ * 검색 결과가 줄면 현재 페이지를 보정합니다.
  */
 watch(totalPages, (value) => {
   if (currentPage.value > value) {
@@ -509,8 +495,12 @@ watch(totalPages, (value) => {
   }
 });
 
+/*
+ * 기존 수동 정렬 로직을 보존합니다.
+ */
 const canReorderCategories = computed(() => {
-  return !searchQuery.value.trim() && statusFilter.value === 'all';
+  return !String(searchQuery.value ?? '').trim()
+    && statusFilter.value === 'all';
 });
 
 const canCreateCategory = computed(() => {
@@ -533,10 +523,8 @@ const canRenameCategory = computed(() => {
 });
 
 /*
- * API 요청 결과가 실제 categories 데이터에 반영된 뒤에만
- * 등록 입력값을 비우거나 수정 다이얼로그를 닫습니다.
- *
- * 요청이 실패한 경우에는 사용자가 작성한 내용을 그대로 유지합니다.
+ * 서버 결과가 카테고리 목록에 실제로 반영된 후에만
+ * 등록 입력값을 지우거나 수정창을 닫습니다.
  */
 watch(
   () => props.categories,
@@ -574,8 +562,7 @@ watch(
 );
 
 /*
- * v-dialog 자체에서 닫기가 요청된 경우에도 바로 닫지 않습니다.
- * 작성 중인 내용이 있는지 확인하기 위해 공통 닫기 처리를 사용합니다.
+ * 다이얼로그 닫기를 요청할 때 기존 입력 폐기 확인을 유지합니다.
  */
 function handleMainDialogChange(value) {
   if (value || props.loading) {
@@ -585,10 +572,20 @@ function handleMainDialogChange(value) {
   requestCloseMainDialog();
 }
 
-/*
- * 새 카테고리명이 입력된 상태라면 작성 내용을 바로 버리지 않고
- * 이탈 확인 다이얼로그를 먼저 표시합니다.
- */
+function handleRenameDialogChange(value) {
+  if (value || props.loading) {
+    return;
+  }
+
+  requestCloseRenameDialog();
+}
+
+function handleDiscardDialogChange(value) {
+  if (!value) {
+    discardDialog.value = false;
+  }
+}
+
 function requestCloseMainDialog() {
   if (props.loading) {
     return;
@@ -604,10 +601,6 @@ function requestCloseMainDialog() {
   emit('update:modelValue', false);
 }
 
-/*
- * 처음 불러온 카테고리명과 현재 입력값이 실제로 다른 경우에만
- * 수정 내용을 버릴 것인지 확인합니다.
- */
 function requestCloseRenameDialog() {
   if (props.loading) {
     return;
@@ -626,10 +619,6 @@ function requestCloseRenameDialog() {
   closeRenameDialog();
 }
 
-/*
- * 어느 화면에서 이탈을 요청했는지 확인한 뒤
- * 해당 화면에 필요한 입력 상태만 초기화합니다.
- */
 function discardChanges() {
   const target = discardTarget.value;
 
@@ -649,23 +638,27 @@ function discardChanges() {
 }
 
 /*
- * 등록 요청 직후에는 입력값을 유지합니다.
- * API 성공이 categories에 반영된 것이 확인된 경우에만 입력값을 비웁니다.
+ * 현재 화면에서 표시하지 않는 정렬 버튼의
+ * 내부 기능과 이벤트는 기존대로 유지합니다.
  */
 function canMoveCategory(category, direction) {
-  if (!canReorderCategories.value) return false;
+  if (!canReorderCategories.value) {
+    return false;
+  }
 
   const index = orderedStoreCategories.value.findIndex((item) => {
     return Number(item.id) === Number(category.id);
   });
 
-  if (index < 0) return false;
+  if (index < 0) {
+    return false;
+  }
+
   return direction < 0
     ? index > 0
     : index < orderedStoreCategories.value.length - 1;
 }
 
-// 보존 중인 수동 정렬 기능에서 카테고리 이동 이벤트를 전달합니다.
 function requestMoveCategory(category, direction) {
   if (props.loading || !canMoveCategory(category, direction)) {
     return;
@@ -674,7 +667,6 @@ function requestMoveCategory(category, direction) {
   emit('reorder', { category, direction });
 }
 
-// 새 카테고리명을 검증한 뒤 등록 이벤트를 전달합니다.
 function add() {
   const name = newName.value.trim();
 
@@ -690,7 +682,6 @@ function add() {
   emit('create', pendingCreate.value);
 }
 
-// 수정할 카테고리와 현재 이름을 보관한 뒤 수정 다이얼로그를 엽니다.
 function openRenameDialog(category) {
   if (props.loading) {
     return;
@@ -701,23 +692,12 @@ function openRenameDialog(category) {
   renameDialog.value = true;
 }
 
-/**
- * 수정 다이얼로그 상태를 초기화합니다.
- *
- * 사용자의 수동 닫기는 requestCloseRenameDialog()에서 로딩을 차단합니다.
- * 저장 성공 후 목록 반영을 감지한 내부 닫기는 API 마무리 중에도 실행되어야 하므로
- * 이 함수 자체에서는 loading 상태를 다시 검사하지 않습니다.
- */
 function closeRenameDialog() {
   renameDialog.value = false;
   renameTarget.value = null;
   renameName.value = '';
 }
 
-/*
- * 실제 API 요청은 상위 화면에서 처리합니다.
- * 이 컴포넌트에서는 수정 대상과 변경할 이름만 전달합니다.
- */
 function submitRename() {
   if (!canRenameCategory.value) {
     return;
@@ -731,99 +711,78 @@ function submitRename() {
 </script>
 
 <style scoped>
-.category-dialog {
-  display: flex;
-  flex-direction: column;
-  max-height: min(92dvh, 760px);
-  overflow: hidden;
+.category-workspace {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
 }
 
-.category-header {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 20px;
+.category-section {
+  min-width: 0;
+  border: 1px solid rgba(var(--v-border-color), 0.12);
+  box-shadow: none;
 }
 
-.category-header-icon {
-  display: grid;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 10px;
-  background: rgba(var(--v-theme-primary), 0.08);
+.category-section-title {
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
-/*
- * 긴 제목이나 카테고리명이 flex 영역의 너비를 밀어내면서
- * 모바일 화면에 가로 스크롤이 생기는 것을 방지합니다.
- */
-.min-width-0 {
+.category-create-row {
   min-width: 0;
 }
 
-/* 다이얼로그 설명은 제목보다 작은 보조 텍스트로 표시합니다. */
-.category-description {
-  font-size: 0.76rem;
-  line-height: 1.45;
-}
-
-.category-controls {
-  display: flex;
-  flex: 0 0 auto;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px;
-}
-
-.category-create-row,
-.category-filter-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.category-filter-row {
-  grid-template-columns: minmax(0, 1fr) minmax(130px, 0.42fr);
+.category-create-input {
+  min-width: 0;
 }
 
 .category-add-button {
-  width: 48px;
-  height: 48px;
+  min-width: 56px;
+  min-height: 44px;
 }
 
-.category-result-count {
-  text-align: right;
+.category-filter-row {
+  min-width: 0;
 }
 
-/*
- * 목록만 스크롤되도록 하여 카테고리가 많아져도
- * 상단 관리 영역과 하단 페이지네이션의 위치를 유지합니다.
- */
+.category-filter-row > * {
+  min-width: 0;
+}
+
+.category-list-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 200px;
+  overflow: hidden;
+}
+
+.category-list-heading {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .category-list-scroll {
-  min-height: 180px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 120px;
+  max-height: 360px;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
 }
 
 .category-list {
-  display: flex;
-  flex-direction: column;
+  min-width: 0;
 }
 
 .category-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 20px;
-  border-bottom: 1px solid rgba(
-    var(--v-border-color),
-    var(--v-border-opacity)
-  );
+  min-width: 0;
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.12);
+}
+
+.category-row:last-child {
+  border-bottom: 0;
 }
 
 .category-main {
@@ -839,12 +798,9 @@ function submitRename() {
 }
 
 .category-state {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   margin-top: 5px;
-  color: rgb(var(--v-theme-success));
   font-size: 0.75rem;
+  color: rgb(var(--v-theme-success));
 }
 
 .category-state--inactive {
@@ -854,41 +810,33 @@ function submitRename() {
 .category-state-dot {
   width: 6px;
   height: 6px;
+  flex: 0 0 6px;
   border-radius: 50%;
   background: currentColor;
 }
 
 .category-row-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+
+.category-row-button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
 }
 
 .category-empty {
-  display: grid;
-  min-height: 180px;
-  padding: 24px;
-  place-content: center;
-  text-align: center;
+  min-height: 160px;
 }
 
 .category-pagination-area {
-  display: flex;
   flex: 0 0 auto;
-  min-height: 58px;
+  min-width: 0;
   max-width: 100%;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 6px 12px;
   overflow: hidden;
 }
 
-/*
- * Vuetify 내부 페이지네이션도 부모 영역의 최대 너비를 따르게 해
- * 작은 화면에서 페이지 버튼 때문에 가로로 넘치는 것을 방지합니다.
- */
 .category-pagination-area :deep(.v-pagination) {
   max-width: 100%;
 }
@@ -900,97 +848,30 @@ function submitRename() {
   padding: 0;
 }
 
-.category-actions {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: flex-start;
-  padding: 10px 16px;
+.category-simple-content {
+  min-width: 0;
+  width: 100%;
 }
 
-@media (max-width: 480px) {
-  .category-dialog {
-    max-height: calc(100dvh - 16px);
+@media (max-width: 360px) {
+  .category-workspace {
+    gap: 8px !important;
   }
 
-  .category-header {
-    padding: 16px;
-  }
-
-  .category-controls {
-    padding: 14px 16px;
-  }
-
-  /*
-   * 검색창과 상태 필터를 한 줄에 유지하면 각각의 너비가 지나치게 좁아집니다.
-   * 모바일에서는 세로로 배치해 입력 영역을 충분히 확보합니다.
-   */
-  .category-filter-row {
-    grid-template-columns: 1fr;
-  }
-
-  .category-row {
-    align-items: flex-start;
-    padding: 12px 16px;
-  }
-
-  /*
-   * 순서/수정/상태 버튼이 카테고리명을 압축하지 않도록
-   * 좁은 화면에서는 본문 아래에서 필요한 만큼 줄바꿈합니다.
-   */
-  .category-row {
-    flex-direction: column;
+  .category-section {
+    border-radius: 8px;
   }
 
   .category-row-actions {
-    width: 100%;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    gap: 6px !important;
   }
 
-  .category-row-actions .v-btn {
-    flex: 0 0 auto;
-  }
-}
-
-@media (max-width: 350px) {
-  /*
-   * 매우 작은 화면에서도 입력창이 화면 밖으로 밀리지 않도록 조정하면서
-   * 추가 버튼은 누르기 편한 최소 크기를 유지합니다.
-   */
-  .category-create-row {
-    grid-template-columns: minmax(0, 1fr) 44px;
-    gap: 6px;
+  .category-row-button {
+    font-size: 0.75rem;
   }
 
-  .category-add-button {
-    width: 44px;
-    height: 44px;
-  }
-
-  /*
-   * 카테고리명과 액션 영역을 분리해 긴 이름이 들어와도
-   * 수정/중단 버튼과 겹치거나 가로로 넘치지 않도록 합니다.
-   */
-  .category-row {
-    flex-direction: column;
-  }
-
-  .category-row-actions {
-    width: 100%;
-    flex-direction: row;
-  }
-
-  .category-row-actions .v-btn {
-    flex: 1 1 0;
-    justify-content: center;
+  .category-list-scroll {
+    min-height: 120px;
   }
 }
-.category-dialog :deep(.v-field) {
-    font-size: 0.82rem;
-}
-
-.category-dialog :deep(.v-label) {
-    font-size: 0.78rem;
-}
-
 </style>
