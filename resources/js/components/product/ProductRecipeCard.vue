@@ -2,14 +2,14 @@
   <!-- 레시피 상세 카드 -->
   <div
     v-if="recipe"
-    class="recipe-card"
+    class="recipe-card app-form-section d-flex flex-column"
     :class="{ 'recipe-card--deleted': recipe.deleted_at }"
   >
     <!-- 레시피 기본 정보 -->
     <button
       v-if="canManage && !recipe.deleted_at"
       type="button"
-      class="recipe-heading recipe-touchable"
+      class="recipe-heading recipe-touchable d-flex align-start justify-space-between"
       @click="$emit('edit-part', { type: 'basic' })"
     >
       <span class="min-width-0">
@@ -36,7 +36,7 @@
     <!-- 조회 전용 레시피 정보 -->
     <div
       v-else
-      class="recipe-heading"
+      class="recipe-heading d-flex align-start justify-space-between"
     >
       <span class="min-width-0">
         <span class="recipe-name">
@@ -53,7 +53,7 @@
     </div>
 
     <!-- 레시피 완성 상태 -->
-    <div class="recipe-status-row">
+    <div class="recipe-status-row d-flex justify-start mt-2">
       <v-chip
         v-if="isIncomplete"
         size="x-small"
@@ -65,12 +65,7 @@
 
     <!-- 재료 -->
     <div class="recipe-block">
-      <div class="recipe-label d-flex align-center ga-2">
-        <v-icon
-          icon="mdi-scale-balance"
-          size="16"
-        />
-
+      <div class="recipe-label app-form-section-title">
         <span>재료</span>
       </div>
 
@@ -102,12 +97,12 @@
           </span>
 
           <!-- 재료명 / 사용량 -->
-          <span class="recipe-item-content">
+          <span class="recipe-item-content d-flex align-baseline justify-space-between">
             <span class="recipe-item-name">
               {{ item.name || '-' }}
             </span>
 
-            <span class="recipe-item-meta">
+            <span class="recipe-item-meta d-inline-flex align-baseline">
               <span>
                 {{ ingredientQuantity(item) }}
               </span>
@@ -130,7 +125,7 @@
 
       <div
         v-else
-        class="empty-text"
+        class="app-supporting-text text-medium-emphasis"
       >
         등록된 재료가 없습니다.
       </div>
@@ -138,12 +133,7 @@
 
     <!-- 공정 -->
     <div class="recipe-block">
-      <div class="recipe-label d-flex align-center ga-2">
-        <v-icon
-          icon="mdi-format-list-numbered"
-          size="16"
-        />
-
+      <div class="recipe-label app-form-section-title">
         <span>공정</span>
       </div>
 
@@ -191,7 +181,7 @@
 
       <div
         v-else
-        class="empty-text"
+        class="app-supporting-text text-medium-emphasis"
       >
         등록된 공정이 없습니다.
       </div>
@@ -205,10 +195,9 @@
       <!-- 삭제 -->
       <v-btn
         v-if="!recipe.deleted_at"
-        class="recipe-action-button"
+        class="recipe-action-button app-btn"
         color="error"
         variant="outlined"
-        min-height="44"
         @click="requestAction('delete')"
       >
         삭제
@@ -217,10 +206,9 @@
       <!-- 삭제된 레시피 복구 -->
       <v-btn
         v-if="recipe.deleted_at"
-        class="recipe-action-button"
+        class="recipe-action-button app-btn"
         color="success"
         variant="outlined"
-        min-height="44"
         @click="requestAction('restore')"
       >
         복구
@@ -229,10 +217,9 @@
       <!-- 레시피 전체 수정 -->
       <v-btn
         v-else
-        class="recipe-action-button"
+        class="recipe-action-button app-btn"
         color="primary"
         variant="outlined"
-        min-height="44"
         @click="requestAction('edit')"
       >
         수정
@@ -242,14 +229,14 @@
     <!-- 부모 제품이 삭제된 경우 -->
     <div
       v-if="parentDeleted"
-      class="recipe-parent-deleted-hint mt-4"
+      class="recipe-parent-deleted-hint app-supporting-text mt-4"
     >
       제품을 복구하면 제품 삭제로 함께 삭제된 레시피도 자동으로 복구됩니다.
     </div>
 
     <!-- 레시피 관리 이력 -->
-    <div class="recipe-history">
-      <div class="recipe-history-label">
+    <div class="recipe-history d-flex flex-column ga-1 mt-4 pt-3">
+      <div class="recipe-history-label mt-1">
         등록
       </div>
 
@@ -262,7 +249,7 @@
         }}
       </div>
 
-      <div class="recipe-history-label">
+      <div class="recipe-history-label mt-1">
         수정
       </div>
 
@@ -275,7 +262,7 @@
         }}
       </div>
 
-      <div class="recipe-history-label">
+      <div class="recipe-history-label mt-1">
         삭제
       </div>
 
@@ -303,7 +290,7 @@
       <div
         v-for="entry in recipe.audit_history"
         :key="entry.id"
-        class="recipe-audit-entry"
+        class="recipe-audit-entry d-flex justify-space-between"
       >
         <span>
           {{ auditActionText(entry.action) }}
@@ -321,18 +308,18 @@
   <!-- 레시피 미등록 상태 -->
   <div
     v-else
-    class="empty-recipe"
+    class="empty-recipe d-flex flex-column"
   >
-    <div class="text-body-2 text-medium-emphasis">
+    <div class="app-supporting-text text-medium-emphasis">
       아직 등록된 레시피가 없습니다.
     </div>
 
     <v-btn
       v-if="canManage"
-      class="mt-3"
+      block
+      class="app-btn mt-3"
       variant="outlined"
       color="primary"
-      min-height="44"
       @click="$emit('edit')"
     >
       레시피 등록
@@ -416,31 +403,28 @@ const isIncomplete = computed(() => {
 });
 
 /*
- * 레시피 관리 권한 검사
+ * 관리 버튼 이벤트를 부모 화면에 전달합니다.
  */
 function requestAction(action) {
-  if (!props.canManage) {
-    emit(
-      'permission-denied',
-      '레시피를 관리할 권한이 없습니다.',
-    );
-
+  if (!props.canManage || props.parentDeleted) {
     return;
   }
 
-  if (
-    props.recipe?.deleted_at
-    && !['restore'].includes(action)
+  if (action === 'restore' && props.recipe?.deleted_at) {
+    emit('restore');
+  } else if (
+    action === 'delete'
+    && props.recipe
+    && !props.recipe.deleted_at
   ) {
-    emit(
-      'permission-denied',
-      '삭제된 레시피입니다. 복구 후 이용해주세요.',
-    );
-
-    return;
+    emit('delete');
+  } else if (
+    action === 'edit'
+    && props.recipe
+    && !props.recipe.deleted_at
+  ) {
+    emit('edit');
   }
-
-  emit(action);
 }
 
 /*
@@ -536,12 +520,10 @@ function formatOrder(index) {
 <style scoped>
 /*
  * 레시피 카드
+ * 테두리는 글로벌 app-form-section 사용
  */
 .recipe-card {
-  min-width: 0;
   padding: 16px;
-  border: 1px solid
-    rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 12px;
   overflow-wrap: anywhere;
 }
@@ -554,11 +536,8 @@ function formatOrder(index) {
  * 레시피 기본 정보
  */
 .recipe-heading {
-  display: flex;
   width: 100%;
   min-width: 0;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: 10px;
   padding: 0;
   border: 0;
@@ -597,8 +576,6 @@ function formatOrder(index) {
 .recipe-label {
   margin-bottom: 8px;
   color: rgba(var(--v-theme-on-surface), 0.62);
-  font-size: 0.8rem;
-  font-weight: 700;
 }
 
 /*
@@ -640,11 +617,8 @@ function formatOrder(index) {
  * 재료명과 수량
  */
 .recipe-item-content {
-  display: flex;
   min-width: 0;
   flex: 1 1 auto;
-  align-items: baseline;
-  justify-content: space-between;
   gap: 10px;
 }
 
@@ -656,9 +630,7 @@ function formatOrder(index) {
 }
 
 .recipe-item-meta {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: baseline;
   gap: 8px;
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 0.8rem;
@@ -711,35 +683,11 @@ function formatOrder(index) {
 
 /*
  * 하단 작업 버튼
- * Vuetify 유틸리티로 정렬하고
- * 일반 작업 버튼에는 아이콘을 사용하지 않습니다.
+ * 높이는 글로벌 app-btn 사용
  */
 .recipe-action-button {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 44px;
-}
-
-/*
- * 빈 상태
- */
-.empty-text {
-  color: rgba(var(--v-theme-on-surface), 0.55);
-  font-size: 0.8rem;
-}
-
-.empty-recipe {
-  padding: 10px 0;
-  text-align: center;
-}
-
-/*
- * 미완성 상태
- */
-.recipe-status-row {
-  display: flex;
-  justify-content: flex-start;
-  margin-top: 8px;
 }
 
 /*
@@ -757,8 +705,6 @@ function formatOrder(index) {
 }
 
 .recipe-audit-entry {
-  display: flex;
-  justify-content: space-between;
   gap: 12px;
   padding-top: 7px;
   overflow-wrap: anywhere;
@@ -777,11 +723,6 @@ function formatOrder(index) {
  * 등록 / 수정 / 삭제 이력
  */
 .recipe-history {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 16px;
-  padding-top: 12px;
   border-top: 1px solid
     rgba(var(--v-border-color), var(--v-border-opacity));
   color: rgba(var(--v-theme-on-surface), 0.58);
@@ -791,7 +732,6 @@ function formatOrder(index) {
 }
 
 .recipe-history-label {
-  margin-top: 4px;
   font-weight: 700;
 }
 

@@ -22,33 +22,14 @@
         rounded="lg"
         class="app-form-section pa-3"
       >
-        <div class="detail-overview">
-          <div class="detail-overview-text">
-            <div class="detail-product-name">
-              {{ product.name ?? '제품 상세' }}
+        <div class="d-flex flex-column ga-2">
+          <!-- 제품명 / 더보기 -->
+          <div class="d-flex align-start justify-space-between ga-2">
+            <div class="detail-overview-text">
+              <div class="detail-product-name">
+                {{ product.name ?? '제품 상세' }}
+              </div>
             </div>
-
-            <div class="app-supporting-text text-medium-emphasis">
-              {{ product.category?.name ?? '-' }}
-            </div>
-          </div>
-
-          <div class="detail-overview-actions">
-            <!-- 제품 상태 -->
-            <v-chip
-              size="small"
-              :color="statusChipColor"
-              variant="tonal"
-              :clickable="canChangeStatus"
-              :append-icon="
-                canChangeStatus
-                  ? 'mdi-chevron-down'
-                  : undefined
-              "
-              @click="openStatusDialog"
-            >
-              {{ statusText }}
-            </v-chip>
 
             <!-- 제품 관리 더보기 -->
             <v-menu
@@ -70,7 +51,6 @@
                 min-width="190"
               >
                 <v-list-item
-                  v-if="canManage"
                   :title="
                     product.is_active
                       ? '취급중단'
@@ -81,6 +61,28 @@
               </v-list>
             </v-menu>
           </div>
+
+          <!-- 카테고리 / 제품 상태 -->
+          <div class="d-flex align-center justify-space-between ga-2">
+            <div class="app-supporting-text text-medium-emphasis min-width-0">
+              {{ product.category?.name ?? '-' }}
+            </div>
+
+            <v-chip
+              size="small"
+              :color="statusChipColor"
+              variant="tonal"
+              :clickable="canChangeStatus"
+              :append-icon="
+                canChangeStatus
+                  ? 'mdi-chevron-down'
+                  : undefined
+              "
+              @click="openStatusDialog"
+            >
+              {{ statusText }}
+            </v-chip>
+          </div>
         </div>
       </v-card>
 
@@ -90,12 +92,7 @@
         rounded="lg"
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
-        <div class="detail-section-heading">
-          <v-icon
-            icon="mdi-information-outline"
-            size="18"
-          />
-
+        <div class="detail-section-heading d-flex align-center ga-2">
           <div class="app-form-section-title">
             기본 정보
           </div>
@@ -148,12 +145,7 @@
         rounded="lg"
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
-        <div class="detail-section-heading">
-          <v-icon
-            icon="mdi-calendar-check-outline"
-            size="18"
-          />
-
+        <div class="detail-section-heading d-flex align-center ga-2">
           <div class="app-form-section-title">
             판매 정보
           </div>
@@ -199,14 +191,9 @@
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
         <div
-          class="detail-section-heading justify-space-between"
+          class="detail-section-heading d-flex align-center justify-space-between ga-2"
         >
           <div class="d-flex align-center ga-2 min-width-0">
-            <v-icon
-              icon="mdi-notebook-outline"
-              size="18"
-            />
-
             <div class="app-form-section-title">
               레시피
             </div>
@@ -250,7 +237,7 @@
 
         <!-- 현재 사용 중인 레시피 -->
         <ProductRecipeCard
-          v-if="activeRecipe"
+          v-if="activeRecipe || !product.deleted_at"
           :recipe="activeRecipe"
           :can-manage="canManageRecipe"
           :parent-deleted="Boolean(product.deleted_at)"
@@ -300,12 +287,7 @@
         rounded="lg"
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
-        <div class="detail-section-heading">
-          <v-icon
-            icon="mdi-clock-outline"
-            size="18"
-          />
-
+        <div class="detail-section-heading d-flex align-center ga-2">
           <div class="app-form-section-title">
             시스템 정보
           </div>
@@ -386,7 +368,7 @@
           <div
             v-for="entry in product.audit_history"
             :key="entry.id"
-            class="product-audit-entry"
+            class="product-audit-entry d-flex justify-space-between ga-3"
           >
             <span>
               {{ auditActionText(entry.action) }}
@@ -506,12 +488,6 @@
   >
     <div class="product-status-content d-flex flex-column ga-3">
       <div class="app-form-notice">
-        <v-icon
-          icon="mdi-information-outline"
-          size="18"
-          class="flex-shrink-0"
-        />
-
         <div>
           현재 상태:
           <strong>
@@ -816,7 +792,7 @@ function requestManageAction(action) {
 }
 
 /*
- * 활성 레시피 수정
+ * 레시피 신규 등록 및 기존 레시피 수정
  */
 function requestRecipeEdit() {
   if (!props.canManageRecipe) {
@@ -824,10 +800,6 @@ function requestRecipeEdit() {
       'permission-denied',
       '레시피를 관리할 권한이 없습니다.',
     );
-    return;
-  }
-
-  if (!activeRecipe.value) {
     return;
   }
 
@@ -1001,10 +973,6 @@ function departmentName(value) {
  * 제품명 / 상태 / 관리 메뉴
  */
 .detail-overview {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
   min-width: 0;
 }
 
@@ -1022,19 +990,13 @@ function departmentName(value) {
 }
 
 .detail-overview-actions {
-  display: flex;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
 }
 
 /*
- * 카드별 제목과 아이콘
+ * 카드별 제목
  */
 .detail-section-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
 }
 
@@ -1091,9 +1053,6 @@ function departmentName(value) {
 }
 
 .product-audit-entry {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
   padding-top: 8px;
   overflow-wrap: anywhere;
 }
