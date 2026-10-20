@@ -26,6 +26,7 @@
 
         <!-- 재직 상태 -->
         <div class="d-flex align-center flex-shrink-0">
+          <!-- 삭제된 직원 -->
           <v-chip
             v-if="employee.deleted_at"
             size="small"
@@ -35,6 +36,7 @@
             삭제됨
           </v-chip>
 
+          <!-- 재직 상태 변경 메뉴 -->
           <v-menu
             v-else-if="canManage"
             location="bottom end"
@@ -73,6 +75,7 @@
             </v-list>
           </v-menu>
 
+          <!-- 조회 권한만 있는 경우 -->
           <v-chip
             v-else
             size="small"
@@ -215,10 +218,12 @@ defineProps({
     type: Object,
     required: true,
   },
+
   canManage: {
     type: Boolean,
     default: false,
   },
+
   loading: {
     type: Boolean,
     default: false,
@@ -251,7 +256,11 @@ const statusOptions = [
 
 // 빈 값 표시
 function displayValue(value) {
-  if (value === null || value === undefined || value === '') {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
     return '-';
   }
 

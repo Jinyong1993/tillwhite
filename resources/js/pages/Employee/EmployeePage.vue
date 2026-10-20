@@ -143,6 +143,7 @@
 
       <!-- 직원 상세보기 -->
       <EmployeeDetailDialog
+        v-if="!editDialog"
         v-model="detailDialog"
         :employee="selectedEmployee"
         :can-manage="
@@ -168,7 +169,7 @@
         :positions="data.positions"
         :roles="data.roles"
         :loading="employeeActionLoading === 'edit'"
-        @close="editDialog = false"
+        @close="closeEditDialog"
         @save="
           requestEmployeeEditSave($event, setError, setSuccess)
         "
@@ -1300,16 +1301,40 @@ async function openDetailDialog(employee, setError) {
  */
 function closeDetailDialog() {
   detailDialog.value = false;
-  editDialog.value = false;
-  passwordResetDialog.value = false;
-  selectedEmployee.value = null;
 
+  // 수정창에서 사용 중인 직원 정보는 초기화하지 않습니다.
+  if (editDialog.value || passwordResetDialog.value) {
+    return;
+  }
+
+  selectedEmployee.value = null;
 }
 
 // 직원 상세에서 수정 다이얼로그를 엽니다.
-function openEditDialog() {
-  if (!selectedEmployee.value || selectedEmployee.value.deleted_at) return;
+async function openEditDialog() {
+  if (
+    !selectedEmployee.value
+    || selectedEmployee.value.deleted_at
+  ) {
+    return;
+  }
+
+  // 상세보기와 수정창이 동시에 열리지 않도록 합니다.
+  detailDialog.value = false;
+
+  // 상세보기 닫힘 상태를 먼저 반영합니다.
+  await nextTick();
+
+  // 선택 직원 정보는 유지한 상태에서 수정창을 엽니다.
   editDialog.value = true;
+}
+
+function closeEditDialog() {
+  editDialog.value = false;
+
+  if (selectedEmployee.value) {
+    detailDialog.value = true;
+  }
 }
 
 // 직원 상세에서 비밀번호 초기화 다이얼로그를 엽니다.
@@ -1417,6 +1442,7 @@ async function saveEmployeeEdit(payload, setError, setSuccess) {
   editDialog.value = false;
   employeeActionLoading.value = null;
   clearEmployeeConfirm();
+  detailDialog.value = true;
   setSuccess('직원 정보를 수정했습니다.');
 
   await refreshEmployeeData(
