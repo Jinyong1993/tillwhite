@@ -1,13 +1,4 @@
 <template>
-  <!--
-    직원 관리 페이지의 공통 레이아웃(AppShell)입니다.
-
-    appShellRef는 최초 데이터 조회 오류 등에서
-    AppShell의 공통 알림을 호출하기 위해 사용합니다.
-
-    페이지 이동 전체 화면 로딩은
-    애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
-  -->
   <AppShell
     ref="appShellRef"
     :title="pageTitle"
@@ -20,28 +11,19 @@
         setSuccess
       }"
     >
-      <!--
-        직원 등록 버튼
+      <!-- 직원 등록 -->
+      <div class="d-flex align-stretch ga-2 mb-3">
+        <v-btn
+          block
+          class="app-btn employee-primary-action"
+          variant="flat"
+          @click="openRegisterDialog(setError)"
+        >
+          직원 등록
+        </v-btn>
+      </div>
 
-        직원 관리 권한(employee.manage)이 없어도 버튼은 표시합니다.
-
-        버튼을 클릭하면 등록 창을 바로 열지 않고
-        Laravel 서버에 직원 관리 권한(employee.manage)을 확인합니다.
-
-        권한이 없으면 등록 창을 열지 않고
-        공통 오류 알림을 표시합니다.
-      -->
-      <v-btn
-        block
-        class="employee-primary-action mb-5"
-        prepend-icon="mdi-account-plus-outline"
-        variant="flat"
-        @click="openRegisterDialog(setError)"
-      >
-        직원 등록
-      </v-btn>
-
-      <!-- 직원 검색/필터는 기존 UX를 그대로 유지하면서 전용 컴포넌트로 분리합니다. -->
+      <!-- 직원 검색 및 필터 -->
       <EmployeeSearchFilter
         v-model:search-query="searchQuery"
         v-model:status-filter="statusFilter"
@@ -50,19 +32,13 @@
         :page-size-items="itemsPerPageOptions"
         :total="data.employees.length"
         :filtered="filteredEmployees.length"
-        :has-active-filters="Boolean(searchQuery || statusFilter !== 'all')"
+        :has-active-filters="
+          Boolean(searchQuery || statusFilter !== 'all')
+        "
         @reset="resetEmployeeFilters"
       />
 
-      <!--
-        직원 목록
-
-        직원 한 명의 카드 디자인은
-        직원 카드(EmployeeCard) 컴포넌트에서 담당합니다.
-
-        상세보기 버튼을 누르면
-        detail 이벤트로 선택한 직원을 전달받습니다.
-      -->
+      <!-- 직원 목록 -->
       <div
         v-if="paginatedEmployees.length > 0"
         class="d-flex flex-column ga-3"
@@ -74,30 +50,42 @@
           :can-manage="canManageEmployeeCard(employee, can)"
           :loading="employeeActionLoading === 'status'"
           @detail="openDetailDialog($event, setError)"
-          @status-change="requestCardEmployeeStatus(employee, $event)"
+          @status-change="
+            requestCardEmployeeStatus(employee, $event)
+          "
         />
       </div>
 
-      <!-- 직원이 없는 경우 -->
+      <!-- 검색 결과 없음 -->
       <v-card
         v-else
         variant="outlined"
         rounded="lg"
       >
-        <v-card-text class="text-center py-8">
+        <v-card-text
+          class="d-flex flex-column align-center justify-center py-8"
+        >
           <v-icon
-              icon="mdi-account-search-outline"
-              size="36"
-              class="mb-3 text-medium-emphasis"
+            icon="mdi-account-search-outline"
+            size="36"
+            class="mb-3 text-medium-emphasis"
           />
-          <div class="font-weight-medium">검색 결과가 없습니다.</div>
-          <div class="text-caption text-medium-emphasis mt-1">다른 이름이나 연락처로 검색해보세요.</div>
+
+          <div class="font-weight-medium text-center">
+            검색 결과가 없습니다.
+          </div>
+
+          <div
+            class="text-caption text-medium-emphasis text-center mt-1"
+          >
+            다른 이름이나 연락처로 검색해보세요.
+          </div>
+
           <v-btn
             v-if="searchQuery || statusFilter !== 'all'"
             class="mt-4"
             size="small"
             variant="tonal"
-            prepend-icon="mdi-filter-remove-outline"
             @click="resetEmployeeFilters"
           >
             검색/필터 초기화
@@ -105,66 +93,27 @@
         </v-card-text>
       </v-card>
 
-      <!--
-        클라이언트 페이지 이동
-
-        서버에 페이지 요청을 보내지 않고
-        filteredEmployees 결과를 현재 페이지 범위만 잘라서 표시합니다.
-
-        paginationRef는 페이지 변경 전후의
-        페이지네이션 화면 위치를 비교하기 위해 사용합니다.
-
-        예를 들어 마지막 페이지의 직원 수가 적은 상태에서
-        이전 페이지로 이동하여 직원 카드가 많아지더라도,
-        페이지네이션이 아래로 밀린 거리만큼 스크롤을 보정하여
-        사용자가 보고 있던 페이지 버튼 위치를 유지합니다.
-      -->
+      <!-- 페이지네이션 -->
       <div
         v-if="filteredEmployees.length > 0"
         ref="paginationRef"
         class="d-flex flex-column align-center ga-2 mt-5"
       >
-        <!--
-          직원 목록 페이지네이션
-
-          모바일 화면에서 현재 페이지가 중간 구간으로 이동하면
-          이전/다음 버튼과 생략 표시(...)까지 함께 표시될 수 있으므로
-          total-visible을 4로 제한합니다.
-        -->
         <v-pagination
           v-model="currentPage"
           :length="totalPages"
-          :total-visible="4"
-          class="employee-pagination"
+          :total-visible="3"
+          class="app-pagination-compact"
           rounded="circle"
           @update:model-value="handlePageChange"
         />
 
-        <div class="text-caption text-medium-emphasis">
+        <div class="app-result-summary text-medium-emphasis">
           {{ pageStart }}–{{ pageEnd }} / {{ filteredEmployees.length }}명
         </div>
       </div>
 
-      <!--
-        직원 등록 컴포넌트
-
-        등록 화면 자체는
-        직원 등록(EmployeeRegisterDialog) 컴포넌트가 담당합니다.
-
-        EmployeePage는 다음 역할을 담당합니다.
-
-        - Laravel 등록 권한 확인
-        - 등록 가능한 점포 조회
-        - 등록 가능한 직급 조회
-        - 등록 가능한 권한 역할 조회
-        - 등록 취소 확인
-        - 임시저장 확인 및 요청 연결
-        - 임시저장 전체 삭제 확인 및 요청 연결
-        - 실제 직원 등록 확인 및 API 호출
-
-        프론트 화면의 검사는 사용자 편의를 위한 것이며
-        실제 권한과 데이터 검증은 Laravel 서버에서 다시 수행합니다.
-      -->
+      <!-- 직원 등록 -->
       <EmployeeRegisterDialog
         v-model="registerDialog"
         v-model:form="form"
@@ -178,16 +127,7 @@
         @submit="requestSaveEmployee"
       />
 
-      <!--
-        직원 등록 관련 공통 확인창
-
-        취소 / 전체 삭제 / 임시저장 / 등록에서
-        하나의 공통 확인창(ConfirmDialog)을 재사용합니다.
-
-        실제 API 요청이 진행되는 동안에는
-        확인 버튼에 로딩을 표시하고
-        취소 / X / ESC / 바깥 영역 클릭을 막습니다.
-      -->
+      <!-- 직원 등록 확인창 -->
       <ConfirmDialog
         v-model="confirmDialog.open"
         :title="confirmDialog.title"
@@ -195,40 +135,32 @@
         :confirm-text="confirmDialog.confirmText"
         :cancel-text="confirmDialog.cancelText"
         :loading="isRegisterProcessing"
-        @confirm="handleConfirm(
-          setError,
-          setSuccess
-        )"
+        @confirm="
+          handleConfirm(setError, setSuccess)
+        "
         @cancel="clearConfirmDialog"
       />
 
-      <!--
-        직원 상세보기 컴포넌트
-
-        상세정보 화면 자체는
-        직원 상세보기(EmployeeDetailDialog) 컴포넌트가 담당합니다.
-
-        EmployeePage는 다음 역할을 담당합니다.
-
-        - Laravel 상세조회 API 호출
-        - 직원 관리 권한(employee.manage) 판단
-        - 최고 관리자(super_admin) 보호
-        - 직원 수정/삭제/복구/비밀번호 초기화 API 호출
-      -->
+      <!-- 직원 상세보기 -->
       <EmployeeDetailDialog
         v-model="detailDialog"
         :employee="selectedEmployee"
-        :can-manage="can('employee.manage') && selectedEmployee?.role?.code !== 'super_admin'"
+        :can-manage="
+          can('employee.manage')
+          && selectedEmployee?.role?.code !== 'super_admin'
+        "
         @close="closeDetailDialog"
         @edit="openEditDialog"
         @password-reset="openPasswordResetDialog"
-        @status-change="changeEmployeeStatus($event, setError, setSuccess)"
+        @status-change="
+          changeEmployeeStatus($event, setError, setSuccess)
+        "
         @delete="requestEmployeeAction('delete')"
         @restore="requestEmployeeAction('restore')"
         @permission-denied="setError($event)"
       />
 
-      <!-- 직원 정보 수정은 상세조회에서 받은 최신 값을 기준으로 별도 다이얼로그에서 처리합니다. -->
+      <!-- 직원 정보 수정 -->
       <EmployeeEditDialog
         v-model="editDialog"
         :employee="selectedEmployee"
@@ -237,33 +169,40 @@
         :roles="data.roles"
         :loading="employeeActionLoading === 'edit'"
         @close="editDialog = false"
-        @save="requestEmployeeEditSave($event, setError, setSuccess)"
+        @save="
+          requestEmployeeEditSave($event, setError, setSuccess)
+        "
       />
 
-      <!-- 비밀번호는 일반 직원 정보 수정과 분리하고 화면 상태에도 평문을 보관하지 않습니다. -->
+      <!-- 비밀번호 초기화 -->
       <EmployeePasswordResetDialog
         v-model="passwordResetDialog"
         :employee="selectedEmployee"
         :loading="employeeActionLoading === 'password'"
         @close="passwordResetDialog = false"
-        @save="saveEmployeePassword($event, setError, setSuccess)"
+        @save="
+          saveEmployeePassword($event, setError, setSuccess)
+        "
       />
 
-      <!-- 삭제/복구는 실수 방지를 위해 실행 직전에 한 번 더 확인합니다. -->
+      <!-- 직원 삭제 및 복구 확인창 -->
       <ConfirmDialog
         v-model="employeeConfirm.open"
         :title="employeeConfirm.title"
         :message="employeeConfirm.message"
         :confirm-text="employeeConfirm.confirmText"
         cancel-text="취소"
-        :loading="employeeActionLoading === employeeConfirm.action"
-        @confirm="executeEmployeeAction(setError, setSuccess)"
+        :loading="
+          employeeActionLoading === employeeConfirm.action
+        "
+        @confirm="
+          executeEmployeeAction(setError, setSuccess)
+        "
         @cancel="clearEmployeeConfirm"
       />
     </template>
   </AppShell>
 </template>
-
 <script setup>
 import {
   computed,
@@ -1798,109 +1737,14 @@ onMounted(() => {
 
 <style scoped>
 .employee-primary-action {
+  min-width: 0;
   min-height: 44px;
 }
 
 .employee-primary-action :deep(.v-btn__content) {
+  min-width: 0;
   white-space: normal;
-}
-
-.employee-toolbar {
-  overflow: hidden;
-  background: rgba(var(--v-theme-on-surface), 0.025);
-  border: 1px solid rgba(var(--v-border-color), 0.14);
-}
-
-/* 모바일 기준: 검색은 한 줄 전체, 상태/표시 인원은 그 아래 두 칸으로 배치합니다. */
-.employee-toolbar-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas: "search search" "status page-size";
-  gap: 10px;
-}
-.employee-search-field {
-    grid-area: search;
-}
-.employee-status-filter {
-    grid-area: status;
-}
-.employee-page-size {
-    grid-area: page-size;
-}
-
-/* 직원 카드와 비슷한 옅은 경계만 사용하고 포커스 시에도 과한 흰색 테두리를 만들지 않습니다. */
-.employee-toolbar :deep(.v-field) {
-  --v-field-border-opacity: 0.18;
-}
-.employee-toolbar :deep(.v-field--focused) {
-  --v-field-border-opacity: 0.34;
-}
-
-/*
- * 직원 목록 페이지네이션
- *
- * 페이지네이션 전체는 부모 영역 안에서만 사용합니다.
- * 좌우에 동일한 여백을 주어 이전/다음 화살표가
- * 화면 밖으로 밀려나지 않도록 합니다.
- */
-.employee-pagination {
-  width: calc(100% - 8px);
-  max-width: calc(100% - 8px);
-
-  margin-inline: auto;
-
-  box-sizing: border-box;
-}
-
-/*
- * Vuetify 페이지네이션 내부 목록
- *
- * 내부 목록 자체의 너비를 다시 줄이지 않습니다.
- * 바깥 .employee-pagination에서 이미 좌우 여백을
- * 확보했기 때문에 여기서 추가 계산을 하면
- * 한쪽 화살표가 밀려날 수 있습니다.
- */
-.employee-pagination :deep(.v-pagination__list) {
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  padding: 0;
-  justify-content: center;
-  gap: 2px;
-}
-
-/*
- * 페이지 번호 / 이전 / 다음 버튼
- *
- * 모든 버튼을 동일한 크기로 고정하여
- * 왼쪽/오른쪽 화살표의 크기 차이 때문에
- * 한쪽만 밀리는 현상을 방지합니다.
- */
-.employee-pagination :deep(.v-btn) {
-  flex: 0 0 36px;
-  min-width: 36px;
-  width: 36px;
-  height: 36px;
-}
-
-/*
- * 매우 작은 모바일 화면
- *
- * 340px 이하에서는 버튼 크기만 약간 줄여
- * 페이지네이션 전체가 화면 안에 들어오도록 합니다.
- */
-@media (max-width: 340px) {
-  .employee-pagination {
-    width: calc(100% - 16px);
-    max-width: calc(100% - 16px);
-  }
-
-  .employee-pagination :deep(.v-btn) {
-    flex-basis: 32px;
-
-    min-width: 32px;
-    width: 32px;
-    height: 32px;
-  }
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 </style>

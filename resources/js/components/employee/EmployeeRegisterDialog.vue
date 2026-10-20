@@ -10,10 +10,7 @@
     body-class="employee-register-body"
     @update:model-value="handleDialogChange"
   >
-    <div
-      ref="scrollAreaRef"
-      class="employee-register-content d-flex flex-column ga-3"
-    >
+    <div class="d-flex flex-column ga-3 w-100">
       <!-- 필수 입력 안내 -->
       <v-alert
         type="info"
@@ -25,10 +22,10 @@
         * 표시는 필수 입력 항목입니다.
       </v-alert>
 
-      <!-- 입력 검증 공통 알림 -->
+      <!-- 입력 검증 알림 -->
       <div
         v-if="validationMessage"
-        class="validation-alert-wrap"
+        class="w-100"
       >
         <AppAlert
           v-model="validationMessage"
@@ -43,7 +40,7 @@
         rounded="lg"
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
-        <div class="employee-register-section-heading">
+        <div class="w-100">
           <div class="app-form-section-title">
             기본 정보
           </div>
@@ -57,7 +54,7 @@
           <!-- 이름 -->
           <div
             ref="nameRef"
-            class="field-anchor"
+            class="w-100"
           >
             <v-text-field
               :model-value="form.name"
@@ -78,7 +75,7 @@
           <!-- 휴대폰 번호 -->
           <div
             ref="phoneRef"
-            class="field-anchor"
+            class="w-100"
           >
             <v-text-field
               :model-value="form.phone"
@@ -103,7 +100,7 @@
           <!-- 생년월일 -->
           <div
             ref="birthDateRef"
-            class="field-anchor"
+            class="w-100"
           >
             <v-text-field
               :model-value="form.birth_date"
@@ -124,7 +121,7 @@
           <!-- 입사일 -->
           <div
             ref="hiredAtRef"
-            class="field-anchor"
+            class="w-100"
           >
             <v-text-field
               :model-value="form.hired_at"
@@ -149,7 +146,7 @@
         rounded="lg"
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
-        <div class="employee-register-section-heading">
+        <div class="w-100">
           <div class="app-form-section-title">
             계정 정보
           </div>
@@ -163,7 +160,7 @@
           <!-- 사원번호 -->
           <div
             ref="employeeCodeRef"
-            class="field-anchor"
+            class="w-100"
           >
             <v-text-field
               :model-value="form.employee_code"
@@ -187,7 +184,7 @@
           <!-- 초기 비밀번호 -->
           <div
             ref="passwordRef"
-            class="field-anchor"
+            class="w-100"
           >
             <v-text-field
               :model-value="form.password"
@@ -224,7 +221,7 @@
         rounded="lg"
         class="app-form-section d-flex flex-column ga-3 pa-3"
       >
-        <div class="employee-register-section-heading">
+        <div class="w-100">
           <div class="app-form-section-title">
             소속 정보
           </div>
@@ -234,117 +231,140 @@
           </div>
         </div>
 
-        <div class="employee-register-grid">
+        <v-row dense>
           <!-- 부서 -->
-          <div
-            ref="departmentRef"
-            class="field-anchor"
+          <v-col
+            cols="12"
+            sm="6"
           >
-            <v-select
-              :model-value="form.department"
-              :items="departments"
-              label="부서"
-              variant="outlined"
-              density="compact"
-              class="app-select"
-              hide-details="auto"
-              :error-messages="fieldError('department')"
-              @update:model-value="updateDepartment"
-            />
-          </div>
+            <div
+              ref="departmentRef"
+              class="w-100"
+            >
+              <v-select
+                :model-value="form.department"
+                :items="departments"
+                label="부서"
+                variant="outlined"
+                density="compact"
+                class="app-select"
+                hide-details="auto"
+                :error-messages="fieldError('department')"
+                @update:model-value="updateDepartment"
+              />
+            </div>
+          </v-col>
 
-          <!-- 본사 이외의 직원은 점포 선택 -->
-          <div
+          <!-- 점포 -->
+          <v-col
             v-if="form.department !== 'head_office'"
-            ref="storeRef"
-            class="field-anchor"
+            cols="12"
+            sm="6"
           >
-            <v-select
-              :model-value="form.store_id"
-              :items="stores"
-              item-title="name"
-              item-value="id"
-              label="점포"
-              variant="outlined"
-              density="compact"
-              class="app-select"
-              hide-details="auto"
-              :error-messages="fieldError('store_id')"
-              @update:model-value="
-                updateField('store_id', $event)
-              "
-            />
-          </div>
+            <div
+              ref="storeRef"
+              class="w-100"
+            >
+              <v-select
+                :model-value="form.store_id"
+                :items="stores"
+                item-title="name"
+                item-value="id"
+                label="점포"
+                variant="outlined"
+                density="compact"
+                class="app-select"
+                hide-details="auto"
+                :error-messages="fieldError('store_id')"
+                @update:model-value="
+                  updateField('store_id', $event)
+                "
+              />
+            </div>
+          </v-col>
 
           <!-- 본사 소속 안내 -->
-          <div
+          <v-col
             v-else
-            class="app-form-notice"
+            cols="12"
+            sm="6"
           >
-            <v-icon
-              icon="mdi-office-building-outline"
-              size="18"
-              class="flex-shrink-0"
-            />
+            <div class="app-form-notice">
+              <v-icon
+                icon="mdi-office-building-outline"
+                size="18"
+                class="flex-shrink-0"
+              />
 
-            <div class="min-width-0">
-              <div class="app-form-notice-title">
-                본사 소속
-              </div>
+              <div class="app-card-content">
+                <div class="app-form-notice-title">
+                  본사 소속
+                </div>
 
-              <div class="app-supporting-text text-medium-emphasis">
-                본사 직원은 특정 점포에 소속되지 않습니다.
+                <div class="app-supporting-text text-medium-emphasis">
+                  본사 직원은 특정 점포에 소속되지 않습니다.
+                </div>
               </div>
             </div>
-          </div>
+          </v-col>
 
           <!-- 직급 -->
-          <div
-            ref="positionRef"
-            class="field-anchor"
+          <v-col
+            cols="12"
+            sm="6"
           >
-            <v-select
-              :model-value="form.position_id"
-              :items="positions"
-              item-title="name"
-              item-value="id"
-              label="직급"
-              variant="outlined"
-              density="compact"
-              class="app-select"
-              hide-details="auto"
-              :error-messages="fieldError('position_id')"
-              @update:model-value="
-                updateField('position_id', $event)
-              "
-            />
-          </div>
+            <div
+              ref="positionRef"
+              class="w-100"
+            >
+              <v-select
+                :model-value="form.position_id"
+                :items="positions"
+                item-title="name"
+                item-value="id"
+                label="직급"
+                variant="outlined"
+                density="compact"
+                class="app-select"
+                hide-details="auto"
+                :error-messages="fieldError('position_id')"
+                @update:model-value="
+                  updateField('position_id', $event)
+                "
+              />
+            </div>
+          </v-col>
 
           <!-- 권한 역할 -->
-          <div
-            ref="roleRef"
-            class="field-anchor"
+          <v-col
+            cols="12"
+            sm="6"
           >
-            <v-select
-              :model-value="form.role_id"
-              :items="filteredRoles"
-              item-title="name"
-              item-value="id"
-              label="권한 역할"
-              variant="outlined"
-              density="compact"
-              class="app-select"
-              hide-details="auto"
-              :disabled="!form.department"
-              :error-messages="fieldError('role_id')"
-              @update:model-value="
-                updateField('role_id', $event)
-              "
-            />
-          </div>
-        </div>
+            <div
+              ref="roleRef"
+              class="w-100"
+            >
+              <v-select
+                :model-value="form.role_id"
+                :items="filteredRoles"
+                item-title="name"
+                item-value="id"
+                label="권한 역할"
+                variant="outlined"
+                density="compact"
+                class="app-select"
+                hide-details="auto"
+                :disabled="!form.department"
+                :error-messages="fieldError('role_id')"
+                @update:model-value="
+                  updateField('role_id', $event)
+                "
+              />
+            </div>
+          </v-col>
+        </v-row>
 
-        <!-- 공통 안내 디자인 -->
+        <!-- 권한 안내 -->
         <div class="app-form-notice">
           <v-icon
             icon="mdi-information-outline"
@@ -480,25 +500,17 @@ const emit = defineEmits([
   'close',
 ]);
 
-/*
- * 현재 직원 등록 관련 작업이 실행 중인지 확인합니다.
- */
+// 처리 상태
 const isProcessing = computed(
   () => props.loadingAction !== null,
 );
 
-/*
- * 비밀번호 표시와 입력 오류 상태입니다.
- */
+// 비밀번호 표시 및 입력 오류
 const showPassword = ref(false);
 const invalidField = ref('');
 const validationMessage = ref('');
 
-/*
- * 기존 입력 오류 자동 이동에 사용하는 참조입니다.
- */
-const scrollAreaRef = ref(null);
-
+// 입력 오류 위치 이동
 const employeeCodeRef = ref(null);
 const nameRef = ref(null);
 const phoneRef = ref(null);
@@ -510,9 +522,7 @@ const positionRef = ref(null);
 const roleRef = ref(null);
 const hiredAtRef = ref(null);
 
-/*
- * 직원 소속 부서 목록입니다.
- */
+// 부서 목록
 const departments = [
   {
     title: '주방',
@@ -528,10 +538,7 @@ const departments = [
   },
 ];
 
-/*
- * 부서별로 선택 가능한 권한 역할 코드입니다.
- * 최종 권한 검증은 Laravel 서버에서 수행합니다.
- */
+// 부서별 권한 역할
 const departmentRoleCodes = {
   kitchen: [
     'staff',
@@ -547,9 +554,7 @@ const departmentRoleCodes = {
   ],
 };
 
-/*
- * 현재 부서에서 선택할 수 있는 역할만 표시합니다.
- */
+// 선택한 부서에서 사용 가능한 역할
 const filteredRoles = computed(() => {
   const allowedCodes = departmentRoleCodes[
     props.form.department
@@ -564,44 +569,48 @@ const filteredRoles = computed(() => {
   );
 });
 
-/*
- * 날짜 입력에서 미래 생년월일을 제한합니다.
- */
+// 생년월일의 최대 선택 날짜
 const today = new Date().toLocaleDateString('sv-SE');
 
 /*
- * 하나라도 입력한 항목이 있는지 판단합니다.
+ * 기본값만으로 전체 삭제 및 임시저장이
+ * 활성화되지 않도록 직접 수정한 필드를 기록합니다.
  *
- * 전체 삭제와 임시저장 버튼의 활성화 조건입니다.
- * 부서, 점포, 직급, 권한 역할 선택도 입력으로 인정합니다.
- *
- * 객체 안의 다른 시스템 필드는 판단에 포함하지 않습니다.
+ * 기존에 입력된 주요 정보가 복원된 경우에도
+ * 버튼을 사용할 수 있도록 유지합니다.
  */
+const userEditedFields = ref([]);
+
 const hasAnyInput = computed(() => {
-  const fields = [
+  const savedInputFields = [
     'name',
     'phone',
     'birth_date',
-    'hired_at',
     'employee_code',
     'password',
-    'department',
-    'store_id',
-    'position_id',
-    'role_id',
   ];
 
-  return fields.some(
+  const hasSavedInput = savedInputFields.some(
     (field) => !isEmpty(props.form[field]),
   );
+
+  const hasEditedInput = userEditedFields.value.some(
+    (field) => !isEmpty(props.form[field]),
+  );
+
+  return hasSavedInput || hasEditedInput;
 });
 
-/*
- * 등록에 필요한 입력 항목이 모두 채워졌는지 판단합니다.
- *
- * 본사 직원은 점포 선택이 필수가 아닙니다.
- * 실제 값의 형식 검증은 validateAndSubmit()이 담당합니다.
- */
+function markUserEdited(field) {
+  if (!userEditedFields.value.includes(field)) {
+    userEditedFields.value = [
+      ...userEditedFields.value,
+      field,
+    ];
+  }
+}
+
+// 필수 입력 완료 여부
 const isFormComplete = computed(() => {
   const requiredFields = [
     'name',
@@ -630,12 +639,12 @@ const isFormComplete = computed(() => {
   return true;
 });
 
-/*
- * 다이얼로그를 닫으면 비밀번호 표시 및 검증 상태를 초기화합니다.
- */
+// 다이얼로그 상태 초기화
 watch(
   () => props.modelValue,
   (value) => {
+    userEditedFields.value = [];
+
     if (!value) {
       showPassword.value = false;
       clearValidation();
@@ -643,9 +652,7 @@ watch(
   },
 );
 
-/*
- * 해당 입력 필드에 속한 오류만 표시합니다.
- */
+// 해당 필드의 검증 오류
 function fieldError(field) {
   if (invalidField.value !== field) {
     return [];
@@ -656,9 +663,7 @@ function fieldError(field) {
     : [];
 }
 
-/*
- * 빈 문자열, null, undefined만 빈 값으로 판정합니다.
- */
+// 빈 값 판정
 function isEmpty(value) {
   return (
     value === null
@@ -667,28 +672,23 @@ function isEmpty(value) {
   );
 }
 
-/*
- * 입력 오류를 초기화합니다.
- */
+// 검증 상태 초기화
 function clearValidation() {
   invalidField.value = '';
   validationMessage.value = '';
 }
 
-/*
- * 오류가 발생한 필드를 수정하면 해당 오류를 제거합니다.
- */
+// 수정한 필드의 오류 제거
 function clearFieldValidation(field) {
   if (invalidField.value === field) {
     clearValidation();
   }
 }
 
-/*
- * 부모 컴포넌트의 form을 직접 변경하지 않습니다.
- */
+// 부모의 form을 직접 변경하지 않고 이벤트 전달
 function updateField(field, value) {
   clearFieldValidation(field);
+  markUserEdited(field);
 
   emit('update:form', {
     ...props.form,
@@ -696,9 +696,7 @@ function updateField(field, value) {
   });
 }
 
-/*
- * 휴대폰 번호 및 사원번호를 숫자 문자열로 관리합니다.
- */
+// 휴대폰 번호와 사원번호는 숫자만 허용
 function updateNumericField(field, value, maxLength) {
   const numericValue = String(value ?? '')
     .replace(/\D/g, '')
@@ -707,11 +705,10 @@ function updateNumericField(field, value, maxLength) {
   updateField(field, numericValue);
 }
 
-/*
- * 부서를 변경할 때 소속 점포 및 권한 역할을 조정합니다.
- */
+// 부서 변경 시 점포 및 권한 역할 조정
 function updateDepartment(value) {
   clearFieldValidation('department');
+  markUserEdited('department');
 
   if (
     invalidField.value === 'store_id'
@@ -752,9 +749,7 @@ function updateDepartment(value) {
   emit('update:form', nextForm);
 }
 
-/*
- * 오류 필드의 DOM 참조를 반환합니다.
- */
+// 입력 필드 DOM 참조
 function getFieldRef(field) {
   const refs = {
     name: nameRef,
@@ -772,9 +767,7 @@ function getFieldRef(field) {
   return refs[field]?.value ?? null;
 }
 
-/*
- * 첫 번째 오류 필드로 스크롤하고 포커스를 이동합니다.
- */
+// 오류 필드로 스크롤 및 포커스 이동
 async function focusInvalidField(field) {
   await nextTick();
 
@@ -800,9 +793,7 @@ async function focusInvalidField(field) {
   });
 }
 
-/*
- * 입력 검증 실패 메시지를 표시합니다.
- */
+// 검증 오류 표시
 function showValidationError(field, message) {
   invalidField.value = field;
   validationMessage.value = message;
@@ -810,9 +801,7 @@ function showValidationError(field, message) {
   focusInvalidField(field);
 }
 
-/*
- * 기존 직원 등록 검증 순서와 조건을 유지합니다.
- */
+// 직원 등록 검증
 function validateAndSubmit() {
   if (isProcessing.value || !isFormComplete.value) {
     return;
@@ -831,9 +820,7 @@ function validateAndSubmit() {
   const positionId = props.form.position_id;
   const roleId = props.form.role_id;
 
-  /*
-   * 1. 이름
-   */
+  // 1. 이름
   if (isEmpty(name)) {
     showValidationError(
       'name',
@@ -850,9 +837,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 2. 휴대폰 번호
-   */
+  // 2. 휴대폰 번호
   if (isEmpty(phone)) {
     showValidationError(
       'phone',
@@ -877,9 +862,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 3. 생년월일
-   */
+  // 3. 생년월일
   if (isEmpty(birthDate)) {
     showValidationError(
       'birth_date',
@@ -896,9 +879,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 4. 입사일
-   */
+  // 4. 입사일
   if (isEmpty(hiredAt)) {
     showValidationError(
       'hired_at',
@@ -907,9 +888,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 5. 사원번호
-   */
+  // 5. 사원번호
   if (isEmpty(employeeCode)) {
     showValidationError(
       'employee_code',
@@ -934,9 +913,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 6. 초기 비밀번호
-   */
+  // 6. 초기 비밀번호
   if (isEmpty(password)) {
     showValidationError(
       'password',
@@ -961,9 +938,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 7. 소속 부서
-   */
+  // 7. 소속 부서
   if (isEmpty(department)) {
     showValidationError(
       'department',
@@ -984,10 +959,8 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 8. 소속 점포
-   * 본사 직원은 점포를 선택하지 않습니다.
-   */
+  // 8. 소속 점포
+  // 본사 직원은 점포 선택이 필요하지 않습니다.
   if (
     department !== 'head_office'
     && isEmpty(storeId)
@@ -999,9 +972,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 9. 직급
-   */
+  // 9. 직급
   if (isEmpty(positionId)) {
     showValidationError(
       'position_id',
@@ -1010,9 +981,7 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 10. 권한 역할
-   */
+  // 10. 권한 역할
   if (isEmpty(roleId)) {
     showValidationError(
       'role_id',
@@ -1039,16 +1008,11 @@ function validateAndSubmit() {
     return;
   }
 
-  /*
-   * 검증 통과 후 기존 부모 확인창으로 전달합니다.
-   */
+  // 기존 부모 화면의 등록 확인 흐름 유지
   emit('submit');
 }
 
-/*
- * 입력값이 있는 경우에만 임시저장을 요청합니다.
- * 기존처럼 필수 입력 검증은 수행하지 않습니다.
- */
+// 임시저장
 function saveDraft() {
   if (isProcessing.value || !hasAnyInput.value) {
     return;
@@ -1058,10 +1022,7 @@ function saveDraft() {
   emit('draft');
 }
 
-/*
- * 입력값이 있는 경우에만 전체 삭제를 요청합니다.
- * 실제 삭제 확인 및 Session 처리는 기존 부모가 담당합니다.
- */
+// 전체 삭제
 function deleteDraft() {
   if (isProcessing.value || !hasAnyInput.value) {
     return;
@@ -1071,9 +1032,7 @@ function deleteDraft() {
   emit('delete');
 }
 
-/*
- * 기존 부모 화면의 닫기 승인 흐름을 유지합니다.
- */
+// 다이얼로그 닫기
 function handleDialogChange(value) {
   if (value || isProcessing.value) {
     return;
@@ -1090,70 +1049,3 @@ function close() {
   emit('close');
 }
 </script>
-
-<style scoped>
-/*
- * 직원 등록 내용 전체입니다.
- * 본문 스크롤은 AppDialogLayout에서 담당합니다.
- */
-.employee-register-content {
-  min-width: 0;
-  width: 100%;
-}
-
-/*
- * 공통 카드 디자인과 섹션 제목은
- * app-form-section, app-form-section-title을 사용합니다.
- */
-.employee-register-section-heading {
-  min-width: 0;
-}
-
-/*
- * 기존 검증 오류의 입력 위치 이동을 위한 영역입니다.
- */
-.field-anchor {
-  min-width: 0;
-  width: 100%;
-}
-
-/*
- * 소속 정보는 PC에서 2열,
- * 모바일에서 1열로 표시합니다.
- */
-.employee-register-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 12px;
-  min-width: 0;
-}
-
-/*
- * 검증 알림은 기존 공통 AppAlert를 사용합니다.
- */
-.validation-alert-wrap {
-  min-width: 0;
-}
-
-.validation-alert-wrap :deep(.v-alert) {
-  margin-bottom: 0 !important;
-}
-
-/*
- * 모바일 소속 정보 레이아웃 및
- * iOS 입력 자동 확대 방지입니다.
- */
-@media (max-width: 600px) {
-  .employee-register-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .employee-register-content {
-    gap: 8px !important;
-  }
-
-  .field-anchor :deep(input) {
-    font-size: 16px;
-  }
-}
-</style>
