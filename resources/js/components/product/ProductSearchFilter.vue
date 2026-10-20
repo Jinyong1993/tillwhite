@@ -6,7 +6,14 @@
     rounded="lg"
   >
     <v-card-text>
-      <div class="filter-grid">
+      <div
+        class="filter-grid"
+        :class="{
+          'filter-grid--with-store': showStore,
+          'filter-grid--expanded': mobileFiltersOpen,
+        }"
+      >
+        <!-- 제품 검색 -->
         <v-text-field
           class="search-field"
           :model-value="searchQuery"
@@ -20,8 +27,10 @@
           @update:model-value="$emit('update:searchQuery', $event ?? '')"
         />
 
+        <!-- 점포 -->
         <v-select
           v-if="showStore"
+          class="store-field mobile-extra-filter"
           :model-value="storeFilter"
           :items="storeItems"
           label="점포"
@@ -31,7 +40,9 @@
           @update:model-value="$emit('update:storeFilter', $event)"
         />
 
+        <!-- 카테고리 -->
         <v-select
+          class="category-field mobile-extra-filter"
           :model-value="categoryFilter"
           :items="categoryItems"
           label="카테고리"
@@ -41,7 +52,9 @@
           @update:model-value="$emit('update:categoryFilter', $event)"
         />
 
+        <!-- 상태 -->
         <v-select
+          class="status-field"
           :model-value="statusFilter"
           :items="statusItems"
           label="상태"
@@ -51,7 +64,9 @@
           @update:model-value="$emit('update:statusFilter', $event)"
         />
 
+        <!-- 판매 유형 -->
         <v-select
+          class="sales-type-field mobile-extra-filter"
           :model-value="salesTypeFilter"
           :items="salesTypeItems"
           label="판매 유형"
@@ -61,8 +76,9 @@
           @update:model-value="$emit('update:salesTypeFilter', $event)"
         />
 
+        <!-- 페이지당 표시 개수 -->
         <v-select
-          class="last-filter"
+          class="last-filter mobile-extra-filter"
           :model-value="itemsPerPage"
           :items="pageSizeItems"
           label="페이지당"
@@ -71,10 +87,30 @@
           hide-details
           @update:model-value="$emit('update:itemsPerPage', $event)"
         />
+
+        <!-- 모바일 상세 필터 -->
+        <v-btn
+          class="app-btn filter-toggle"
+          variant="tonal"
+          block
+          :aria-expanded="mobileFiltersOpen"
+          @click="mobileFiltersOpen = !mobileFiltersOpen"
+        >
+          {{
+            mobileFiltersOpen
+              ? '상세 필터 접기'
+              : hasHiddenFilters
+                ? '상세 필터 적용 중 · 펼치기'
+                : '상세 필터 펼치기'
+          }}
+        </v-btn>
       </div>
 
-      <div class="filter-summary mt-3">
-        <div class="text-caption text-medium-emphasis">
+      <!-- 검색 결과 요약 -->
+      <div
+        class="d-flex flex-wrap align-center justify-space-between ga-2 mt-3"
+      >
+        <div class="app-result-summary text-medium-emphasis">
           전체 {{ total }}개 · 검색 결과 {{ filtered }}개
         </div>
 
@@ -82,7 +118,6 @@
           v-if="hasActiveFilters"
           size="small"
           variant="text"
-          prepend-icon="mdi-filter-remove-outline"
           @click="$emit('reset')"
         >
           검색 초기화
@@ -93,7 +128,9 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed, ref } from 'vue';
+
+const props = defineProps({
   searchQuery: {
     type: String,
     default: '',
@@ -165,6 +202,15 @@ defineEmits([
   'update:itemsPerPage',
   'reset',
 ]);
+
+const mobileFiltersOpen = ref(false);
+
+const hasHiddenFilters = computed(() => (
+  (props.showStore && String(props.storeFilter) !== 'all')
+  || String(props.categoryFilter) !== 'all'
+  || props.salesTypeFilter !== 'all'
+  || props.itemsPerPage !== 10
+));
 </script>
 
 <style scoped>
@@ -188,30 +234,68 @@ defineEmits([
   gap: 12px;
 }
 
+.filter-grid > * {
+  min-width: 0;
+}
+
 .search-field {
   grid-column: 1 / -1;
 }
 
-.last-filter:nth-child(even) {
+.filter-grid--with-store .last-filter {
   grid-column: 1 / -1;
 }
 
-.filter-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
+.filter-toggle {
+  display: none;
 }
 
-@media (max-width: 360px) {
+@media (max-width: 599px) {
   .filter-grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
   }
 
-  .search-field,
+  .search-field {
+    order: 1;
+  }
+
+  .status-field {
+    order: 2;
+  }
+
+  .filter-toggle {
+    display: flex;
+    order: 3;
+    min-width: 0;
+    height: auto;
+    min-height: 44px;
+    padding-block: 8px;
+    white-space: normal;
+  }
+
+  .store-field {
+    order: 4;
+  }
+
+  .category-field {
+    order: 5;
+  }
+
+  .sales-type-field {
+    order: 6;
+  }
+
   .last-filter {
-    grid-column: auto;
+    order: 7;
+  }
+
+  .mobile-extra-filter {
+    display: none;
+  }
+
+  .filter-grid--expanded .mobile-extra-filter {
+    display: grid;
   }
 }
 </style>

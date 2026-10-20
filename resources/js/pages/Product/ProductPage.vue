@@ -2,31 +2,33 @@
   <AppShell ref="appShellRef" :title="pageTitle">
     <template #default="{ user, can, setError, setSuccess }">
       <!-- 제품 등록 / 카테고리 관리 -->
-      <div class="product-primary-actions mb-5">
+      <div class="d-flex align-stretch ga-2 mb-3">
         <v-btn
-          class="product-primary-action"
-          block
-          prepend-icon="mdi-package-variant-plus"
+          class="app-btn product-primary-action flex-1-1-0"
           variant="flat"
           @click="openRegisterDialog(user, can, setError)"
         >
-          <span class="product-primary-action-label">제품 등록</span>
+          제품 등록
         </v-btn>
 
         <v-btn
-          class="product-primary-action"
-          block
-          prepend-icon="mdi-shape-plus-outline"
+          class="app-btn product-primary-action flex-1-1-0"
           variant="flat"
           @click="openCategoryDialog(can, setError)"
         >
-          <span class="product-primary-action-label">카테고리 관리</span>
+          카테고리 관리
         </v-btn>
       </div>
 
       <!-- 최근 본 제품 -->
-      <div v-if="recentViewed.length" class="recent-viewed mb-5">
-        <span class="recent-viewed-label">최근 본 제품</span>
+      <div
+        v-if="recentViewed.length"
+        class="recent-viewed d-flex flex-wrap align-center mb-3"
+      >
+        <span class="recent-viewed-label">
+          최근 본 제품
+        </span>
+
         <v-chip
           v-for="item in recentViewed"
           :key="item.id"
@@ -114,12 +116,12 @@
           :model-value="currentPage"
           :length="totalPages"
           :total-visible="4"
-          class="product-pagination"
+          class="app-pagination-compact"
           rounded="circle"
           @update:model-value="handlePageChange"
         />
 
-        <div class="text-caption text-medium-emphasis">
+        <div class="app-result-summary text-medium-emphasis">
           {{ pageStart }}–{{ pageEnd }} / {{ filteredProducts.length }}개
         </div>
       </div>
@@ -1546,12 +1548,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.product-primary-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
 .product-primary-action {
   min-width: 0;
   min-height: 44px;
@@ -1564,8 +1560,9 @@ onMounted(() => {
   min-width: 0;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 6px;
   white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .product-primary-action-label {
@@ -1575,14 +1572,12 @@ onMounted(() => {
 }
 
 .recent-viewed {
-  display: flex;
   min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 6px;
 }
 
 .recent-viewed-chip {
+  min-width: 0;
   max-width: min(240px, 100%);
 }
 
@@ -1597,32 +1592,5 @@ onMounted(() => {
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 0.76rem;
   font-weight: 700;
-}
-
-.product-pagination {
-  width: calc(100% - 8px);
-  max-width: calc(100% - 8px);
-  margin-inline: auto;
-  box-sizing: border-box;
-}
-
-.product-pagination :deep(.v-pagination__list) {
-  width: 100%;
-  max-width: 100%;
-  justify-content: center;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-}
-
-.product-pagination :deep(.v-pagination__list > li) {
-  flex: 0 0 auto;
-}
-
-.product-pagination :deep(.v-btn) {
-  flex: 0 0 36px;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
 }
 </style>
