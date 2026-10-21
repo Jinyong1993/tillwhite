@@ -341,18 +341,16 @@
     <!-- 변경 이력 및 마감 액션 -->
     <div class="daily-actions d-flex align-center ga-2">
       <v-btn
-        variant="text"
+        variant="tonal"
         class="app-btn"
         @click="openHistory"
       >
         변경 이력
       </v-btn>
 
-      <v-spacer />
-
       <v-btn
         v-if="daily.closure_status === 'closed'"
-        variant="outlined"
+        variant="tonal"
         class="app-btn"
         :disabled="!canCorrect"
         @click="correctionOpen = true"
@@ -362,7 +360,7 @@
 
       <v-btn
         v-else
-        variant="flat"
+        variant="tonal"
         class="app-btn"
         :disabled="
           daily.closure_status === 'store_closed' || !canMutate
@@ -2733,8 +2731,16 @@ async function closeDay() {
   border-radius: 0;
 }
 
+/* 변경 이력 및 마감 버튼 */
 .daily-actions {
+  gap: 8px;
   padding-top: 6px;
+}
+
+.daily-actions > .v-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
 }
 
 /* 요약 상세 */
