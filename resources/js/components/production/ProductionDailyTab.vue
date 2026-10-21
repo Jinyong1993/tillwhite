@@ -1005,58 +1005,79 @@
     />
 
     <!-- 마감 후 수정 사유 -->
-    <v-dialog
+    <AppDialogLayout
       v-model="correctionOpen"
-      max-width="560"
+      title="마감 후 수정"
+      subtitle="마감된 업무 기록의 수정 사유를 입력합니다."
+      :max-width="560"
       persistent
+      card-class="app-dialog-card--compact"
     >
-      <v-card
-        rounded="lg"
-        class="app-dialog-card"
-      >
-        <v-card-title class="app-dialog-header">
-          마감 후 수정
-        </v-card-title>
+      <div class="d-flex flex-column ga-3">
+        <!-- 수정 시 영향 안내 -->
+        <div class="app-form-notice">
+          <v-icon
+            icon="mdi-information-outline"
+            size="18"
+            class="flex-shrink-0"
+            aria-hidden="true"
+          />
 
-        <v-card-text class="app-dialog-body">
-          <div class="app-supporting-text text-medium-emphasis mb-3">
+          <span class="min-width-0">
             과거 기록을 수정하면 통계와 현재 분석이 다시 계산됩니다.
             당시 추천 스냅샷은 변경하지 않습니다.
+          </span>
+        </div>
+
+        <!-- 수정 사유 입력 -->
+        <v-card
+          variant="flat"
+          rounded="lg"
+          class="app-form-section app-form-stack pa-3"
+        >
+          <div class="app-form-section-title">
+            수정 사유
           </div>
 
           <v-textarea
             v-model="correctionReason"
             label="수정 사유"
+            placeholder="수정이 필요한 이유를 입력하세요."
             variant="outlined"
+            density="compact"
             rows="3"
+            auto-grow
             class="app-input"
+            hide-details="auto"
           />
-        </v-card-text>
+        </v-card>
+      </div>
 
-        <v-card-actions
-          class="app-dialog-footer d-flex align-center ga-2 px-4 pb-4"
+      <!-- 공통 푸터 -->
+      <template #footer>
+        <AppDialogFooter
+          :button-count="2"
+          cancel-text="취소"
+          confirm-text="수정 시작"
+          confirm-action="edit"
+          @cancel="correctionOpen = false"
+          @confirm="correctionConfirmOpen = true"
         >
-          <v-btn
-            variant="text"
-            class="app-btn"
-            @click="correctionOpen = false"
-          >
-            취소
-          </v-btn>
-
-          <v-spacer />
-
-          <v-btn
-            variant="flat"
-            class="app-btn"
-            :disabled="correctionReason.trim().length < 2"
-            @click="correctionConfirmOpen = true"
-          >
-            수정 시작
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+          <template #confirm>
+            <v-btn
+              block
+              color="primary"
+              variant="flat"
+              min-height="44"
+              :disabled="correctionReason.trim().length < 2"
+              @click="correctionConfirmOpen = true"
+            >
+              수정 시작
+            </v-btn>
+          </template>
+        </AppDialogFooter>
+      </template>
+    </AppDialogLayout>
 
     <!-- 마감 후 수정 최종 확인 -->
     <ConfirmDialog
