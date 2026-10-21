@@ -4,6 +4,7 @@
     :key="group.name"
     class="category-block"
   >
+    <!-- 카테고리 제목 및 기록 진행률 -->
     <button
       type="button"
       class="category-header d-flex align-center justify-space-between ga-2"
@@ -57,7 +58,7 @@
               'row-needs-check': !row.complete && row.is_active
             }"
           >
-            <!-- 제품명 / 미확인 / 폐기율 / 상세 -->
+            <!-- 첫 줄: 제품명 / 미확인 / 폐기율 / 상세 -->
             <div class="mobile-product-heading d-flex align-center ga-2">
               <button
                 type="button"
@@ -75,11 +76,9 @@
                 미확인
               </span>
 
-              <v-spacer />
-
               <button
                 type="button"
-                class="mobile-rate-button d-flex align-center"
+                class="mobile-rate-button d-flex align-center justify-center"
                 :aria-label="`${row.name} 폐기율 조회`"
                 @click="emit('waste-rate', row, 'waste_rate')"
               >
@@ -115,8 +114,9 @@
               </button>
             </div>
 
-            <!-- 생산 / 이월 / 로스 / 폐기 -->
+            <!-- 둘째 줄: 생산 / 이월 / 로스 / 폐기 -->
             <div class="mobile-product-values d-flex">
+              <!-- 생산 -->
               <button
                 type="button"
                 class="mobile-value-button d-flex flex-column align-center justify-center"
@@ -135,6 +135,7 @@
                 </strong>
               </button>
 
+              <!-- 이월: 재고와 예정 구분 -->
               <button
                 type="button"
                 class="mobile-value-button d-flex flex-column align-center justify-center"
@@ -174,6 +175,7 @@
                 </strong>
               </button>
 
+              <!-- 로스 -->
               <button
                 type="button"
                 class="mobile-value-button d-flex flex-column align-center justify-center"
@@ -192,6 +194,7 @@
                 </strong>
               </button>
 
+              <!-- 폐기: 최초 생산일 귀속 기준 -->
               <button
                 type="button"
                 class="mobile-value-button d-flex flex-column align-center justify-center"
@@ -214,7 +217,7 @@
               </button>
             </div>
 
-            <!-- 제품별 상세 -->
+            <!-- 제품 상세 -->
             <div
               v-if="expandedRows.has(row.id)"
               class="mobile-product-detail"
@@ -272,7 +275,7 @@
 
           <!-- 카테고리 소계 -->
           <div class="mobile-subtotal">
-            <div class="mobile-subtotal-heading d-flex align-center justify-space-between">
+            <div class="mobile-subtotal-heading d-flex align-center justify-space-between ga-2">
               <strong>소계</strong>
 
               <div class="d-flex align-center ga-2">
@@ -470,6 +473,7 @@ function stockFlowText(row) {
 </script>
 
 <style scoped>
+/* 카테고리 기본 구조 */
 .category-block {
   min-width: 0;
   margin-bottom: 14px;
@@ -481,6 +485,7 @@ function stockFlowText(row) {
 
 .category-header {
   width: 100%;
+  min-height: 52px;
   padding: 12px;
   border: 0;
   background: transparent;
@@ -491,21 +496,24 @@ function stockFlowText(row) {
 
 .category-heading-copy {
   min-width: 0;
-  gap: 2px;
+  gap: 3px;
 }
 
 .category-heading-copy strong {
   font-size: .84rem;
   font-weight: 650;
+  line-height: 1.4;
 }
 
 .category-heading-copy span,
 .category-heading-side {
   font-size: .65rem;
-  color: rgba(var(--v-theme-on-surface), .56);
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), .6);
 }
 
 .category-heading-side {
+  flex: 0 0 auto;
   white-space: nowrap;
 }
 
@@ -521,12 +529,15 @@ function stockFlowText(row) {
   transition: width .2s ease;
 }
 
+/* 비활성 제품 */
 .row-inactive {
   opacity: .5;
 }
 
+/* 제품별 목록 */
 .mobile-product-item {
-  padding: 9px 10px 10px;
+  min-width: 0;
+  padding: 12px 11px 13px;
   border-top: 1px solid rgba(var(--v-border-color), .55);
 }
 
@@ -534,42 +545,47 @@ function stockFlowText(row) {
   border-top: 0;
 }
 
+/* 첫 줄: 제품명 및 상태 */
 .mobile-product-heading {
   min-width: 0;
-  min-height: 34px;
-  margin-bottom: 5px;
+  min-height: 44px;
+  margin-bottom: 8px;
 }
 
 .mobile-product-name {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   border: 0;
-  padding: 4px 0;
+  padding: 6px 0;
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
   font-size: .8rem;
   font-weight: 650;
+  line-height: 1.4;
   text-align: left;
   cursor: pointer;
 }
 
 .mobile-pending-label {
   flex: 0 0 auto;
-  font-size: .62rem;
-  color: rgba(var(--v-theme-on-surface), .5);
+  font-size: .64rem;
+  line-height: 1.4;
+  font-weight: 500;
+  color: rgba(var(--v-theme-on-surface), .65);
   white-space: nowrap;
 }
 
 .mobile-rate-button {
   flex: 0 0 auto;
+  min-height: 44px;
   gap: 5px;
   padding: 6px 2px;
   border: 0;
   background: transparent;
-  color: rgba(var(--v-theme-on-surface), .66);
+  color: rgba(var(--v-theme-on-surface), .7);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -579,23 +595,24 @@ function stockFlowText(row) {
 }
 
 .mobile-rate-button strong {
-  font-size: .72rem;
+  font-size: .73rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
 
 .mobile-detail-toggle {
-  flex: 0 0 32px;
-  width: 32px;
-  height: 34px;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 44px;
   padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: rgba(var(--v-theme-on-surface), .6);
+  color: rgba(var(--v-theme-on-surface), .65);
   cursor: pointer;
 }
 
+/* 둘째 줄: 수량 표시 */
 .mobile-product-values,
 .mobile-subtotal-values {
   width: 100%;
@@ -610,11 +627,11 @@ function stockFlowText(row) {
 }
 
 .mobile-value-button {
-  min-height: 44px;
-  gap: 3px;
-  padding: 5px 2px;
+  min-height: 50px;
+  gap: 5px;
+  padding: 7px 3px;
   border: 0;
-  border-right: 1px solid rgba(var(--v-border-color), .45);
+  border-right: 1px solid rgba(var(--v-border-color), .5);
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
   cursor: pointer;
@@ -626,72 +643,84 @@ function stockFlowText(row) {
 }
 
 .mobile-value-label {
-  font-size: .66rem;
+  font-size: .67rem;
   font-weight: 400;
-  color: rgba(var(--v-theme-on-surface), .58);
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), .62);
 }
 
 .mobile-value-button strong {
-  font-size: .84rem;
+  max-width: 100%;
+  font-size: .85rem;
   font-weight: 650;
-  line-height: 1.3;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
+/* 미확인 수량 */
 .mobile-value-button.pending > strong,
 .mobile-value-button.pending > .mobile-carryover-values {
-  color: rgba(var(--v-theme-on-surface), .42);
+  color: rgba(var(--v-theme-on-surface), .55);
 }
 
+/* 터치 피드백 */
 .mobile-value-button:active,
 .mobile-detail-toggle:active,
 .mobile-rate-button:active {
   background: rgba(var(--v-theme-on-surface), .045);
 }
 
+/* 이월 재고 및 예정 */
 .mobile-carryover-values {
-  gap: 1px;
+  gap: 3px;
   max-width: 100%;
+  min-width: 0;
 }
 
 .mobile-carryover-values strong {
-  font-size: .67rem;
-  line-height: 1.3;
+  max-width: 100%;
+  font-size: .68rem;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
+/* 제품 상세 */
 .mobile-product-detail {
-  margin-top: 9px;
-  padding: 10px 2px 2px;
+  margin-top: 12px;
+  padding: 12px 2px 3px;
   border-top: 1px solid rgba(var(--v-border-color), .45);
 }
 
 .mobile-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 8px;
+  gap: 12px 10px;
 }
 
 .mobile-detail-fact {
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
 }
 
 .mobile-detail-fact span {
-  font-size: .65rem;
-  color: rgba(var(--v-theme-on-surface), .58);
+  font-size: .66rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), .6);
 }
 
 .mobile-detail-fact strong {
-  font-size: .75rem;
+  font-size: .76rem;
   font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
+/* 재고 흐름 */
 .mobile-stock-flow {
   width: 100%;
   min-height: 44px;
-  margin-top: 9px;
-  padding: 8px 2px;
+  margin-top: 11px;
+  padding: 9px 2px;
   border: 0;
   border-top: 1px solid rgba(var(--v-border-color), .45);
   background: transparent;
@@ -703,40 +732,47 @@ function stockFlowText(row) {
 
 .mobile-stock-flow-text {
   margin: 0;
-  padding: 0 2px 5px;
-  font-size: .67rem;
-  line-height: 1.5;
-  color: rgba(var(--v-theme-on-surface), .6);
+  padding: 2px 2px 7px;
+  font-size: .68rem;
+  line-height: 1.6;
+  color: rgba(var(--v-theme-on-surface), .65);
   overflow-wrap: anywhere;
 }
 
+/* 카테고리 소계 */
 .mobile-subtotal {
-  padding: 10px 10px 12px;
-  border-top: 1px solid rgba(var(--v-border-color), .65);
-  background: rgba(var(--v-theme-on-surface), .035);
+  padding: 13px 11px 15px;
+  border-top: 1px solid rgba(var(--v-border-color), .7);
+  background: rgba(var(--v-theme-on-surface), .04);
 }
 
 .mobile-subtotal-heading {
-  margin-bottom: 7px;
+  min-width: 0;
+  margin-bottom: 11px;
 }
 
 .mobile-subtotal-heading > strong {
-  font-size: .75rem;
+  font-size: .78rem;
   font-weight: 700;
+  line-height: 1.4;
+}
+
+.mobile-subtotal-heading > div {
+  flex: 0 0 auto;
 }
 
 .mobile-subtotal-heading > div > span {
-  font-size: .73rem;
-  font-weight: 650;
+  font-size: .74rem;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .mobile-subtotal-help {
   border: 0;
-  padding: 2px;
+  padding: 5px 2px;
   background: transparent;
-  color: rgba(var(--v-theme-on-surface), .58);
-  font-size: .63rem;
+  color: rgba(var(--v-theme-on-surface), .62);
+  font-size: .64rem;
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 2px;
@@ -744,9 +780,9 @@ function stockFlowText(row) {
 }
 
 .mobile-subtotal-value {
-  gap: 3px;
-  padding: 4px 2px;
-  border-right: 1px solid rgba(var(--v-border-color), .45);
+  gap: 5px;
+  padding: 7px 3px;
+  border-right: 1px solid rgba(var(--v-border-color), .5);
 }
 
 .mobile-subtotal-value:last-child {
@@ -754,29 +790,36 @@ function stockFlowText(row) {
 }
 
 .mobile-subtotal-value span {
-  font-size: .65rem;
-  color: rgba(var(--v-theme-on-surface), .6);
+  font-size: .66rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), .62);
 }
 
 .mobile-subtotal-value strong {
-  font-size: .72rem;
-  font-weight: 650;
-  line-height: 1.3;
+  max-width: 100%;
+  font-size: .76rem;
+  font-weight: 700;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
+/* 최소 320px 모바일 환경 */
 @media (max-width: 360px) {
   .mobile-product-item {
-    padding-inline: 8px;
+    padding-inline: 9px;
+  }
+
+  .mobile-product-heading {
+    gap: 4px;
   }
 
   .mobile-product-name {
     font-size: .76rem;
   }
 
-  .mobile-product-heading {
-    gap: 4px;
+  .mobile-pending-label {
+    font-size: .61rem;
   }
 
   .mobile-rate-button {
@@ -788,23 +831,36 @@ function stockFlowText(row) {
   }
 
   .mobile-rate-button strong {
-    font-size: .67rem;
+    font-size: .68rem;
+  }
+
+  .mobile-detail-toggle {
+    flex-basis: 36px;
+    width: 36px;
+  }
+
+  .mobile-value-button {
+    padding-inline: 2px;
   }
 
   .mobile-value-button strong {
-    font-size: .78rem;
+    font-size: .8rem;
   }
 
   .mobile-carryover-values strong {
-    font-size: .62rem;
+    font-size: .63rem;
   }
 
   .mobile-subtotal {
-    padding-inline: 8px;
+    padding-inline: 9px;
+  }
+
+  .mobile-subtotal-value {
+    padding-inline: 2px;
   }
 
   .mobile-subtotal-value strong {
-    font-size: .67rem;
+    font-size: .7rem;
   }
 }
 </style>
