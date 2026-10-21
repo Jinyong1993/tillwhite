@@ -50,7 +50,7 @@
         </div>
       </div>
     </section>
-
+    
     <!-- 이전 날짜의 미마감 업무 안내 -->
     <v-alert
       v-if="daily.blocking_previous_date"
@@ -59,25 +59,28 @@
       density="compact"
       class="previous-close-alert app-supporting-alert"
     >
-      <div class="previous-close-copy d-flex flex-column ga-1">
-        <strong>이전 업무 마감이 필요합니다</strong>
-        <span>
-          {{ daily.blocking_previous_date }} 업무를 먼저 마감해 주세요.
-        </span>
-      </div>
+      <div class="previous-close-content">
+        <div class="previous-close-copy">
+          <strong>이전 업무 마감이 필요합니다</strong>
 
-      <template #append>
+          <span>
+            {{ shortDateLabel(daily.blocking_previous_date) }}
+            업무가 아직 마감되지 않았습니다.
+          </span>
+        </div>
+
         <v-btn
+          block
           size="small"
-          variant="outlined"
+          variant="tonal"
+          color="warning"
           class="previous-close-action"
-          @click="
-            emit('update:workDate', daily.blocking_previous_date)
-          "
+          append-icon="mdi-arrow-right"
+          @click="emit('update:workDate', daily.blocking_previous_date)"
         >
-          {{ shortDateLabel(daily.blocking_previous_date) }}로 이동
+          해당 날짜로 이동
         </v-btn>
-      </template>
+      </div>
     </v-alert>
 
     <!-- 일일 요약 -->
@@ -2471,14 +2474,14 @@ async function closeDay() {
 </script>
 
 <style scoped>
-/* 변경 이력 수량 표시 */
+/* 변경 이력 수량 */
 .history-quantity {
   margin-top: 5px;
   font-size: .74rem;
   color: rgba(var(--v-theme-on-surface), .72);
 }
 
-/* 페이지 기본 레이아웃 및 날짜 선택 */
+/* 기본 화면 및 날짜 탐색 */
 .daily-page {
   gap: 0;
 }
@@ -2491,7 +2494,6 @@ async function closeDay() {
   padding: 8px 0;
 }
 
-/* 업무 날짜 선택 */
 .daily-date-picker {
   display: flex;
   flex-direction: column;
@@ -2499,7 +2501,6 @@ async function closeDay() {
   min-width: 0;
 }
 
-/* 날짜 이동 영역 */
 .daily-date-picker__navigation {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 44px;
@@ -2508,14 +2509,12 @@ async function closeDay() {
   min-width: 0;
 }
 
-/* 이전 / 다음 날짜 */
 .daily-date-picker__arrow {
   width: 44px;
   min-width: 44px;
   height: 44px;
 }
 
-/* 오늘 날짜 복귀 */
 .daily-date-picker__today {
   display: flex;
   justify-content: flex-end;
@@ -2531,7 +2530,7 @@ async function closeDay() {
   color: rgba(var(--v-theme-on-surface), .72);
 }
 
-/* 공통 섹션 제목과 진행률 */
+/* 섹션 제목과 진행률 */
 .section-heading {
   gap: 16px;
   margin-bottom: 14px;
@@ -2572,7 +2571,7 @@ async function closeDay() {
   color: rgba(var(--v-theme-on-surface), .62);
 }
 
-/* 미확인 일괄 확인 메뉴 */
+/* 미확인 일괄확인 */
 .bulk-menu :deep(.v-list-item-title) {
   display: flex;
   justify-content: space-between;
@@ -2588,7 +2587,7 @@ async function closeDay() {
   white-space: normal;
 }
 
-/* 생산·이월·로스·폐기·폐기율 요약 */
+/* 요약 지표 */
 .daily-metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2598,7 +2597,7 @@ async function closeDay() {
 .metric-item {
   appearance: none;
   text-align: center;
-  padding: 12px 8px;
+  padding: 10px 6px;
   border: 1px solid rgba(var(--v-border-color), .7);
   border-radius: 12px;
   background: rgb(var(--v-theme-surface));
@@ -2635,7 +2634,7 @@ async function closeDay() {
   font-variant-numeric: tabular-nums;
 }
 
-/* 제품별 현황: 검색, 헤더, 액션 버튼 */
+/* 제품 목록 */
 .product-search {
   max-width: 360px;
 }
@@ -2658,7 +2657,7 @@ async function closeDay() {
   margin-left: 5px;
 }
 
-/* 재고 흐름 내역의 공통 표시 */
+/* 재고 흐름 */
 .stock-flow-event {
   border: 1px solid rgba(var(--v-theme-on-surface), .12);
   border-radius: 9px;
@@ -2711,14 +2710,19 @@ async function closeDay() {
   color: rgba(var(--v-theme-on-surface), .62);
 }
 
-/* 목록 필터 및 하단 액션 */
+/* 필터와 하단 액션 */
 .product-filter-row {
   gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .status-filter {
   border-bottom: 1px solid rgba(var(--v-border-color), .65);
   border-radius: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .status-filter :deep(.v-btn) {
@@ -2726,13 +2730,14 @@ async function closeDay() {
   padding-inline: 12px;
   font-size: .76rem;
   font-weight: 500;
+  border-radius: 0;
 }
 
 .daily-actions {
   padding-top: 6px;
 }
 
-/* 요약 상세 다이얼로그 */
+/* 요약 상세 */
 .summary-detail-hero {
   padding: 4px 0 16px;
 }
@@ -2866,7 +2871,7 @@ async function closeDay() {
   font-size: .68rem;
 }
 
-/* 제품 상세 다이얼로그 */
+/* 제품 상세 */
 .production-product-section {
   padding: 20px 24px;
 }
@@ -2920,7 +2925,7 @@ async function closeDay() {
   color: rgba(var(--v-theme-on-surface), .72);
 }
 
-/* 변경 이력 다이얼로그 */
+/* 변경 이력 */
 .history-context {
   padding: 2px 0 14px;
   font-size: .72rem;
@@ -2958,7 +2963,6 @@ async function closeDay() {
 }
 
 /* 폐기율 안내 */
-
 .waste-guide-dialog p {
   margin: 0 0 14px;
   font-size: .76rem;
@@ -2980,41 +2984,50 @@ async function closeDay() {
   color: rgba(var(--v-theme-on-surface), .68);
 }
 
-/* 이전 날짜 미마감 안내 */
+/* 미마감 안내 */
 .previous-close-alert {
+  width: 100%;
+  min-width: 0;
   margin: 2px 0 8px;
+  border-radius: 12px;
+}
+
+.previous-close-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .previous-close-copy {
-  gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .previous-close-copy strong {
-  font-size: .78rem;
-}
-
-.previous-close-copy span {
-  font-size: .69rem;
+  font-size: .82rem;
+  font-weight: 700;
   line-height: 1.4;
 }
 
+.previous-close-copy span {
+  font-size: .75rem;
+  line-height: 1.5;
+}
+
 .previous-close-action {
-  min-height: 38px;
+  min-height: 40px;
+  font-size: .78rem;
   font-weight: 650;
+  border-radius: 8px;
+  box-shadow: none;
 }
 
-/* 요약 및 미확인 유형 표시 */
-.summary-section {
-  padding-top: 10px;
-}
-
-.daily-metrics {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 7px;
-}
-
-.metric-item {
-  padding: 10px 6px;
+/* 요약 및 미확인 상태 */
+.daily-section.summary-section {
+  padding-top: 0;
 }
 
 .missing-type-grid {
@@ -3062,31 +3075,15 @@ async function closeDay() {
   justify-content: flex-start;
 }
 
-.status-filter {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-bottom: 1px solid rgba(var(--v-border-color), .65);
-}
-
-.status-filter :deep(.v-btn) {
-  border-radius: 0;
-}
-
 .status-filter :deep(.v-btn--active) {
   border-bottom: 2px solid rgb(var(--v-theme-primary));
-}
-
-.product-filter-row {
-  align-items: flex-end;
-  flex-wrap: wrap;
 }
 
 .product-filter-row > span {
   margin-left: auto;
 }
 
-/* 최근 입력 제품 탐색 */
+/* 최근 입력 탐색 */
 .recent-products {
   gap: 8px;
   margin: -4px 0 12px;
@@ -3132,7 +3129,7 @@ async function closeDay() {
   }
 }
 
-/* 모바일·태블릿: 페이지 및 요약 */
+/* 모바일: 섹션 및 요약 */
 @media (max-width: 760px) {
   .daily-section {
     padding: 14px 0;
@@ -3163,10 +3160,6 @@ async function closeDay() {
     min-width: 0;
   }
 
-  .previous-close-alert :deep(.v-alert__append) {
-    margin-inline-start: 8px;
-  }
-
   .product-heading {
     align-items: stretch;
     flex-direction: column;
@@ -3185,7 +3178,7 @@ async function closeDay() {
   }
 }
 
-/* 변경 이력 페이지 표시 */
+/* 이력 페이지 */
 .history-pagination {
   margin-top: 12px;
 }
@@ -3197,7 +3190,7 @@ async function closeDay() {
   text-align: center;
 }
 
-/* 재고 흐름 상세 다이얼로그 */
+/* 재고 흐름 상세 */
 .stock-flow-overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3302,7 +3295,7 @@ async function closeDay() {
   margin-top: 1px;
 }
 
-/* 생산 기록 비교 카드와 최근 7일 차트 */
+/* 생산량 비교 */
 .production-comparison-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3413,7 +3406,7 @@ async function closeDay() {
   margin-bottom: 0;
 }
 
-/* 소형 모바일: 비교 차트 및 재고 흐름 */
+/* 320px 모바일: 차트 및 재고 흐름 */
 @media (max-width: 480px) {
   .production-comparison-cards {
     gap: 6px;
