@@ -573,140 +573,134 @@
     </ProductDetailDialog>
 
     <!-- 일일 요약 상세 다이얼로그 -->
-    <v-dialog
+    <AppDialogLayout
       v-model="detailOpen"
-      max-width="680"
+      :title="detailTitle"
+      :max-width="680"
       persistent
     >
-      <v-card
-        rounded="lg"
-        class="app-dialog-card"
-      >
-        <v-card-title class="app-dialog-header">
-          {{ detailTitle }}
-        </v-card-title>
+      <div class="d-flex flex-column ga-3">
+        <!-- 요약 수치 -->
+        <div class="summary-detail-hero">
+          <span>총 {{ detailMetricTitle }}</span>
+          <strong>{{ detailMetricValue }}</strong>
+          <small>{{ detailInsight }}</small>
+        </div>
 
-        <v-card-text class="app-dialog-body">
-          <div class="summary-detail-hero">
-            <span>총 {{ detailMetricTitle }}</span>
-            <strong>{{ detailMetricValue }}</strong>
-            <small>{{ detailInsight }}</small>
+        <!-- 기록 제품 및 확인 현황 -->
+        <div class="summary-detail-facts">
+          <div>
+            <span>기록된 제품</span>
+            <strong>{{ detailRecordedCount }}개</strong>
           </div>
 
-          <!-- 기록 제품 및 확인 현황 -->
-          <div class="summary-detail-facts">
-            <div>
-              <span>기록된 제품</span>
-              <strong>{{ detailRecordedCount }}개</strong>
-            </div>
-
-            <div>
-              <span>확인 현황</span>
-              <strong>
-                {{ detailConfirmedCount }} / {{ activeRows.length }}
-              </strong>
-            </div>
-
-            <div>
-              <span>미확인</span>
-              <strong>
-                {{
-                  Math.max(
-                    0,
-                    activeRows.length - detailConfirmedCount
-                  )
-                }}개
-              </strong>
-            </div>
-
-            <div>
-              <span>날짜</span>
-              <strong>{{ shortDateLabel(workDate) }}</strong>
-            </div>
+          <div>
+            <span>확인 현황</span>
+            <strong>
+              {{ detailConfirmedCount }} / {{ activeRows.length }}
+            </strong>
           </div>
 
-          <!-- 폐기율 집계 기준 -->
-          <div
-            v-if="detailMetricKey === 'waste_rate'"
-            class="waste-analysis-note d-flex flex-column ga-1"
-          >
-            <strong>폐기율 안내</strong>
-
-            <span>
-              폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다.
-              이월된 제품을 폐기하면 생산한 날짜의 폐기로 반영됩니다.
-            </span>
-
-            <span>
-              <b>계산식</b>
-              · 해당 생산일의 폐기 수량 ÷ 해당 생산일의 생산 수량 × 100
-            </span>
-
-            <span>
-              <b>예시</b>
-              · 10/3에 10개 생산한 제품 중 이월 재고 2개를
-              10/5에 폐기하면 10/3 폐기율은
-              2 ÷ 10 × 100 = 20%입니다.
-            </span>
+          <div>
+            <span>미확인</span>
+            <strong>
+              {{
+                Math.max(
+                  0,
+                  activeRows.length - detailConfirmedCount
+                )
+              }}개
+            </strong>
           </div>
 
-          <v-divider class="dialog-full-divider" />
-
-          <!-- 제품별 요약 상세 목록 -->
-          <div class="summary-detail-heading">
-            제품별 {{ detailMetricTitle }}
+          <div>
+            <span>날짜</span>
+            <strong>{{ shortDateLabel(workDate) }}</strong>
           </div>
+        </div>
 
-          <div
-            v-if="detailRows.length"
-            class="summary-detail-list d-flex flex-column"
-          >
-            <button
-              v-for="row in detailRows"
-              :key="row.id"
-              type="button"
-              class="summary-detail-row d-flex align-center justify-space-between ga-4"
-              @click="openMetricProduct(row)"
-            >
-              <span class="d-flex flex-column">
-                <b>{{ row.name }}</b>
-
-                <small>
-                  {{ row.share }} ·
-                  {{ row.confirmed ? '확인 완료' : '미확인' }}
-                </small>
-
-                <small v-if="row.reasonSummary">
-                  {{ row.reasonSummary }}
-                </small>
-              </span>
-
-              <strong>{{ row.value }}</strong>
-            </button>
-          </div>
-
-          <div
-            v-else
-            class="summary-detail-empty"
-          >
-            <strong>{{ detailEmptyTitle }}</strong>
-            <span>{{ detailEmptyText }}</span>
-          </div>
-        </v-card-text>
-
-        <v-card-actions
-          class="app-dialog-footer history-footer justify-start"
+        <!-- 폐기율 집계 기준 -->
+        <div
+          v-if="detailMetricKey === 'waste_rate'"
+          class="waste-analysis-note d-flex flex-column ga-1"
         >
-          <v-btn
-            variant="text"
-            class="app-btn"
-            @click="detailOpen = false"
+          <strong>폐기율 안내</strong>
+
+          <span>
+            폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다.
+            이월된 제품을 폐기하면 생산한 날짜의 폐기로 반영됩니다.
+          </span>
+
+          <span>
+            <b>계산식</b>
+            · 해당 생산일의 폐기 수량 ÷ 해당 생산일의 생산 수량 × 100
+          </span>
+
+          <span>
+            <b>예시</b>
+            · 10/3에 10개 생산한 제품 중 이월 재고 2개를
+            10/5에 폐기하면 10/3 폐기율은
+            2 ÷ 10 × 100 = 20%입니다.
+          </span>
+        </div>
+
+        <v-divider />
+
+        <!-- 제품별 요약 상세 목록 -->
+        <div class="summary-detail-heading">
+          제품별 {{ detailMetricTitle }}
+        </div>
+
+        <div
+          v-if="detailRows.length"
+          class="summary-detail-list d-flex flex-column"
+        >
+          <button
+            v-for="row in detailRows"
+            :key="row.id"
+            type="button"
+            class="summary-detail-row d-flex align-center justify-space-between ga-4"
+            @click="openMetricProduct(row)"
           >
-            닫기
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+            <span class="d-flex flex-column min-width-0">
+              <b>{{ row.name }}</b>
+
+              <small>
+                {{ row.share }} ·
+                {{ row.confirmed ? '확인 완료' : '미확인' }}
+              </small>
+
+              <small v-if="row.reasonSummary">
+                {{ row.reasonSummary }}
+              </small>
+            </span>
+
+            <strong class="flex-shrink-0">
+              {{ row.value }}
+            </strong>
+          </button>
+        </div>
+
+        <!-- 기록이 없는 경우 -->
+        <div
+          v-else
+          class="summary-detail-empty"
+        >
+          <strong>{{ detailEmptyTitle }}</strong>
+          <span>{{ detailEmptyText }}</span>
+        </div>
+      </div>
+
+      <!-- 공통 푸터 -->
+      <template #footer>
+        <AppDialogFooter
+          :button-count="1"
+          :show-confirm="false"
+          cancel-text="닫기"
+          @cancel="detailOpen = false"
+        />
+      </template>
+    </AppDialogLayout>
 
     <!-- 제품 재고 흐름 다이얼로그 -->
     <v-dialog
@@ -1111,6 +1105,8 @@ import ProductionInventoryDialog from './ProductionInventoryDialog.vue';
 import ProductionCloseDialog from './ProductionCloseDialog.vue';
 import ProductionDailyTable from './ProductionDailyTable.vue';
 import AppDatePicker from '../common/AppDatePicker.vue';
+import AppDialogLayout from '../common/AppDialogLayout.vue';
+import AppDialogFooter from '../common/AppDialogFooter.vue';
 
 import {
     addLocalDays,
