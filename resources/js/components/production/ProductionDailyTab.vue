@@ -178,18 +178,21 @@
             v-if="nextMissingRow"
             size="small"
             variant="outlined"
-            class="missing-action-button"
+            class="missing-action-button subtle-outline-btn"
             @click="openNextMissing"
           >
             미확인 제품
           </v-btn>
 
-          <div
+          <v-btn
             v-else
-            class="missing-complete-state d-flex align-center"
+            size="small"
+            variant="outlined"
+            class="missing-action-button subtle-outline-btn"
+            disabled
           >
-            모든 제품 확인 완료
-          </div>
+            확인 완료
+          </v-btn>
 
           <v-menu location="bottom end">
             <template #activator="{ props: menuProps }">
@@ -197,10 +200,10 @@
                 v-bind="menuProps"
                 size="small"
                 variant="outlined"
-                class="missing-action-button"
+                class="missing-action-button subtle-outline-btn"
                 :disabled="!hasMissingItems"
               >
-                미확인 일괄확인
+                {{ hasMissingItems ? '미확인 일괄확인' : '확인 완료' }}
               </v-btn>
             </template>
 
