@@ -5,55 +5,47 @@
   >
     <!-- 업무 날짜 선택 -->
     <section class="daily-section date-section">
-      <div class="app-date-toolbar">
-        <div class="app-date-navigation">
+      <div class="daily-date-picker">
+        <!-- 날짜 이동 및 선택 -->
+        <div class="daily-date-picker__navigation">
           <v-btn
             icon="mdi-chevron-left"
             variant="text"
             size="small"
+            class="daily-date-picker__arrow"
             aria-label="이전 날짜"
             @click="moveDate(-1)"
           />
 
-          <v-menu
-            v-model="dateMenu"
-            :close-on-content-click="false"
-          >
-            <template #activator="{ props: menuProps }">
-              <button
-                v-bind="menuProps"
-                type="button"
-                class="app-date-main"
-              >
-                <span>{{ formatKoreanDate(workDate) }}</span>
-                <small>날짜 선택</small>
-              </button>
-            </template>
-
-            <v-date-picker
-              :model-value="workDate"
-              @update:model-value="selectPickerDate"
-            />
-          </v-menu>
+          <AppDatePicker
+            :model-value="workDate"
+            @update:model-value="selectPickerDate"
+          />
 
           <v-btn
             icon="mdi-chevron-right"
             variant="text"
             size="small"
+            class="daily-date-picker__arrow"
             aria-label="다음 날짜"
             @click="moveDate(1)"
           />
         </div>
 
-        <div class="app-date-today-slot d-flex justify-end">
+        <!-- 오늘이 아닌 날짜를 선택했을 때만 표시 -->
+        <div
+          v-if="workDate !== today"
+          class="daily-date-picker__today"
+        >
           <v-btn
-            v-show="workDate !== today"
+            block
             size="small"
             variant="outlined"
-            class="app-date-today"
+            class="daily-date-picker__today-btn"
+            prepend-icon="mdi-arrow-u-left-top"
             @click="emit('update:workDate', today)"
           >
-            오늘
+            오늘로 이동
           </v-btn>
         </div>
       </div>
@@ -1117,6 +1109,7 @@ import ProductionFlowDialog from './ProductionFlowDialog.vue';
 import ProductionInventoryDialog from './ProductionInventoryDialog.vue';
 import ProductionCloseDialog from './ProductionCloseDialog.vue';
 import ProductionDailyTable from './ProductionDailyTable.vue';
+import AppDatePicker from '../common/AppDatePicker.vue';
 
 import {
     addLocalDays,
@@ -1149,8 +1142,8 @@ const emit = defineEmits([
   'error',
   'success',
 ]);
+
 const today = toLocalDateString();
-const dateMenu = ref(false);
 const filter = ref('all');
 
 const search = ref('');
@@ -1965,14 +1958,15 @@ function moveDate(amount) {
   emit('update:workDate', addLocalDays(props.workDate, amount));
 }
 
-// 날짜 선택값을 YYYY-MM-DD 형식으로 변환하고 날짜 선택창을 닫습니다.
+// 날짜 선택값을 YYYY-MM-DD 형식으로 변환합니다.
 function selectPickerDate(value) {
+  if (!value) return;
+
   const date = value instanceof Date
     ? toLocalDateString(value)
     : String(value).slice(0, 10);
 
   emit('update:workDate', date);
-  dateMenu.value = false;
 }
 
 // 카테고리의 접기 및 펼치기 상태를 변경합니다.
@@ -2497,12 +2491,44 @@ async function closeDay() {
   padding: 8px 0;
 }
 
-.date-section .app-date-toolbar {
-  min-height: 46px;
+/* 업무 날짜 선택 */
+.daily-date-picker {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
 }
 
-.date-section .app-date-main {
-  padding-block: 4px;
+/* 날짜 이동 영역 */
+.daily-date-picker__navigation {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* 이전 / 다음 날짜 */
+.daily-date-picker__arrow {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+}
+
+/* 오늘 날짜 복귀 */
+.daily-date-picker__today {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.daily-date-picker__today-btn {
+  min-height: 36px;
+  padding-inline: 8px;
+  font-size: .72rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), .72);
 }
 
 /* 공통 섹션 제목과 진행률 */
