@@ -701,142 +701,136 @@
         />
       </template>
     </AppDialogLayout>
-
+    
     <!-- 제품 재고 흐름 다이얼로그 -->
-    <v-dialog
+    <AppDialogLayout
       v-model="stockFlowOpen"
-      max-width="620"
+      :title="`재고 흐름 - ${stockFlowProduct?.name || '-'}`"
+      :max-width="620"
       persistent
     >
-      <v-card
-        class="app-dialog-card"
-        rounded="lg"
-      >
-        <v-card-title class="app-dialog-header">
-          재고 흐름 - {{ stockFlowProduct?.name || '-' }}
-        </v-card-title>
+      <div class="d-flex flex-column ga-3">
+        <!-- 생산 및 이월 재고 요약 -->
+        <div class="production-dialog-overview stock-flow-overview">
+          <div class="stock-flow-summary">
+            <span class="stock-flow-summary__label">
+              오늘 생산
+            </span>
 
-        <v-card-text class="app-dialog-body">
-          <!-- 생산 및 이월 재고 요약 -->
-          <div class="production-dialog-overview stock-flow-overview">
-            <div class="stock-flow-summary">
-              <span class="stock-flow-summary__label">
-                오늘 생산
-              </span>
-
-              <strong class="stock-flow-summary__value">
-                {{ stockFlowProduct?.production || 0 }}
-                <small>개</small>
-              </strong>
-            </div>
-
-            <div class="stock-flow-summary">
-              <span class="stock-flow-summary__label">
-                이월 재고
-              </span>
-
-              <strong class="stock-flow-summary__value">
-                {{ stockFlowProduct?.carryover_in || 0 }}
-                <small>개</small>
-              </strong>
-            </div>
-
-            <div class="stock-flow-summary">
-              <span class="stock-flow-summary__label">
-                해당 날짜 폐기
-              </span>
-
-              <strong class="stock-flow-summary__value">
-                {{ stockFlowProduct?.operational_waste || 0 }}
-                <small>개</small>
-              </strong>
-            </div>
+            <strong class="stock-flow-summary__value">
+              {{ stockFlowProduct?.production || 0 }}
+              <small>개</small>
+            </strong>
           </div>
 
-          <!-- 재고 처리 내역 -->
-          <section class="stock-flow-history">
-            <div
-              class="stock-flow-history__heading d-flex align-center justify-space-between ga-3"
-            >
-              <h3 class="production-dialog-section-title">
-                재고 처리 내역
-              </h3>
+          <div class="stock-flow-summary">
+            <span class="stock-flow-summary__label">
+              이월 재고
+            </span>
 
-              <span class="stock-flow-history__count">
-                {{ stockFlowEvents.length }}건
-              </span>
-            </div>
+            <strong class="stock-flow-summary__value">
+              {{ stockFlowProduct?.carryover_in || 0 }}
+              <small>개</small>
+            </strong>
+          </div>
 
-            <div
-              v-for="item in stockFlowEvents"
-              :key="item.key"
-              class="stock-flow-event stock-flow-history__item d-flex flex-column ga-2"
-            >
-              <div
-                class="stock-flow-history__item-header d-flex align-start justify-space-between ga-3"
-              >
-                <strong>{{ item.title }}</strong>
+          <div class="stock-flow-summary">
+            <span class="stock-flow-summary__label">
+              해당 날짜 폐기
+            </span>
 
-                <span class="stock-flow-history__quantity">
-                  {{ item.quantity }}개
-                </span>
-              </div>
+            <strong class="stock-flow-summary__value">
+              {{ stockFlowProduct?.operational_waste || 0 }}
+              <small>개</small>
+            </strong>
+          </div>
+        </div>
 
-              <small
-                v-if="item.origin"
-                class="stock-flow-history__meta"
-              >
-                생산일 {{ item.origin }}
-              </small>
-
-              <small
-                v-if="item.reason"
-                class="stock-flow-history__reason"
-              >
-                {{ item.reason }}
-              </small>
-            </div>
-
-            <!-- 처리 이력이 없는 경우 -->
-            <div
-              v-if="!stockFlowEvents.length"
-              class="production-friendly-empty d-flex align-center ga-2"
-            >
-              <v-icon icon="mdi-clipboard-text-outline" />
-              <span>아직 처리된 재고 기록이 없습니다.</span>
-            </div>
-          </section>
-
-          <!-- 최초 생산일 기준 폐기 집계 안내 -->
+        <!-- 재고 처리 내역 -->
+        <section class="stock-flow-history d-flex flex-column ga-3">
           <div
-            class="production-dialog-guide stock-flow-guide d-flex align-start ga-2"
+            class="stock-flow-history__heading d-flex align-center justify-space-between ga-3"
           >
-            <v-icon
-              icon="mdi-information-outline"
-              size="18"
-              aria-hidden="true"
-            />
+            <h3 class="production-dialog-section-title">
+              재고 처리 내역
+            </h3>
 
-            <span>
-              이월 재고를 폐기한 수량은 해당 날짜 폐기로 포함됩니다.
-              생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.
+            <span class="stock-flow-history__count">
+              {{ stockFlowEvents.length }}건
             </span>
           </div>
-        </v-card-text>
 
-        <v-card-actions
-          class="app-dialog-footer history-footer justify-start"
-        >
-          <v-btn
-            variant="text"
-            class="app-btn"
-            @click="stockFlowOpen = false"
+          <div
+            v-for="item in stockFlowEvents"
+            :key="item.key"
+            class="stock-flow-event stock-flow-history__item d-flex flex-column ga-2"
           >
-            닫기
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+            <div
+              class="stock-flow-history__item-header d-flex align-start justify-space-between ga-3"
+            >
+              <strong>{{ item.title }}</strong>
+
+              <span class="stock-flow-history__quantity flex-shrink-0">
+                {{ item.quantity }}개
+              </span>
+            </div>
+
+            <small
+              v-if="item.origin"
+              class="stock-flow-history__meta"
+            >
+              생산일 {{ item.origin }}
+            </small>
+
+            <small
+              v-if="item.reason"
+              class="stock-flow-history__reason"
+            >
+              {{ item.reason }}
+            </small>
+          </div>
+
+          <!-- 처리 이력이 없는 경우 -->
+          <div
+            v-if="!stockFlowEvents.length"
+            class="production-friendly-empty d-flex align-center ga-2"
+          >
+            <v-icon icon="mdi-clipboard-text-outline" />
+
+            <span>
+              아직 처리된 재고 기록이 없습니다.
+            </span>
+          </div>
+        </section>
+
+        <!-- 최초 생산일 기준 폐기 집계 안내 -->
+        <div
+          class="production-dialog-guide stock-flow-guide d-flex align-start ga-2"
+        >
+          <v-icon
+            icon="mdi-information-outline"
+            size="18"
+            aria-hidden="true"
+            class="flex-shrink-0"
+          />
+
+          <span class="min-width-0">
+            이월 재고를 폐기한 수량은 해당 날짜 폐기로 포함됩니다.
+            생산일별 폐기율은 최초 생산일 기준으로 계산됩니다.
+          </span>
+        </div>
+      </div>
+
+      <!-- 공통 푸터 -->
+      <template #footer>
+        <AppDialogFooter
+          :button-count="1"
+          :show-confirm="false"
+          cancel-text="닫기"
+          @cancel="stockFlowOpen = false"
+        />
+      </template>
+    </AppDialogLayout>
 
     <!-- 폐기율 안내 다이얼로그 -->
     <v-dialog
