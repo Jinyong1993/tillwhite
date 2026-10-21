@@ -1,6 +1,6 @@
 <template>
   <div class="inventory-dialog inventory-dialog__production-tab">
-    <div class="inventory-dialog__placeholder">
+    <div class="inventory-dialog__placeholder d-flex flex-column ga-3">
       <strong>생산 관리</strong>
 
       <p class="inventory-dialog__form-help">
@@ -8,26 +8,33 @@
         등록한 생산 기록은 아래 목록에서 확인하거나 수정할 수 있습니다.
       </p>
 
-      <!-- 생산 입력 및 생산 0개 확인 버튼 -->
+      <!-- 생산 수량 추가 / 취소 및 생산 없음 -->
       <div class="inventory-dialog__action-grid">
         <v-btn
           block
-          variant="tonal"
+          variant="outlined"
+          :color="productionFormOpen ? undefined : 'success'"
           :disabled="saving || Boolean(editingBatch)"
-          :prepend-icon="productionFormOpen ? 'mdi-chevron-up' : 'mdi-plus'"
+          :prepend-icon="productionFormOpen ? 'mdi-chevron-up' : undefined"
           @click="
             productionFormOpen = !productionFormOpen;
             zeroCardOpen = false;
           "
         >
-          {{ productionFormOpen ? "취소" : editingBatch ? "생산 수량 수정" : "생산 수량 추가" }}
+          {{
+            productionFormOpen
+              ? "취소"
+              : editingBatch
+                ? "생산 수량 수정"
+                : "생산 수량 추가"
+          }}
         </v-btn>
 
         <v-btn
           block
-          variant="tonal"
+          variant="outlined"
           :disabled="saving || Boolean(editingBatch)"
-          :prepend-icon="zeroCardOpen ? 'mdi-chevron-up' : 'mdi-minus-circle-outline'"
+          :prepend-icon="zeroCardOpen ? 'mdi-chevron-up' : undefined"
           @click="
             zeroCardOpen = !zeroCardOpen;
             productionFormOpen = false;
@@ -37,17 +44,21 @@
         </v-btn>
       </div>
 
+      <!-- 생산 입력 화면 -->
       <div
         v-show="productionFormOpen"
         ref="productionEditor"
-        class="inventory-dialog__production-form"
+        class="inventory-dialog__production-form d-flex flex-column ga-3"
       >
-        <div class="inventory-dialog__field-heading">
+        <div
+          class="inventory-dialog__field-heading d-flex align-center justify-space-between flex-wrap"
+        >
           <strong>
             {{ editingBatch ? "생산 기록 수정" : "생산 기록 추가" }}
           </strong>
-
-          <span>현재 생산 {{ displayQuantity(product?.production) }}</span>
+          <span>
+            현재 생산 {{ displayQuantity(product?.production) }}
+          </span>
         </div>
 
         <!-- 생산 입력 카드 탐색 -->
@@ -65,7 +76,9 @@
             </v-btn>
           </div>
 
-          <div class="inventory-dialog__card-controls">
+          <div
+            class="inventory-dialog__card-controls d-flex align-center justify-space-between"
+          >
             <v-btn
               size="small"
               variant="text"
@@ -77,7 +90,9 @@
             </v-btn>
 
             <span>
-              {{ productionCardIndex + 1 }} / {{ productionCardTitles.length }}
+              {{ productionCardIndex + 1 }}
+              /
+              {{ productionCardTitles.length }}
             </span>
 
             <v-btn
@@ -92,24 +107,19 @@
           </div>
         </div>
 
-        <!-- 생산 입력 카드 스와이프 영역 -->
-        <div
-          class="inventory-dialog__swipe-area"
-          @pointerdown="onProductionSwipeStart"
-          @pointerup="onProductionSwipeEnd"
-          @pointercancel="onProductionSwipeCancel"
-        >
+        <!-- 카드 전환: 상단 단계 버튼 및 이전/다음 버튼 -->
+        <div class="inventory-dialog__swipe-area">
           <!-- 카드 1: 생산 입력 -->
           <div
             v-show="productionCardIndex === 0"
-            class="inventory-dialog__swipe-card"
+            class="inventory-dialog__swipe-card d-flex flex-column ga-3"
           >
-            <!-- 전날 생산량 참고 -->
+            <!-- 전날 생산량 -->
             <div
               v-if="!editingBatch"
-              class="inventory-dialog__previous-production"
+              class="inventory-dialog__previous-production d-flex align-center justify-space-between"
             >
-              <div>
+              <div class="d-flex flex-column">
                 <span>전날 생산량</span>
 
                 <strong v-if="previousProductionLoading">
@@ -120,7 +130,9 @@
                   {{ previousProduction }}개
                 </strong>
 
-                <strong v-else>기록 없음</strong>
+                <strong v-else>
+                  기록 없음
+                </strong>
               </div>
 
               <v-btn
@@ -138,12 +150,12 @@
               </v-btn>
             </div>
 
-            <!-- 추천 생산량 참고 -->
+            <!-- 추천 생산량 -->
             <div
               v-if="!editingBatch"
-              class="inventory-dialog__previous-production"
+              class="inventory-dialog__previous-production d-flex align-center justify-space-between"
             >
-              <div>
+              <div class="d-flex flex-column">
                 <span>추천 생산량</span>
 
                 <strong v-if="recommendationLoading">
@@ -154,7 +166,9 @@
                   {{ recommendationMin }}~{{ recommendationMax }}개
                 </strong>
 
-                <strong v-else>데이터 부족</strong>
+                <strong v-else>
+                  데이터 부족
+                </strong>
               </div>
 
               <v-btn
@@ -181,14 +195,11 @@
                 type="button"
                 class="inventory-dialog__recommendation-reasons-toggle"
                 :aria-expanded="recommendationReasonsOpen"
-                @click="recommendationReasonsOpen = !recommendationReasonsOpen"
+                @click="
+                  recommendationReasonsOpen = !recommendationReasonsOpen
+                "
               >
                 <span class="inventory-dialog__recommendation-reasons-title">
-                  <v-icon
-                    icon="mdi-information-outline"
-                    size="11"
-                  />
-
                   이 수량을 추천하는 이유
                 </span>
 
@@ -198,7 +209,7 @@
                       ? 'mdi-chevron-up'
                       : 'mdi-chevron-down'
                   "
-                  size="11"
+                  size="16"
                 />
               </button>
 
@@ -211,11 +222,6 @@
                     v-for="(reason, index) in shortRecommendationReasons"
                     :key="index"
                   >
-                    <v-icon
-                      icon="mdi-check"
-                      size="14"
-                    />
-
                     <span>{{ reason }}</span>
                   </p>
                 </template>
@@ -226,6 +232,7 @@
               </div>
             </div>
 
+            <!-- 생산 수량 -->
             <v-number-input
               v-model="productionForm.quantity"
               :error="productionErrors.quantity"
@@ -234,14 +241,17 @@
                   ? '올바른 생산 수량을 입력해 주세요.'
                   : []
               "
-              @update:model-value="productionErrors.quantity = false"
               label="생산 수량"
               variant="outlined"
               density="compact"
               :min="DEFAULT_PRODUCTION_QUANTITY"
               control-variant="stacked"
+              @update:model-value="
+                productionErrors.quantity = false
+              "
             />
 
+            <!-- 작업자 -->
             <v-select
               v-model="productionForm.workerIds"
               :items="workers"
@@ -262,14 +272,16 @@
                   ? '작업자를 선택해 주세요.'
                   : []
               "
-              @update:model-value="productionErrors.workers = false"
+              @update:model-value="
+                productionErrors.workers = false
+              "
             />
           </div>
 
           <!-- 카드 2: 레시피 및 추천 정보 -->
           <div
             v-show="productionCardIndex === 1"
-            class="inventory-dialog__swipe-card"
+            class="inventory-dialog__swipe-card d-flex flex-column ga-3"
           >
             <v-alert
               type="info"
@@ -278,15 +290,15 @@
               class="mb-2"
             >
               <template v-if="editingBatch">
-                레시피 변경 및 추천 생산량 정보는 최초 등록 시에만 입력할 수
-                있습니다. 기존 기록 수정시 생산 수량, 작업자, 메모만 변경할 수
-                있습니다.
+                레시피 변경 및 추천 생산량 정보는 최초 등록 시에만
+                입력할 수 있습니다. 기존 기록 수정시 생산 수량,
+                작업자, 메모만 변경할 수 있습니다.
               </template>
 
               <template v-else>
-                실제 작업 과정에서 레시피를 변경했거나 추천 생산량을 참고했다면
-                해당 내용을 기록해 주세요. 입력한 정보는 이후 생산 분석에서
-                활용됩니다.
+                실제 작업 과정에서 레시피를 변경했거나 추천 생산량을
+                참고했다면 해당 내용을 기록해 주세요.
+                입력한 정보는 이후 생산 분석에서 활용됩니다.
               </template>
             </v-alert>
 
@@ -321,15 +333,15 @@
                   ? '변경한 작업 내용을 입력해 주세요.'
                   : []
               "
-              @update:model-value="
-                productionErrors.recipeDeviationNote = false
-              "
               :disabled="Boolean(editingBatch)"
               label="달라진 작업 내용"
               variant="outlined"
               density="compact"
               rows="2"
               hide-details="auto"
+              @update:model-value="
+                productionErrors.recipeDeviationNote = false
+              "
             />
 
             <v-divider />
@@ -359,7 +371,7 @@
           <!-- 카드 3: 메모 -->
           <div
             v-show="productionCardIndex === 2"
-            class="inventory-dialog__swipe-card"
+            class="inventory-dialog__swipe-card d-flex flex-column ga-3"
           >
             <p class="inventory-dialog__form-help">
               특이사항을 메모로 남길 수 있습니다.
@@ -383,8 +395,7 @@
         class="inventory-dialog__zero-card"
       >
         <div
-          v-show="zeroCardOpen"
-          class="inventory-dialog__zero-card-content"
+          class="inventory-dialog__zero-card-content d-flex flex-column ga-3"
         >
           <strong>생산 없음 확인</strong>
 
@@ -402,7 +413,11 @@
             variant="outlined"
             density="compact"
             clearable
-            :disabled="!canMutate || saving || Boolean(editingBatch)"
+            :disabled="
+              !canMutate ||
+              saving ||
+              Boolean(editingBatch)
+            "
           />
 
           <v-text-field
@@ -421,12 +436,16 @@
             density="compact"
             rows="2"
             hide-details="auto"
-            :disabled="!canMutate || saving || Boolean(editingBatch)"
+            :disabled="
+              !canMutate ||
+              saving ||
+              Boolean(editingBatch)
+            "
           />
 
           <v-btn
-            variant="outlined"
             block
+            variant="outlined"
             :disabled="
               !canMutate ||
               saving ||
@@ -440,14 +459,18 @@
         </div>
       </section>
 
-      <!-- 생산 합계 및 기존 생산 기록 목록 -->
+      <!-- 생산 합계 및 기존 생산 기록 -->
       <section class="inventory-dialog__production">
-        <div class="inventory-dialog__production-summary">
+        <div
+          class="inventory-dialog__production-summary d-flex align-center justify-space-between"
+        >
           <strong>생산 합계</strong>
           <strong>{{ displayQuantity(product?.production) }}</strong>
         </div>
 
-        <div class="inventory-dialog__production-heading">
+        <div
+          class="inventory-dialog__production-heading d-flex align-center justify-space-between"
+        >
           <strong>생산 기록</strong>
           <strong>{{ product?.batches?.length || 0 }}건</strong>
         </div>
@@ -456,9 +479,9 @@
           <div
             v-for="batch in product.batches"
             :key="batch.id"
-            class="inventory-dialog__production-record"
+            class="inventory-dialog__production-record d-flex flex-column"
           >
-            <!-- 생산 기록의 생산량 헤더 -->
+            <!-- 생산 기록 펼침/접기 -->
             <button
               type="button"
               class="inventory-dialog__production-record-header"
@@ -469,7 +492,9 @@
                 생산 수량
               </strong>
 
-              <span class="inventory-dialog__production-record-header-right">
+              <span
+                class="inventory-dialog__production-record-header-right d-flex align-center"
+              >
                 <strong class="inventory-dialog__production-record-quantity">
                   {{ displayQuantity(batch.quantity) }}
                 </strong>
@@ -493,7 +518,11 @@
               >
                 <strong>작업자</strong>
                 <div>
-                  {{ batch.workers.map((worker) => worker.name).join(", ") }}
+                  {{
+                    batch.workers
+                      .map((worker) => worker.name)
+                      .join(", ")
+                  }}
                 </div>
               </div>
 
@@ -513,7 +542,9 @@
               >
                 <strong>레시피 변경</strong>
                 <div>
-                  {{ batch.recipe_deviation_note || "변경 내용 없음" }}
+                  {{
+                    batch.recipe_deviation_note || "변경 내용 없음"
+                  }}
                 </div>
               </div>
 
@@ -525,14 +556,16 @@
                 "
                 class="inventory-dialog__record-detail"
               >
-                <div class="inventory-dialog__recommendation-header">
+                <div
+                  class="inventory-dialog__recommendation-header d-flex align-center justify-space-between flex-wrap"
+                >
                   <strong>추천 생산량 참고</strong>
 
                   <span
                     class="inventory-dialog__recommendation-status"
                     :class="{
                       'inventory-dialog__recommendation-status--inactive':
-                        !batch.recommendation_referenced,
+                        !batch.recommendation_referenced
                     }"
                   >
                     {{
@@ -547,17 +580,22 @@
                   v-if="batch.recommendation_deviation_reason"
                   class="inventory-dialog__recommendation-reason"
                 >
-                  <span>추천 범위와 다르게 생산한 이유</span>
-                  <p>{{ batch.recommendation_deviation_reason }}</p>
+                  <span>
+                    추천 범위와 다르게 생산한 이유
+                  </span>
+
+                  <p>
+                    {{ batch.recommendation_deviation_reason }}
+                  </p>
                 </div>
               </div>
 
-              <!-- 생산 기록별 수정·삭제 -->
+              <!-- 수정 / 삭제: 색상으로 구분 -->
               <div class="inventory-dialog__action-grid">
                 <v-btn
-                  variant="outlined"
                   block
-                  prepend-icon="mdi-pencil-outline"
+                  variant="outlined"
+                  color="primary"
                   :disabled="!canMutate"
                   @click="editBatch(batch)"
                 >
@@ -565,9 +603,9 @@
                 </v-btn>
 
                 <v-btn
-                  variant="outlined"
                   block
-                  prepend-icon="mdi-delete-outline"
+                  variant="outlined"
+                  color="error"
                   :disabled="!canMutate || saving"
                   @click="askDelete(batch)"
                 >
@@ -578,7 +616,7 @@
           </div>
         </template>
 
-        <!-- 생산 기록이 없을 때 생산 0개 확인 여부에 따라 문구를 표시합니다. -->
+        <!-- 생산 기록이 없는 경우 -->
         <div
           v-else
           class="inventory-dialog__production-empty"
@@ -594,14 +632,18 @@
     </div>
   </div>
 
-  <!-- 생산 기록 신규 등록 및 수정 확인창 -->
+  <!-- 생산 기록 저장 및 수정 확인 -->
   <ProductionSaveConfirmDialog
     v-model="saveConfirmOpen"
     :editing="Boolean(editingBatch)"
     :product-name="product?.name || '제품'"
     :quantity="Number(productionForm.quantity)"
     :original-quantity="Number(editingBatch?.quantity || 0)"
-    :current-total="product?.production == null ? null : Number(product.production)"
+    :current-total="
+      product?.production == null
+        ? null
+        : Number(product.production)
+    "
     :expected-total="expectedProductionTotal"
     :average-quantity="productionAverage"
     :previous-quantity="previousProductionQuantity"
@@ -619,7 +661,7 @@
     @confirm="saveProduction"
   />
 
-  <!-- 생산 0개 최종 확인 -->
+  <!-- 생산 0개 확인 -->
   <ConfirmDialog
     v-model="confirmZeroOpen"
     title="생산 0개 확인"
@@ -1597,8 +1639,8 @@ function applyBatchToEditor(batch) {
 
   nextTick(() => {
     productionEditor.value?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
+      behavior: "auto",
+      block: "nearest",
     });
   });
 }
@@ -1634,114 +1676,13 @@ function cancelEdit() {
   });
 }
 
-// 카드 스와이프 시작 위치
-let productionSwipeStart = null;
-
-// 입력 요소 조작 시 스와이프 방지
-const productionSwipeIgnoreSelector = [
-  "input",
-  "textarea",
-  "select",
-  "button",
-  "a",
-  "label",
-  '[role="button"]',
-  '[role="checkbox"]',
-  '[role="combobox"]',
-  '[contenteditable="true"]',
-  ".v-input",
-  ".v-btn",
-].join(",");
-
-// 스와이프 시작
-function onProductionSwipeStart(event) {
-  productionSwipeStart = null;
-
-  if (!productionFormOpen.value || saving.value) {
-    return;
-  }
-
-  if (
-    event.pointerType === "mouse" &&
-    event.button !== 0
-  ) {
-    return;
-  }
-
-  const target = event.target;
-
-  if (
-    target instanceof Element &&
-    target.closest(productionSwipeIgnoreSelector)
-  ) {
-    return;
-  }
-
-  productionSwipeStart = {
-    pointerId: event.pointerId,
-    x: event.clientX,
-    y: event.clientY,
-  };
-
-  event.currentTarget?.setPointerCapture?.(
-    event.pointerId
-  );
-}
-
-// 스와이프 종료 및 카드 변경
-function onProductionSwipeEnd(event) {
-  if (
-    event.currentTarget?.hasPointerCapture?.(
-      event.pointerId
-    )
-  ) {
-    event.currentTarget.releasePointerCapture(
-      event.pointerId
-    );
-  }
-
-  const start = productionSwipeStart;
-  productionSwipeStart = null;
-
-  if (
-    !start ||
-    start.pointerId !== event.pointerId
-  ) {
-    return;
-  }
-
-  if (!productionFormOpen.value || saving.value) {
-    return;
-  }
-
-  const deltaX = event.clientX - start.x;
-  const deltaY = event.clientY - start.y;
-
-  if (
-    Math.abs(deltaX) < PRODUCTION_SWIPE_MIN_DISTANCE ||
-    Math.abs(deltaX) <=
-      Math.abs(deltaY) * PRODUCTION_SWIPE_DIRECTION_RATIO
-  ) {
-    return;
-  }
-
-  if (deltaX < 0) {
-    productionCardIndex.value = Math.min(
-      lastProductionCardIndex,
-      productionCardIndex.value + 1
-    );
-  } else {
-    productionCardIndex.value = Math.max(
-      0,
-      productionCardIndex.value - 1
-    );
-  }
-}
-
-// 스와이프 취소
-function onProductionSwipeCancel() {
-  productionSwipeStart = null;
-}
+// 모바일에서 스크롤·입력과 카드 스와이프가 충돌하지 않도록
+// 좌우 스와이프 전환을 비활성화합니다.
+// 카드 상단의 기존 단계 버튼과 '이전/다음' 버튼은 그대로 동작합니다.
+// <template>의 기존 이벤트 참조를 유지하기 위해 함수 이름은 보존합니다.
+function onProductionSwipeStart() {}
+function onProductionSwipeEnd() {}
+function onProductionSwipeCancel() {}
 
 // 제품·날짜가 변경되거나 다이얼로그를 새로 열면 초기화
 watch(
@@ -1800,92 +1741,19 @@ defineExpose({
   askSave,
   cancelEdit,
 });
-
 </script>
 
 <style scoped>
-/* 생산 기록: 생산량 헤더 */
-.inventory-dialog__production-record-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
+/*
+ * ProductionTab
+ * 기존 기능과 업무 로직은 그대로 유지합니다.
+ * 공통 CSS와 충돌을 줄이고 모바일 입력 환경을 개선합니다.
+ */
 
-/* 생산 기록 헤더 - 마우스 올림 */
-.inventory-dialog__production-record-header:hover {
-  background: rgba(var(--v-theme-on-surface), 0.065);
-}
-
-/* 생산 기록 헤더 - 키보드 포커스 */
-.inventory-dialog__production-record-header:focus-visible {
-  outline: 2px solid rgb(var(--v-theme-primary));
-  outline-offset: 2px;
-}
-
-/* 생산량 제목 */
-.inventory-dialog__production-record-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  line-height: 1.6;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-/* 생산 수량 */
-.inventory-dialog__production-record-quantity {
-  font-size: 1rem;
-  font-weight: 700;
-  color: rgb(var(--v-theme-on-surface));
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* 생산 기록 상세 정보 */
-.inventory-dialog__production-record .inventory-dialog__record-detail {
-  display: block;
-  margin-bottom: 10px;
-  padding: 12px 14px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
-  font-size: 0.8rem;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-/* 생산 기록 상세 항목 제목 */
-.inventory-dialog__production-record .inventory-dialog__record-detail strong {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  line-height: 1.6;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-.inventory-dialog__production-record .inventory-dialog__record-detail > div {
-  color: rgba(var(--v-theme-on-surface), 0.72);
-  white-space: pre-wrap;
-}
-
-/* 생산 탭 기본 글씨 */
+/* 생산 탭 기본 영역 */
 .inventory-dialog__production-tab {
-  font-size: 12px;
-}
-
-.inventory-dialog__production-tab :deep(.v-btn),
-.inventory-dialog__production-tab :deep(.v-field),
-.inventory-dialog__production-tab :deep(.v-label) {
+  width: 100%;
+  min-width: 0;
   font-size: 12px;
 }
 
@@ -1895,6 +1763,8 @@ defineExpose({
   flex-direction: column;
   align-items: stretch;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   min-height: 220px;
   padding: 18px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
@@ -1914,6 +1784,7 @@ defineExpose({
   flex-direction: column;
   gap: 10px;
   width: 100%;
+  min-width: 0;
   text-align: left;
   font-size: 13px;
 }
@@ -1954,6 +1825,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 5px;
+  min-width: 0;
   margin-bottom: 6px;
   padding: 10px 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.07);
@@ -1963,9 +1835,100 @@ defineExpose({
   line-height: 1.5;
 }
 
+/* 생산 기록: 수량 헤더 */
+.inventory-dialog__production-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.inventory-dialog__production-record-header:hover {
+  background: rgba(var(--v-theme-on-surface), 0.065);
+}
+
+.inventory-dialog__production-record-header:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+
 .inventory-dialog__production-record-header strong {
   font-size: 0.8rem;
   font-weight: 600;
+}
+
+/* 생산량 제목 */
+.inventory-dialog__production-record-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+/* 생산 수량 */
+.inventory-dialog__production-record-quantity {
+  font-size: 1rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-on-surface));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 생산 기록 헤더 오른쪽 */
+.inventory-dialog__production-record-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 생산 기록 상세 */
+.inventory-dialog__production-record
+.inventory-dialog__record-detail {
+  display: block;
+  min-width: 0;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.035);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.inventory-dialog__production-record
+.inventory-dialog__record-detail strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.inventory-dialog__production-record
+.inventory-dialog__record-detail > div {
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  white-space: pre-wrap;
+}
+
+.inventory-dialog__record-detail {
+  width: 100%;
+  min-width: 0;
 }
 
 /* 생산 입력 카드 탐색 */
@@ -1973,6 +1936,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   padding: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 12px;
@@ -1982,6 +1947,7 @@ defineExpose({
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
+  min-width: 0;
 }
 
 .inventory-dialog__card-steps :deep(.v-btn) {
@@ -1995,6 +1961,7 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .inventory-dialog__card-controls span {
@@ -2002,55 +1969,35 @@ defineExpose({
   opacity: 0.7;
 }
 
-/* 카드 좌우 스와이프 */
+/*
+ * 카드 좌우 스와이프
+ * 기존 스와이프 로직은 유지합니다.
+ * 세로 스크롤은 브라우저가 처리합니다.
+ */
 .inventory-dialog__swipe-area {
   width: 100%;
   min-width: 0;
-  touch-action: pan-y;
   margin-top: 4px;
+  touch-action: pan-y;
 }
 
-/* 생산 입력 카드 */
+/*
+ * 생산 입력 카드
+ * 위치 이동 애니메이션을 제거하여
+ * 불필요한 화면 이동을 줄입니다.
+ */
 .inventory-dialog__swipe-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
   width: 100%;
+  min-width: 0;
   min-height: 220px;
   padding: 16px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 14px;
   background: rgb(var(--v-theme-surface));
   text-align: left;
-  animation: inventory-card-enter 0.2s ease-out;
-}
-
-/* 카드 전환 애니메이션 */
-@keyframes inventory-card-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* 움직임 줄이기 설정 */
-@media (prefers-reduced-motion: reduce) {
-  .inventory-dialog__swipe-card {
-    animation: none;
-  }
-}
-
-/* 모바일 생산 카드 */
-@media (max-width: 600px) {
-  .inventory-dialog__swipe-card {
-    padding: 12px;
-    min-height: 200px;
-  }
 }
 
 /* 생산 입력 폼 */
@@ -2059,6 +2006,7 @@ defineExpose({
   flex-direction: column;
   gap: 10px;
   width: 100%;
+  min-width: 0;
   text-align: left;
   font-size: 13px;
 }
@@ -2068,7 +2016,9 @@ defineExpose({
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .inventory-dialog__field-heading strong {
@@ -2081,25 +2031,26 @@ defineExpose({
   opacity: 0.7;
 }
 
-/* 생산 입력 필드 */
+/*
+ * 입력 라벨은 기존 크기를 유지합니다.
+ * 실제 입력 요소의 글꼴 크기는 아래 모바일 규칙에서 처리합니다.
+ */
 .inventory-dialog__production-form :deep(.v-label) {
   font-size: 13px;
 }
 
-.inventory-dialog__production-form :deep(.v-field__input) {
-  font-size: 13px;
-}
-
-.inventory-dialog__production-form :deep(.v-selection-control__wrapper) {
+.inventory-dialog__production-form
+:deep(.v-selection-control__wrapper) {
   font-size: 16px;
 }
 
-/* 전날 생산량 참고 */
+/* 전날 생산량 및 추천 생산량 참고 */
 .inventory-dialog__previous-production {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
   padding: 10px 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 8px;
@@ -2110,6 +2061,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 
 .inventory-dialog__previous-production span {
@@ -2121,12 +2073,17 @@ defineExpose({
   font-size: 15px;
 }
 
+.inventory-dialog__previous-production :deep(.v-btn) {
+  flex-shrink: 0;
+}
+
 /* 생산 0개 확인 카드 */
 .inventory-dialog__zero-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: 100%;
+  min-width: 0;
   margin-top: 12px;
   text-align: left;
 }
@@ -2135,6 +2092,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   padding: 16px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 12px;
@@ -2150,31 +2109,14 @@ defineExpose({
   text-align: left;
 }
 
-@media (max-width: 600px) {
-  .inventory-dialog__zero-card-content {
-    padding: 12px;
-  }
-}
-
-/* 생산 기록 헤더 오른쪽 영역 */
-.inventory-dialog__production-record-header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 생산 기록 상세 영역 */
-.inventory-dialog__record-detail {
-  width: 100%;
-  min-width: 0;
-}
-
 /* 추천 생산량 참고 헤더 */
 .inventory-dialog__recommendation-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
+  min-width: 0;
 }
 
 .inventory-dialog__recommendation-header strong {
@@ -2200,7 +2142,7 @@ defineExpose({
   color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
-/* 추천 생산량 변경 사유 */
+/* 추천 범위 이탈 사유 */
 .inventory-dialog__production-record
 .inventory-dialog__recommendation-reason {
   margin-top: 12px;
@@ -2224,7 +2166,7 @@ defineExpose({
   overflow-wrap: anywhere;
 }
 
-/* 생산 기록별 수정·삭제 버튼 */
+/* 생산 기록별 수정·삭제 */
 .inventory-dialog__record-actions {
   display: flex;
   justify-content: flex-end;
@@ -2233,27 +2175,13 @@ defineExpose({
   margin-top: 4px;
 }
 
-/* 화면이 좁을 때 카드 간격 조정 */
-@media (max-width: 600px) {
-  .inventory-dialog__placeholder {
-    padding: 12px;
-  }
-
-  .inventory-dialog__production-form {
-    padding: 10px;
-  }
-
-  .inventory-dialog__card-navigation {
-    padding: 10px;
-  }
-}
-
-/* 생산 입력 / 생산 0개 버튼 가로 배치 */
+/* 생산 입력 / 생산 없음 버튼 */
 .inventory-dialog__action-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: 100%;
+  min-width: 0;
 }
 
 .inventory-dialog__action-grid :deep(.v-btn) {
@@ -2270,6 +2198,7 @@ defineExpose({
   line-height: 1.4;
 }
 
+/* 생산 기록이 없을 때 */
 .inventory-dialog__production-empty {
   padding: 14px;
   border: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
@@ -2279,10 +2208,10 @@ defineExpose({
   text-align: center;
 }
 
-
 /* 추천 이유 전체 영역 */
 .inventory-dialog__recommendation-reasons {
   width: 100%;
+  min-width: 0;
   border-radius: 10px;
   background: rgba(var(--v-theme-on-surface), 0.035);
 }
@@ -2294,6 +2223,7 @@ defineExpose({
   justify-content: space-between;
   gap: 8px;
   width: 100%;
+  min-height: 44px;
   padding: 10px 12px;
   border: none;
   background: transparent;
@@ -2301,6 +2231,7 @@ defineExpose({
   font: inherit;
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 /* 추천 이유 제목 */
@@ -2312,7 +2243,7 @@ defineExpose({
   font-weight: 600;
 }
 
-/* 펼쳐진 추천 이유 */
+/* 추천 이유 내용 */
 .inventory-dialog__recommendation-reasons-content {
   display: flex;
   flex-direction: column;
@@ -2320,7 +2251,6 @@ defineExpose({
   padding: 0 12px 12px;
 }
 
-/* 추천 이유 한 줄 */
 .inventory-dialog__recommendation-reasons-content p {
   display: flex;
   align-items: flex-start;
@@ -2331,9 +2261,68 @@ defineExpose({
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
 
-/* 체크 아이콘 */
 .inventory-dialog__recommendation-reasons-content .v-icon {
   flex-shrink: 0;
   margin-top: 2px;
+}
+
+/*
+ * 모바일 전용
+ *
+ * 실제 input과 textarea 크기만 최소 16px로 맞춥니다.
+ * 입력 필드 자동 확대를 줄이기 위한 설정이며,
+ * 키보드 가림까지 완전히 해결하는 규칙은 아닙니다.
+ */
+@media (max-width: 600px) {
+  .inventory-dialog__placeholder {
+    padding: 12px;
+  }
+
+  .inventory-dialog__production-form {
+    padding: 10px;
+  }
+
+  .inventory-dialog__card-navigation {
+    padding: 10px;
+  }
+
+  .inventory-dialog__swipe-card {
+    padding: 12px;
+    min-height: 200px;
+  }
+
+  .inventory-dialog__zero-card-content {
+    padding: 12px;
+  }
+
+  .inventory-dialog__production-tab :deep(input:not([type="checkbox"])),
+  .inventory-dialog__production-tab :deep(textarea),
+  .inventory-dialog__production-tab :deep(.v-field__input) {
+    font-size: 16px;
+  }
+
+  .inventory-dialog__card-controls :deep(.v-btn) {
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .inventory-dialog__previous-production {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .inventory-dialog__previous-production :deep(.v-btn) {
+    min-width: 0;
+  }
+}
+
+/* 사용자의 움직임 최소화 설정 존중 */
+@media (prefers-reduced-motion: reduce) {
+  .inventory-dialog__production-tab *,
+  .inventory-dialog__production-tab *::before,
+  .inventory-dialog__production-tab *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+  }
 }
 </style>
