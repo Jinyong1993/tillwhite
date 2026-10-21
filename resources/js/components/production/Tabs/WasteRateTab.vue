@@ -12,12 +12,12 @@
 
     <!-- 조회 오류 -->
     <div v-else-if="error" class="inventory-dialog__status">
-      <v-icon icon="mdi-alert-circle-outline" size="18" />
       <span>{{ error }}</span>
 
       <v-btn
         size="small"
-        variant="text"
+        variant="outlined"
+        class="inventory-dialog__retry-button"
         @click="loadStatistics"
       >
         다시 시도
@@ -80,18 +80,12 @@
           }"
         >
           <v-icon
-            :icon="
-              difference === null || difference === 0
-                ? 'mdi-minus'
-                : difference > 0
-                  ? 'mdi-arrow-up'
-                  : 'mdi-arrow-down'
-            "
+            v-if="difference !== null && difference !== 0"
+            :icon="difference > 0 ? 'mdi-arrow-up' : 'mdi-arrow-down'"
             size="16"
           />
 
           <strong>{{ differenceText }}</strong>
-
           <span>{{ differenceDescription }}</span>
         </div>
 
@@ -146,6 +140,7 @@
                 }"
                 :style="{ height: barHeight(day.waste_rate) }"
               />
+
               <span
                 v-else
                 class="inventory-dialog__chart-missing"
@@ -241,11 +236,9 @@
       </section>
     </template>
 
-    
     <!-- 폐기율 안내 -->
     <div class="inventory-dialog__guide">
       <div class="inventory-dialog__guide-heading">
-        <v-icon icon="mdi-information-outline" size="18" />
         <strong>폐기율 안내</strong>
       </div>
 
@@ -447,14 +440,14 @@ function shiftDate(value, days) {
 
 // 최근 7일: 선택 날짜 포함 7일
 const recentPeriod = computed(() => {
-  if (!props.workDate) return "-";
+  if (!props.workDate) return "";
 
   return `${shiftDate(props.workDate, -6)} ~ ${props.workDate}`;
 });
 
 // 이전 7일: 최근 7일 바로 이전의 7일
 const previousPeriod = computed(() => {
-  if (!props.workDate) return "-";
+  if (!props.workDate) return "";
 
   return `${shiftDate(props.workDate, -13)} ~ ${shiftDate(props.workDate, -7)}`;
 });
@@ -614,12 +607,16 @@ const donutBackground = computed(() => {
 </script>
 
 <style scoped>
-/* 생산탭과 동일한 기본 글씨 */
+/* 폐기율 탭 기본 영역 */
 .inventory-dialog__waste-rate-tab {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 /* 통계 카드 및 폐기율 안내 카드 */
@@ -628,6 +625,9 @@ const donutBackground = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 14px 16px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 12px;
@@ -659,13 +659,18 @@ const donutBackground = computed(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .inventory-dialog__metric {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   padding: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 10px;
@@ -695,8 +700,10 @@ const donutBackground = computed(() => {
   font-size: 11px;
   line-height: 1.5;
   opacity: 0.7;
+  overflow-wrap: anywhere;
 }
 
+/* 이전 기간 대비 증감 */
 .inventory-dialog__difference {
   display: flex;
   align-items: center;
@@ -723,6 +730,9 @@ const donutBackground = computed(() => {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 7px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   height: 154px;
 }
 
@@ -732,6 +742,7 @@ const donutBackground = computed(() => {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  min-height: 44px;
   padding: 5px 2px;
   border: none;
   border-radius: 8px;
@@ -739,6 +750,8 @@ const donutBackground = computed(() => {
   color: inherit;
   font: inherit;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .inventory-dialog__chart-item--selected {
@@ -747,6 +760,7 @@ const donutBackground = computed(() => {
 
 .inventory-dialog__chart-item:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
 }
 
 .inventory-dialog__chart-value,
@@ -777,7 +791,7 @@ const donutBackground = computed(() => {
   background: rgb(var(--v-theme-primary));
 }
 
-/* 실제 폐기율 0%는 얇은 실선으로 구분 */
+/* 실제 폐기율 0%는 얇은 실선 */
 .inventory-dialog__chart-bar--zero {
   opacity: 0.5;
 }
@@ -790,6 +804,7 @@ const donutBackground = computed(() => {
   border-top: 1px dashed rgba(var(--v-theme-on-surface), 0.35);
 }
 
+/* 선택한 날짜 상세 */
 .inventory-dialog__day-detail {
   display: flex;
   flex-wrap: wrap;
@@ -805,11 +820,14 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-/* 폐기 사유별 원형그래프 */
+/* 폐기 사유별 도넛그래프 */
 .inventory-dialog__reason-layout {
   display: flex;
   align-items: center;
   gap: 20px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .inventory-dialog__donut {
@@ -857,6 +875,9 @@ const donutBackground = computed(() => {
   display: flex;
   align-items: center;
   gap: 7px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   font-size: 11px;
 }
 
@@ -884,7 +905,7 @@ const donutBackground = computed(() => {
   opacity: 0.7;
 }
 
-/* 안내 및 빈 데이터 */
+/* 빈 데이터 */
 .inventory-dialog__empty {
   margin: 0;
   padding: 18px 0;
@@ -894,17 +915,27 @@ const donutBackground = computed(() => {
   opacity: 0.7;
 }
 
+/* 로딩 및 오류 */
 .inventory-dialog__status {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 90px;
   font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
 }
 
-/* 기존 폐기율 안내 제목 */
+.inventory-dialog__retry-button {
+  min-height: 40px;
+}
+
+/* 폐기율 안내 제목 */
 .inventory-dialog__guide-heading {
   display: flex;
   align-items: center;
@@ -916,7 +947,7 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-/* 생산탭 안내 문구와 동일한 글씨 */
+/* 안내 문구 */
 .inventory-dialog__form-help {
   margin: 0;
   font-size: 11px;
@@ -946,7 +977,7 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-/* 예시 */
+/* 계산 예시 */
 .inventory-dialog__example {
   margin: 0;
   font-size: 11px;
@@ -958,6 +989,12 @@ const donutBackground = computed(() => {
 .inventory-dialog__example strong {
   margin-right: 6px;
   font-weight: 600;
+}
+
+/* 폐기율 통계 변동 안내 */
+.inventory-dialog__notice {
+  font-size: 11px;
+  font-weight: 500;
 }
 
 /* 모바일 대응 */
@@ -995,9 +1032,57 @@ const donutBackground = computed(() => {
   }
 }
 
-/* 폐기율 통계 변동 가능성 안내 */
-.inventory-dialog__notice {
-  font-size: 11px;
-  font-weight: 500;
+/* 작은 모바일 화면 */
+@media (max-width: 430px) {
+  .inventory-dialog__comparison {
+    gap: 8px;
+  }
+
+  .inventory-dialog__metric {
+    padding: 10px;
+  }
+
+  .inventory-dialog__chart {
+    gap: 2px;
+  }
+
+  .inventory-dialog__chart-item {
+    padding-inline: 0;
+  }
+
+  .inventory-dialog__chart-value,
+  .inventory-dialog__chart-date {
+    font-size: 9px;
+  }
+}
+
+/* 320px 등 좁은 화면 대응 */
+@media (max-width: 360px) {
+  .inventory-dialog__card,
+  .inventory-dialog__guide {
+    padding: 10px;
+  }
+
+  .inventory-dialog__metric {
+    padding: 8px;
+  }
+
+  .inventory-dialog__metric-value {
+    font-size: 18px;
+  }
+
+  .inventory-dialog__reason-layout {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .inventory-dialog__donut {
+    flex: 0 0 110px;
+  }
+
+  .inventory-dialog__legend {
+    flex: 1 1 100%;
+    width: 100%;
+  }
 }
 </style>

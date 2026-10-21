@@ -28,9 +28,10 @@
       <div class="inventory-dialog__action-grid">
         <v-btn
           block
-          variant="tonal"
+          variant="outlined"
+          :color="editorOpen ? undefined : 'success'"
           :disabled="saving || !canMutate"
-          :prepend-icon="editorOpen ? 'mdi-chevron-up' : 'mdi-plus'"
+          :prepend-icon="editorOpen ? 'mdi-chevron-up' : undefined"
           @click="toggleEditor"
         >
           {{ editorOpen ? "취소" : `${dialogTitle} 수량 설정` }}
@@ -38,13 +39,9 @@
 
         <v-btn
           block
-          variant="tonal"
+          variant="outlined"
           :disabled="saving || !canMutate"
-          :prepend-icon="
-            zeroCardOpen
-              ? 'mdi-chevron-up'
-              : 'mdi-minus-circle-outline'
-          "
+          :prepend-icon="zeroCardOpen ? 'mdi-chevron-up' : undefined"
           @click="toggleZeroCard"
         >
           {{ dialogTitle }} 없음
@@ -109,9 +106,6 @@
         <!-- 모바일 좌우 스와이프 입력 영역 -->
         <div
           class="inventory-dialog__swipe-area"
-          @pointerdown="onSwipeStart"
-          @pointerup="onSwipeEnd"
-          @pointercancel="onSwipeCancel"
         >
           <!-- 카드 1: 재고 선택 -->
           <div
@@ -223,16 +217,7 @@
                     </div>
                   </div>
 
-                  <v-icon
-                    :icon="
-                      selectedLotId != null &&
-                      String(selectedLotId) ===
-                        String(option.value)
-                        ? 'mdi-check-circle'
-                        : 'mdi-chevron-right'
-                    "
-                    size="20"
-                  />
+                  <v-icon icon="mdi-chevron-right" size="20" />
                 </button>
               </div>
             </div>
@@ -396,11 +381,13 @@
                 <!-- 신규 작성 중 추가한 사유만 취소할 수 있습니다. -->
                 <div
                   v-if="!entry.row._persisted"
-                  class="inventory-dialog__row-actions"
+                  class="inventory-dialog__row-actions d-flex w-100"
                 >
                   <v-btn
+                    block
+                    class="flex-grow-1"
                     size="small"
-                    variant="text"
+                    variant="outlined"
                     :disabled="saving || !canMutate"
                     @click="cancelNewReason(entry.key)"
                   >
@@ -409,11 +396,13 @@
                 </div>
               </div>
 
-              <div class="inventory-dialog__row-actions">
+              <div class="inventory-dialog__row-actions d-flex w-100">
                 <v-btn
+                  block
+                  class="flex-grow-1"
                   size="small"
-                  variant="text"
-                  prepend-icon="mdi-plus"
+                  variant="outlined"
+                  color="success"
                   :disabled="
                     saving ||
                     !canMutate ||
@@ -459,7 +448,7 @@
             <v-btn
               block
               variant="outlined"
-              prepend-icon="mdi-package-variant"
+              prepend-icon="mdi-chevron-left"
               :disabled="saving || !canMutate"
               @click="cardIndex = 0"
             >
@@ -583,8 +572,8 @@
               <div class="inventory-dialog__action-grid">
                 <v-btn
                   variant="outlined"
+                  color="primary"
                   block
-                  prepend-icon="mdi-pencil-outline"
                   :disabled="saving || !canMutate"
                   @click="openForEdit(item)"
                 >
@@ -593,8 +582,8 @@
 
                 <v-btn
                   variant="outlined"
+                  color="error"
                   block
-                  prepend-icon="mdi-delete-outline"
                   :disabled="saving || !canMutate"
                   @click="askDeleteReason(index)"
                 >
@@ -711,9 +700,6 @@ const pendingAction = ref(null);
 
 // 입력 행마다 안정적인 고유 키를 부여합니다.
 let reasonRowKeySequence = 0;
-
-// 모바일 스와이프 시작 정보
-let swipeStart = null;
 
 // 업무 유형에 따라 로스 또는 폐기 명칭을 반환합니다.
 const dialogTitle = computed(() =>
@@ -1367,7 +1353,6 @@ function resetState() {
   cardIndex.value = 0;
   expanded.value = [];
 
-  swipeStart = null;
   pendingAction.value = null;
   deletingReasonIndex.value = null;
 
@@ -1610,73 +1595,6 @@ async function deleteSavedReason() {
 
   confirmSave.value = true;
   await save();
-}
-
-// 모바일 스와이프 시작 위치를 저장합니다.
-function onSwipeStart(event) {
-  swipeStart = null;
-
-  if (
-    event.pointerType !== "touch" &&
-    event.pointerType !== "pen"
-  ) {
-    return;
-  }
-
-  if (
-    event.target instanceof Element &&
-    event.target.closest(
-      "button, input, textarea, select, a, .v-input"
-    )
-  ) {
-    return;
-  }
-
-  swipeStart = {
-    pointerId: event.pointerId,
-    x: event.clientX,
-    y: event.clientY,
-  };
-}
-
-// 스와이프 방향에 따라 입력 카드를 전환합니다.
-function onSwipeEnd(event) {
-  const start = swipeStart;
-  swipeStart = null;
-
-  if (
-    !start ||
-    start.pointerId !== event.pointerId
-  ) {
-    return;
-  }
-
-  const dx = event.clientX - start.x;
-  const dy = event.clientY - start.y;
-
-  if (
-    Math.abs(dx) < 55 ||
-    Math.abs(dx) <= Math.abs(dy)
-  ) {
-    return;
-  }
-
-  if (
-    dx < 0 &&
-    cardIndex.value < cardTitles.length - 1
-  ) {
-    cardIndex.value++;
-  } else if (
-    dx > 0 &&
-    cardIndex.value > 0
-  ) {
-    cardIndex.value--;
-  }
-}
-
-// 취소된 스와이프 정보를 제거합니다.
-function onSwipeCancel() {
-  swipeStart = null;
 }
 
 // 저장 전 재고별 수량을 검증하고 서버 전송용 행을 만듭니다.
@@ -2174,7 +2092,7 @@ defineExpose({
   width: 100%;
   min-width: 0;
   margin-top: 4px;
-  touch-action: pan-y;
+  touch-action: auto;
 }
 
 .inventory-dialog__swipe-card {
@@ -2189,7 +2107,6 @@ defineExpose({
   background: rgb(var(--v-theme-surface));
   text-align: left;
   overflow-wrap: anywhere;
-  animation: inventory-card-enter 0.2s ease-out;
 }
 
 .inventory-dialog__swipe-card :deep(.v-label) {
@@ -2202,18 +2119,6 @@ defineExpose({
 
 .inventory-dialog__swipe-card :deep(.v-selection-control__wrapper) {
   font-size: 16px;
-}
-
-@keyframes inventory-card-enter {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .inventory-dialog__reason-entry {
@@ -2531,12 +2436,6 @@ defineExpose({
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .inventory-dialog__swipe-card {
-    animation: none;
-  }
-}
-
 .inventory-dialog__memo-card {
   min-height: 220px;
 }
@@ -2544,6 +2443,77 @@ defineExpose({
 @media (max-width: 600px) {
   .inventory-dialog__memo-card {
     min-height: 200px;
+  }
+}
+
+/* 반응형: 부모 영역 밖으로 입력 카드와 기록 카드가 넘치지 않도록 처리 */
+.inventory-dialog__reason-tab,
+.inventory-dialog__placeholder,
+.inventory-dialog__production-form,
+.inventory-dialog__card-navigation,
+.inventory-dialog__card-steps,
+.inventory-dialog__swipe-card,
+.inventory-dialog__reason-entry,
+.inventory-dialog__production,
+.inventory-dialog__production-record,
+.inventory-dialog__selected-stock,
+.inventory-dialog__inner-card {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.inventory-dialog__production-record-header {
+  min-width: 0;
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+.inventory-dialog__selected-stock-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inventory-dialog__row-actions :deep(.v-btn) {
+  min-height: 40px;
+}
+
+@media (max-width: 600px) {
+  /* iOS Safari: 폼 포커스 시 화면 자동 확대 방지를 위한 16px */
+  .inventory-dialog__reason-tab :deep(input:not([type="checkbox"])),
+  .inventory-dialog__reason-tab :deep(textarea),
+  .inventory-dialog__reason-tab :deep(.v-field__input) {
+    font-size: 16px;
+  }
+
+  .inventory-dialog__card-controls :deep(.v-btn) {
+    min-width: 0;
+    min-height: 40px;
+  }
+
+  .inventory-dialog__card-steps :deep(.v-btn) {
+    min-width: 0;
+    padding-inline: 2px;
+  }
+
+  .inventory-dialog__selected-stock-row {
+    min-width: 0;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 360px) {
+  .inventory-dialog__placeholder {
+    padding: 10px;
+  }
+
+  .inventory-dialog__swipe-card,
+  .inventory-dialog__inner-card,
+  .inventory-dialog__reason-entry {
+    padding: 10px;
+  }
+
+  .inventory-dialog__card-navigation {
+    padding: 8px;
   }
 }
 </style>
