@@ -831,60 +831,72 @@
         />
       </template>
     </AppDialogLayout>
-
+    
     <!-- 폐기율 안내 다이얼로그 -->
-    <v-dialog
+    <AppDialogLayout
       v-model="wasteGuideOpen"
-      max-width="560"
+      title="폐기율 안내"
+      :max-width="560"
       persistent
+      card-class="app-dialog-card--compact"
     >
-      <v-card
-        rounded="lg"
-        class="app-dialog-card"
-      >
-        <v-card-title class="app-dialog-header">
-          폐기율 안내
-        </v-card-title>
-
-        <v-card-text class="app-dialog-body waste-guide-dialog">
-          <p>
+      <div class="waste-guide-dialog d-flex flex-column ga-3">
+        <!-- 폐기율 계산 기준 -->
+        <v-card
+          variant="flat"
+          rounded="lg"
+          class="app-form-section pa-3"
+        >
+          <p class="mb-0">
             폐기율은 해당 날짜에 만든 제품의 폐기만 계산합니다.
             이월된 제품을 폐기하면 처음 생산한 날짜의 폐기로 반영됩니다.
           </p>
+        </v-card>
 
-          <div class="d-flex flex-column ga-1">
-            <strong>계산식</strong>
-
-            <span>
-              해당 생산일의 폐기 수량 ÷
-              해당 생산일의 생산 수량 × 100
-            </span>
-          </div>
-
-          <div class="d-flex flex-column ga-1">
-            <strong>예시</strong>
-
-            <span>
-              10/3에 10개 생산한 제품 중 이월 재고 2개를
-              10/5에 폐기하면 10/3 폐기율은
-              2 ÷ 10 × 100 = 20%입니다.
-            </span>
-          </div>
-        </v-card-text>
-
-        <v-card-actions
-          class="app-dialog-footer history-footer justify-start"
+        <!-- 계산식 -->
+        <v-card
+          variant="flat"
+          rounded="lg"
+          class="app-form-section d-flex flex-column ga-2 pa-3"
         >
-          <v-btn
-            variant="text"
-            class="app-btn"
-            @click="wasteGuideOpen = false"
-          >
-            닫기
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+          <strong class="app-form-section-title">
+            계산식
+          </strong>
+
+          <span>
+            해당 생산일의 폐기 수량 ÷
+            해당 생산일의 생산 수량 × 100
+          </span>
+        </v-card>
+
+        <!-- 계산 예시 -->
+        <v-card
+          variant="flat"
+          rounded="lg"
+          class="app-form-section d-flex flex-column ga-2 pa-3"
+        >
+          <strong class="app-form-section-title">
+            예시
+          </strong>
+
+          <span>
+            10/3에 10개 생산한 제품 중 이월 재고 2개를
+            10/5에 폐기하면 10/3 폐기율은
+            2 ÷ 10 × 100 = 20%입니다.
+          </span>
+        </v-card>
+      </div>
+
+      <!-- 공통 푸터 -->
+      <template #footer>
+        <AppDialogFooter
+          :button-count="1"
+          :show-confirm="false"
+          cancel-text="닫기"
+          @cancel="wasteGuideOpen = false"
+        />
+      </template>
+    </AppDialogLayout>
 
     <!-- 변경 이력 다이얼로그 -->
     <v-dialog
