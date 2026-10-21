@@ -50,6 +50,7 @@
         <v-window
             v-model="tab"
             class="mt-2"
+            :touch="false"
         >
           <v-window-item value="list">
             <ProductionDailyTab

@@ -1,59 +1,101 @@
 <template>
-  <!--
-    Till White Vue 애플리케이션의 최상위 레이아웃입니다.
-
-    v-app은 Vuetify 애플리케이션의 최상위 컨테이너이며,
-    모든 Vuetify 컴포넌트가 정상적으로 동작하기 위한 기준이 됩니다.
-
-    공통 전체 화면 로딩 오버레이도 이 위치에서 관리합니다.
-
-    App.vue는 Vue Router로 업무 페이지가 변경되어도
-    제거되지 않는 최상위 컴포넌트이므로,
-    메인 → 직원 관리처럼 화면이 변경되는 동안에도
-    로딩 오버레이가 끊기지 않고 유지됩니다.
-  -->
-  <v-app>
-    <!--
-      애플리케이션 공통 전체 화면 로딩
-
-      공통 로딩 상태(useAppLoading)가 활성화되어 있으면
-      현재 어떤 업무 페이지를 보고 있든
-      전체 화면 로딩 오버레이를 표시합니다.
-
-      router-view 내부의 페이지가 교체되어도
-      이 컴포넌트는 제거되지 않습니다.
-    -->
+  <!-- Till White 최상위 애플리케이션 -->
+  <v-app class="app-gesture-control">
+    <!-- 공통 전체 화면 로딩 -->
     <AppLoadingOverlay
       :model-value="isLoading"
     />
 
-    <!-- 애플리케이션의 메인 콘텐츠 영역 -->
+    <!-- 애플리케이션 메인 콘텐츠 -->
     <v-main>
-      <!--
-        Vue Router에서 현재 URL에 해당하는
-        페이지 컴포넌트를 이 위치에 표시합니다.
-
-        페이지가 변경되는 동안에도
-        위의 공통 로딩 오버레이는 그대로 유지됩니다.
-      -->
       <router-view />
     </v-main>
   </v-app>
 </template>
 
 <script setup>
-import AppLoadingOverlay from './components/common/AppLoadingOverlay.vue';
+import { onMounted, onUnmounted } from 'vue';
 
+import AppLoadingOverlay from './components/common/AppLoadingOverlay.vue';
 import { useAppLoading } from './composables/useAppLoading';
 
 /**
- * Till White 애플리케이션 공통 로딩 상태
- *
- * 특정 업무 페이지에 종속되지 않으므로
- * Vue Router로 페이지가 변경되어도
- * 동일한 로딩 상태가 유지됩니다.
+ * 애플리케이션 공통 로딩 상태
  */
 const {
   isLoading,
 } = useAppLoading();
+
+/**
+ * iOS Safari의 확대 제스처 제한
+ *
+ * 두 손가락 확대·축소 동작을 제한합니다.
+ * 일반적인 한 손가락 스크롤과 클릭은 유지합니다.
+ */
+function preventGesture(event) {
+  event.preventDefault();
+}
+
+/**
+ * 두 손가락 터치로 발생하는 확대 제스처 제한
+ */
+function preventMultiTouch(event) {
+  if (event.touches.length > 1) {
+    event.preventDefault();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener(
+    'gesturestart',
+    preventGesture,
+    { passive: false }
+  );
+
+  document.addEventListener(
+    'gesturechange',
+    preventGesture,
+    { passive: false }
+  );
+
+  document.addEventListener(
+    'touchmove',
+    preventMultiTouch,
+    { passive: false }
+  );
+});
+
+onUnmounted(() => {
+  document.removeEventListener(
+    'gesturestart',
+    preventGesture
+  );
+
+  document.removeEventListener(
+    'gesturechange',
+    preventGesture
+  );
+
+  document.removeEventListener(
+    'touchmove',
+    preventMultiTouch
+  );
+});
 </script>
+
+<style>
+/* 모바일 입력창 포커스 시 자동 확대 방지 */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select,
+  .v-field__input {
+    font-size: 16px;
+  }
+}
+
+/* 앱 터치 제스처 */
+.app-gesture-control {
+  touch-action: pan-y;
+}
+</style>

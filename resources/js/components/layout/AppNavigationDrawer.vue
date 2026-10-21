@@ -14,6 +14,7 @@
     location="left"
     width="300"
     temporary
+    touchless
   >
     <v-list
       density="comfortable"
