@@ -899,106 +899,96 @@
     </AppDialogLayout>
 
     <!-- 변경 이력 다이얼로그 -->
-    <v-dialog
+    <AppDialogLayout
       v-model="historyOpen"
-      max-width="720"
+      title="변경 이력"
+      :subtitle="`${formatKoreanDate(workDate)}의 생산·이월·로스·폐기 변경 기록입니다.`"
+      :max-width="720"
       persistent
+      body-class="history-body"
     >
-      <v-card
-        rounded="lg"
-        class="app-dialog-card"
-      >
-        <v-card-title class="app-dialog-header">
-          변경 이력
-        </v-card-title>
-
-        <v-card-text class="app-dialog-body history-body">
-          <div class="history-context">
-            {{ formatKoreanDate(workDate) }}의
-            생산·이월·로스·폐기 변경 기록입니다.
-          </div>
-
-          <v-divider class="app-section-divider" />
-
-          <div
-            v-if="historyLogs.length"
-            ref="historyListRef"
-            class="history-list d-flex flex-column"
-          >
-            <article
-              v-for="log in pagedHistoryLogs"
-              :key="log.id"
-              class="history-item"
-            >
-              <div
-                class="history-item-head d-flex align-center justify-space-between ga-2"
-              >
-                <strong>
-                  <template v-if="log.product_name">
-                    {{ log.product_name }} ·
-                  </template>
-
-                  {{ historyDescription(log) }}
-                </strong>
-
-                <span class="history-action">
-                  {{ historyActionLabel(log.action) }}
-                </span>
-              </div>
-
-              <div
-                v-if="historyQuantityText(log)"
-                class="history-quantity"
-              >
-                {{ historyQuantityText(log) }}
-              </div>
-
-              <div class="history-meta">
-                {{ log.user?.name || '-' }} ·
-                {{ new Date(log.created_at).toLocaleString('ko-KR') }}
-              </div>
-            </article>
-          </div>
-
-          <v-empty-state
-            v-else
-            title="변경 이력이 없습니다."
-            icon="mdi-history"
-          />
-
-          <!-- 변경 이력 페이지 이동 -->
-          <v-pagination
-            v-if="historyPageCount > 1"
-            v-model="historyPage"
-            :length="historyPageCount"
-            :total-visible="5"
-            density="compact"
-            class="history-pagination app-pagination-compact"
-            @update:model-value="scrollHistoryTop"
-          />
-
-          <div
-            v-if="historyLogs.length"
-            class="history-page-count"
-          >
-            {{ historyPage }} / {{ historyPageCount }} 페이지
-            · 페이지당 10개
-          </div>
-        </v-card-text>
-
-        <v-card-actions
-          class="app-dialog-footer history-footer justify-start"
+      <div class="d-flex flex-column ga-3">
+        <!-- 변경 이력 목록 -->
+        <div
+          v-if="historyLogs.length"
+          ref="historyListRef"
+          class="history-list d-flex flex-column"
         >
-          <v-btn
-            variant="text"
-            class="app-btn"
-            @click="historyOpen = false"
+          <article
+            v-for="log in pagedHistoryLogs"
+            :key="log.id"
+            class="history-item"
           >
-            닫기
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+            <div
+              class="history-item-head d-flex align-center justify-space-between ga-2"
+            >
+              <strong>
+                <template v-if="log.product_name">
+                  {{ log.product_name }} ·
+                </template>
+
+                {{ historyDescription(log) }}
+              </strong>
+
+              <span class="history-action">
+                {{ historyActionLabel(log.action) }}
+              </span>
+            </div>
+
+            <!-- 변경 수량 -->
+            <div
+              v-if="historyQuantityText(log)"
+              class="history-quantity"
+            >
+              {{ historyQuantityText(log) }}
+            </div>
+
+            <!-- 변경자 및 변경 일시 -->
+            <div class="history-meta">
+              {{ log.user?.name || '-' }} ·
+              {{ new Date(log.created_at).toLocaleString('ko-KR') }}
+            </div>
+          </article>
+        </div>
+
+        <!-- 변경 이력이 없는 경우 -->
+        <v-empty-state
+          v-else
+          title="변경 이력이 없습니다."
+          icon="mdi-history"
+        />
+
+        <!-- 변경 이력 페이지 이동 -->
+        <v-pagination
+          v-if="historyPageCount > 1"
+          v-model="historyPage"
+          :length="historyPageCount"
+          :total-visible="5"
+          density="compact"
+          class="history-pagination app-pagination-compact"
+          @update:model-value="scrollHistoryTop"
+        />
+
+        <!-- 현재 페이지 표시 -->
+        <div
+          v-if="historyLogs.length"
+          class="history-page-count"
+        >
+          {{ historyPage }} / {{ historyPageCount }} 페이지
+          · 페이지당 10개
+        </div>
+      </div>
+
+      <!-- 공통 푸터 -->
+      <template #footer>
+        <AppDialogFooter
+          :button-count="1"
+          :show-confirm="false"
+          cancel-text="닫기"
+          @cancel="historyOpen = false"
+        />
+      </template>
+    </AppDialogLayout>
 
     <!-- 생산 마감 다이얼로그 -->
     <ProductionCloseDialog
