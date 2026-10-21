@@ -58,7 +58,7 @@
               'row-needs-check': !row.complete && row.is_active
             }"
           >
-            <!-- 첫 줄: 제품명 / 미확인 / 폐기율 / 상세 -->
+            <!-- 제품명 / 미확인 / 폐기율 / 상세 -->
             <div class="mobile-product-heading d-flex align-center ga-2">
               <button
                 type="button"
@@ -66,7 +66,7 @@
                 :title="row.name"
                 @click="emit('product', row)"
               >
-                {{ row.name }}
+                <span>{{ row.name }}</span>
               </button>
 
               <span
@@ -114,8 +114,8 @@
               </button>
             </div>
 
-            <!-- 둘째 줄: 생산 / 이월 / 로스 / 폐기 -->
-            <div class="mobile-product-values d-flex">
+            <!-- 생산 / 이월 / 로스 / 폐기 -->
+            <div class="mobile-product-values d-flex align-stretch">
               <!-- 생산 -->
               <button
                 type="button"
@@ -126,7 +126,12 @@
                 @click="emit('production', row)"
               >
                 <span class="mobile-value-label">생산</span>
-                <strong>
+
+                <strong
+                  :class="{
+                    'production-number': row.production_confirmed
+                  }"
+                >
                   {{
                     row.production_confirmed
                       ? row.production
@@ -135,7 +140,7 @@
                 </strong>
               </button>
 
-              <!-- 이월: 재고와 예정 구분 -->
+              <!-- 이월 -->
               <button
                 type="button"
                 class="mobile-value-button d-flex flex-column align-center justify-center"
@@ -185,6 +190,7 @@
                 @click="emit('flow', row, 'loss')"
               >
                 <span class="mobile-value-label">로스</span>
+
                 <strong>
                   {{
                     row.loss_confirmed
@@ -194,7 +200,7 @@
                 </strong>
               </button>
 
-              <!-- 폐기: 최초 생산일 귀속 기준 -->
+              <!-- 폐기 -->
               <button
                 type="button"
                 class="mobile-value-button d-flex flex-column align-center justify-center"
@@ -206,7 +212,14 @@
                 @click="emit('flow', row, 'waste')"
               >
                 <span class="mobile-value-label">폐기</span>
-                <strong>
+
+                <strong
+                  :class="{
+                    'waste-number':
+                      row.waste_confirmed ||
+                      Number(row.attributed_waste || 0) > 0
+                  }"
+                >
                   {{
                     row.waste_confirmed ||
                     Number(row.attributed_waste || 0) > 0
@@ -261,6 +274,7 @@
                 @click="emit('stock-flow', row)"
               >
                 <span>재고 흐름</span>
+
                 <v-icon
                   icon="mdi-chevron-right"
                   size="18"
@@ -291,14 +305,16 @@
               </div>
             </div>
 
-            <div class="mobile-subtotal-values d-flex">
+            <div class="mobile-subtotal-values d-flex align-stretch">
+              <!-- 생산 소계 -->
               <div class="mobile-subtotal-value d-flex flex-column align-center justify-center">
                 <span>생산</span>
-                <strong>
+                <strong class="production-number">
                   {{ sum(group.rows, 'production') }}
                 </strong>
               </div>
 
+              <!-- 이월 소계 -->
               <div class="mobile-subtotal-value d-flex flex-column align-center justify-center">
                 <span>이월</span>
 
@@ -324,14 +340,16 @@
                 </strong>
               </div>
 
+              <!-- 로스 소계 -->
               <div class="mobile-subtotal-value d-flex flex-column align-center justify-center">
                 <span>로스</span>
                 <strong>{{ sum(group.rows, 'loss') }}</strong>
               </div>
 
+              <!-- 폐기 소계 -->
               <div class="mobile-subtotal-value d-flex flex-column align-center justify-center">
                 <span>폐기</span>
-                <strong>
+                <strong class="waste-number">
                   {{ sum(group.rows, 'attributed_waste') }}
                 </strong>
               </div>
@@ -534,39 +552,55 @@ function stockFlowText(row) {
   opacity: .5;
 }
 
-/* 제품별 목록 */
+/* 제품 목록 */
+.mobile-product-list {
+  min-width: 0;
+}
+
+/* 제품별 행: 가로선을 전체 너비로 연결 */
 .mobile-product-item {
   min-width: 0;
-  padding: 12px 11px 13px;
-  border-top: 1px solid rgba(var(--v-border-color), .55);
+  border-bottom: 1px solid rgba(var(--v-border-color), .78);
 }
 
-.mobile-product-item:first-child {
-  border-top: 0;
+.mobile-product-item:last-of-type {
+  border-bottom: 0;
 }
 
-/* 첫 줄: 제품명 및 상태 */
+/* 제품명 및 상태 */
 .mobile-product-heading {
   min-width: 0;
-  min-height: 44px;
-  margin-bottom: 8px;
+  min-height: 52px;
+  padding: 4px 11px;
+  border-bottom: 1px solid rgba(var(--v-border-color), .58);
 }
 
 .mobile-product-name {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 44px;
+  overflow: hidden;
+  border: 0;
+  padding: 8px 4px;
+  background: transparent;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: .81rem;
+  font-weight: 650;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-product-name span {
+  display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border: 0;
-  padding: 6px 0;
-  background: transparent;
-  color: rgb(var(--v-theme-on-surface));
-  font-size: .8rem;
-  font-weight: 650;
-  line-height: 1.4;
-  text-align: left;
-  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(var(--v-theme-on-surface), .38);
+  text-underline-offset: 4px;
 }
 
 .mobile-pending-label {
@@ -582,12 +616,17 @@ function stockFlowText(row) {
   flex: 0 0 auto;
   min-height: 44px;
   gap: 5px;
-  padding: 6px 2px;
+  padding: 6px 4px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
   color: rgba(var(--v-theme-on-surface), .7);
   cursor: pointer;
   white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(var(--v-theme-on-surface), .35);
+  text-underline-offset: 4px;
 }
 
 .mobile-rate-button span {
@@ -612,26 +651,46 @@ function stockFlowText(row) {
   cursor: pointer;
 }
 
-/* 둘째 줄: 수량 표시 */
+/* 클릭 및 키보드 조작 피드백 */
+.mobile-product-name:active,
+.mobile-rate-button:active,
+.mobile-detail-toggle:active,
+.mobile-value-button:active {
+  background: rgba(var(--v-theme-on-surface), .055);
+}
+
+.mobile-product-name:focus-visible,
+.mobile-rate-button:focus-visible,
+.mobile-detail-toggle:focus-visible,
+.mobile-value-button:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+
+/* 4열 수량 영역 */
 .mobile-product-values,
 .mobile-subtotal-values {
   width: 100%;
   min-width: 0;
 }
 
+/* 버튼 간 마진이나 간격 없이 동일한 4등분 */
 .mobile-value-button,
 .mobile-subtotal-value {
   flex: 1 1 0;
   min-width: 0;
+  margin: 0;
+  box-sizing: border-box;
   text-align: center;
 }
 
+/* 전체 높이 중앙 정렬 */
 .mobile-value-button {
-  min-height: 50px;
+  min-height: 60px;
   gap: 5px;
-  padding: 7px 3px;
+  padding: 9px 2px;
   border: 0;
-  border-right: 1px solid rgba(var(--v-border-color), .5);
+  border-right: 1px solid rgba(var(--v-border-color), .72);
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
   cursor: pointer;
@@ -651,23 +710,26 @@ function stockFlowText(row) {
 
 .mobile-value-button strong {
   max-width: 100%;
+  margin: 0;
   font-size: .85rem;
   font-weight: 650;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
-/* 미확인 수량 */
+/* 생산과 폐기 숫자만 색상 적용 */
+.production-number {
+  color: #2e7d32;
+}
+
+.waste-number {
+  color: #c62828;
+}
+
+/* 미확인 값은 회색 유지 */
 .mobile-value-button.pending > strong,
 .mobile-value-button.pending > .mobile-carryover-values {
   color: rgba(var(--v-theme-on-surface), .55);
-}
-
-/* 터치 피드백 */
-.mobile-value-button:active,
-.mobile-detail-toggle:active,
-.mobile-rate-button:active {
-  background: rgba(var(--v-theme-on-surface), .045);
 }
 
 /* 이월 재고 및 예정 */
@@ -679,6 +741,7 @@ function stockFlowText(row) {
 
 .mobile-carryover-values strong {
   max-width: 100%;
+  margin: 0;
   font-size: .68rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
@@ -686,9 +749,8 @@ function stockFlowText(row) {
 
 /* 제품 상세 */
 .mobile-product-detail {
-  margin-top: 12px;
-  padding: 12px 2px 3px;
-  border-top: 1px solid rgba(var(--v-border-color), .45);
+  padding: 12px 15px 10px;
+  border-top: 1px solid rgba(var(--v-border-color), .58);
 }
 
 .mobile-detail-grid {
@@ -741,14 +803,15 @@ function stockFlowText(row) {
 
 /* 카테고리 소계 */
 .mobile-subtotal {
-  padding: 13px 11px 15px;
-  border-top: 1px solid rgba(var(--v-border-color), .7);
+  border-top: 1px solid rgba(var(--v-border-color), .78);
   background: rgba(var(--v-theme-on-surface), .04);
 }
 
 .mobile-subtotal-heading {
   min-width: 0;
-  margin-bottom: 11px;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(var(--v-border-color), .58);
 }
 
 .mobile-subtotal-heading > strong {
@@ -769,7 +832,7 @@ function stockFlowText(row) {
 
 .mobile-subtotal-help {
   border: 0;
-  padding: 5px 2px;
+  padding: 6px 2px;
   background: transparent;
   color: rgba(var(--v-theme-on-surface), .62);
   font-size: .64rem;
@@ -779,10 +842,12 @@ function stockFlowText(row) {
   cursor: pointer;
 }
 
+/* 소계도 제품과 동일한 4열 정렬 */
 .mobile-subtotal-value {
+  min-height: 60px;
   gap: 5px;
-  padding: 7px 3px;
-  border-right: 1px solid rgba(var(--v-border-color), .5);
+  padding: 9px 2px;
+  border-right: 1px solid rgba(var(--v-border-color), .72);
 }
 
 .mobile-subtotal-value:last-child {
@@ -797,6 +862,7 @@ function stockFlowText(row) {
 
 .mobile-subtotal-value strong {
   max-width: 100%;
+  margin: 0;
   font-size: .76rem;
   font-weight: 700;
   line-height: 1.4;
@@ -806,16 +872,14 @@ function stockFlowText(row) {
 
 /* 최소 320px 모바일 환경 */
 @media (max-width: 360px) {
-  .mobile-product-item {
-    padding-inline: 9px;
-  }
-
   .mobile-product-heading {
     gap: 4px;
+    padding-inline: 8px;
   }
 
   .mobile-product-name {
     font-size: .76rem;
+    padding-inline: 3px;
   }
 
   .mobile-pending-label {
@@ -824,6 +888,7 @@ function stockFlowText(row) {
 
   .mobile-rate-button {
     gap: 3px;
+    padding-inline: 2px;
   }
 
   .mobile-rate-button span {
@@ -851,7 +916,7 @@ function stockFlowText(row) {
     font-size: .63rem;
   }
 
-  .mobile-subtotal {
+  .mobile-subtotal-heading {
     padding-inline: 9px;
   }
 
