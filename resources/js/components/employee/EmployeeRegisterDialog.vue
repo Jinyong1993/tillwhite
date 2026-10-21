@@ -231,7 +231,7 @@
           </div>
         </div>
 
-        <v-row dense>
+        <v-row density="compact">
           <!-- 부서 -->
           <v-col
             cols="12"
