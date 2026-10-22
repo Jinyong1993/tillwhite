@@ -10,6 +10,21 @@ use App\Http\Controllers\WorkController;
 use Illuminate\Support\Facades\Route;
 
 /**
+ * 로그인 및 세션 만료 후 CSRF 토큰 갱신
+ *
+ * Laravel web 미들웨어의 세션을 사용합니다.
+ * 로그인하지 않은 사용자도 호출할 수 있습니다.
+ *
+ * CSRF 검증을 비활성화하지 않고,
+ * 현재 세션의 정상적인 CSRF 토큰을 반환합니다.
+ */
+Route::get('/tillwhite/auth/csrf', function () {
+    return response()->json([
+        'csrf_token' => csrf_token(),
+    ])->header('Cache-Control', 'no-store, private');
+});
+
+/**
  * Till White 인증 API
  *
  * 로그인, 현재 로그인 사용자 조회, 로그아웃을 처리합니다.

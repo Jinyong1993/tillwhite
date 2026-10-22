@@ -13,8 +13,8 @@ import EmployeePage from '../pages/Employee/EmployeePage.vue';
 import StorePage from '../pages/Store/StorePage.vue';
 import SystemPage from '../pages/System/SystemPage.vue';
 import AuditPage from '../pages/System/AuditPage.vue';
-
 import { useAppLoading } from '../composables/useAppLoading';
+import { useSession } from '../composables/useSession';
 
 /**
  * Till White 단일 페이지 애플리케이션(SPA)에서 사용하는
@@ -270,6 +270,13 @@ const {
 } = useAppLoading();
 
 /**
+ * 세션 만료 시 이전 사용자 캐시 초기화
+ */
+const {
+  clear,
+} = useSession();
+
+/**
  * 페이지 이동 전에 실행되는
  * 전역 페이지 이동 가드(Navigation Guard)입니다.
  *
@@ -371,20 +378,32 @@ router.beforeEach(async (to, from) => {
         },
       },
     );
-
+    
     /**
-     * 로그인 세션이 유효하지 않은 경우
-     * 로그인 화면으로 이동합니다.
+     * 서버 인증 실패 처리
      *
-     * 로그인 화면에서는
-     * completePageLoading()을 호출하지 않으므로
-     * 현재 공통 로딩을 먼저 취소합니다.
+     * 401:
+     * - Laravel 로그인 세션이 유효하지 않음
+     * - 기존 프런트엔드 사용자 캐시 초기화
+     * - 로그인 페이지 이동
+     *
+     * 다른 HTTP 오류:
+     * - 기존 보호 페이지 접근 제한 유지
+     * - 일시적인 서버 오류만으로 사용자 캐시는
+     *   임의 초기화하지 않음
      */
     if (!response.ok) {
+      if (response.status === 401) {
+        clear();
+      }
+
       cancelLoading();
 
       return {
         name: 'login',
+        query: response.status === 401
+          ? { sessionExpired: '1' }
+          : {},
       };
     }
 

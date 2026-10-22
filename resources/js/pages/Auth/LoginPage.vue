@@ -1,75 +1,41 @@
 <template>
   <AppPageContainer>
-    <!--
-      Till White 로그인 카드
-
-      전체 시스템의 기준 디자인인 AppPageCard를 사용한다.
-
-      카드 너비, 중앙 정렬, 시스템 이름,
-      기본 부제목과 본문 배경은 AppPageCard에서 관리한다.
-
-      subtitle을 별도로 전달하지 않으므로
-      기본값인 '베이커리 관리 시스템'이 표시된다.
-    -->
     <AppPageCard>
-      <!--
-        로그인 오류 알림
-
-        로그인 요청이 실패했을 때
-        서버에서 전달받은 오류 메시지를 표시한다.
-
-        loginError가 빈 문자열이면 표시되지 않는다.
-      -->
+      <!-- 로그인 오류 안내 -->
       <AppAlert v-model="loginError" />
 
-      <!--
-        로그인 입력 Form
-
-        아이디와 비밀번호를 입력받고
-        Vuetify의 입력값 검증을 통과한 경우에만
-        Laravel 로그인 API를 호출한다.
-      -->
+      <!-- 로그인 폼 -->
       <v-form
         ref="loginForm"
         @submit.prevent="login"
       >
         <div class="d-flex flex-column ga-2">
-          <!--
-            로그인 아이디
-
-            Till White에서는 users.employee_code를
-            로그인 아이디로 사용한다.
-          -->
+          <!-- 사번 -->
           <v-text-field
             v-model="form.id"
             :rules="rules.id"
-            label="아이디"
+            label="사원번호"
             variant="outlined"
+            :disabled="isLoggingIn"
           />
 
-          <!--
-            로그인 비밀번호
-
-            기본적으로 비밀번호를 숨기고,
-            오른쪽 아이콘을 누르면 표시 여부를 전환한다.
-          -->
+          <!-- 비밀번호 -->
           <v-text-field
             v-model="form.password"
             :rules="rules.password"
             :type="showPassword ? 'text' : 'password'"
-            :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+            :append-inner-icon="
+              showPassword ? 'mdi-eye-off' : 'mdi-eye'
+            "
             label="비밀번호"
             variant="outlined"
-            @click:append-inner="showPassword = !showPassword"
+            :disabled="isLoggingIn"
+            @click:append-inner="
+              showPassword = !showPassword
+            "
           />
 
-          <!--
-            로그인 버튼
-
-            로그인 요청이 진행되는 동안
-            로딩 상태를 표시하고 버튼을 비활성화하여
-            중복 로그인 요청을 방지한다.
-          -->
+          <!-- 로그인 -->
           <v-btn
             type="submit"
             :loading="isLoggingIn"
@@ -86,74 +52,72 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
 import {
-    useRoute,
-    useRouter,
+  ref,
+  watch,
+} from 'vue';
+
+import {
+  useRoute,
+  useRouter,
 } from 'vue-router';
+
 import AppAlert from '../../components/common/AppAlert.vue';
 import AppPageCard from '../../components/layout/AppPageCard.vue';
 import AppPageContainer from '../../components/layout/AppPageContainer.vue';
 
-/**
- * 로그인 실패 메시지
- *
- * Laravel 로그인 요청이 실패했을 때
- * 서버에서 전달받은 오류 메시지를 저장한다.
- *
- * 빈 문자열이면 AppAlert가 표시되지 않는다.
- */
-// 인증이 만료되어 돌아온 경우 공통 알림에서 재로그인 사유를 표시합니다.
+import { useSession } from '../../composables/useSession';
+
 const route = useRoute();
+const router = useRouter();
+
+const {
+  clear,
+  setUser,
+} = useSession();
+
+/**
+ * 로그인 오류 메시지
+ */
 const loginError = ref(
   route.query.sessionExpired === '1'
-    ? '로그인 상태를 확인할 수 없습니다. 다시 로그인해주세요.'
+    ? '로그인 세션이 만료되었습니다. 다시 로그인해주세요.'
     : '',
 );
 
 /**
- * 로그인 요청 진행 상태
- *
- * true인 동안 로그인 버튼에 로딩 상태를 표시하고
- * 버튼을 비활성화하여 중복 요청을 방지한다.
+ * 동일 LoginPage가 재사용되는 경우에도
+ * 세션 만료 안내를 갱신합니다.
+ */
+watch(
+  () => route.query.sessionExpired,
+  (expired) => {
+    if (expired === '1') {
+      loginError.value =
+        '로그인 세션이 만료되었습니다. 다시 로그인해주세요.';
+    }
+  },
+);
+
+/**
+ * 로그인 중복 요청 방지
  */
 const isLoggingIn = ref(false);
 
 /**
  * 비밀번호 표시 여부
- *
- * false:
- * - 비밀번호를 숨긴다.
- *
- * true:
- * - 입력한 비밀번호를 화면에 표시한다.
  */
 const showPassword = ref(false);
 
 /**
- * Vue Router
- *
- * 로그인 성공 후 메인 페이지로 이동하기 위해 사용한다.
- */
-const router = useRouter();
-
-/**
- * 로그인 Form 참조
- *
- * Vuetify v-form의 validate()를 호출하여
- * 로그인 입력값을 검사하기 위해 사용한다.
+ * 로그인 폼
  */
 const loginForm = ref(null);
 
 /**
  * 로그인 입력값
  *
- * id:
- * - 사용자가 입력하는 로그인 아이디
- * - 서버에서는 users.employee_code와 비교한다.
- *
- * password:
- * - 사용자가 입력하는 로그인 비밀번호
+ * id = employee_code
  */
 const form = ref({
   id: '',
@@ -161,88 +125,184 @@ const form = ref({
 });
 
 /**
- * 로그인 입력값 검증 규칙
- *
- * Laravel 서버에 로그인 요청을 보내기 전에
- * 필수 입력값이 존재하는지 화면에서 먼저 검사한다.
+ * 입력값 검증
  */
 const rules = {
   id: [
-    value => !!value?.trim() || '아이디를 입력해주세요.',
+    (value) =>
+      !!value?.trim() || '아이디를 입력해주세요.',
   ],
 
   password: [
-    value => !!value || '비밀번호를 입력해주세요.',
+    (value) =>
+      !!value || '비밀번호를 입력해주세요.',
   ],
 };
 
 /**
+ * 최신 Laravel CSRF 토큰 조회
+ *
+ * 로그인하지 않은 사용자도 접근 가능한
+ * GET /tillwhite/auth/csrf를 이용합니다.
+ *
+ * Axios에서 기존 세션 쿠키를 전달하고,
+ * 응답으로 받은 토큰을 로그인 POST에 사용합니다.
+ *
+ * 로그인 요청에만 토큰을 전달하므로,
+ * 로그인 성공 후 세션 재생성 시
+ * 낡은 토큰이 전역 헤더에 남지 않습니다.
+ */
+async function fetchCsrfToken() {
+  const { data } = await window.axios.get(
+    '/tillwhite/auth/csrf',
+    {
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    },
+  );
+
+  const token = data?.csrf_token;
+
+  if (typeof token !== 'string' || !token.length) {
+    throw new Error(
+      'CSRF 토큰을 발급받지 못했습니다.',
+    );
+  }
+
+  return token;
+}
+
+/**
+ * Laravel 로그인 요청
+ *
+ * 1. 최신 CSRF 토큰 조회
+ * 2. 로그인 POST
+ * 3. 419 발생 시 새 토큰으로 한 번만 재시도
+ *
+ * 일반 401, 403, 422 등의 오류는
+ * 재시도하지 않고 그대로 호출자에게 전달합니다.
+ */
+async function requestLogin(payload) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const csrfToken = await fetchCsrfToken();
+
+    try {
+      const response = await window.axios.post(
+        '/tillwhite/login',
+        payload,
+        {
+          headers: {
+            'X-CSRF-TOKEN': csrfToken,
+          },
+        },
+      );
+
+      return response.data;
+    } catch (error) {
+      const isCsrfError =
+        error.response?.status === 419;
+
+      const canRetry = attempt === 0;
+
+      if (!isCsrfError || !canRetry) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(
+    '로그인 요청을 완료하지 못했습니다.',
+  );
+}
+
+/**
  * 사용자 로그인
  *
- * 처리 순서:
- *
- * 1. 기존 오류 메시지 초기화
- * 2. 입력값 검증
- * 3. 로그인 로딩 상태 활성화
- * 4. Laravel 로그인 API 호출
- * 5. 로그인 성공 시 메인 페이지 이동
- * 6. 실패 시 오류 메시지 표시
- * 7. 로그인 로딩 상태 해제
+ * 기존 로그인 검증 및 라우팅을 유지하면서
+ * CSRF 갱신과 사용자 세션 동기화를 처리합니다.
  */
 async function login() {
-  // 이전 로그인 시도에서 발생한 오류 메시지를 제거한다.
-  loginError.value = '';
-
-  // 아이디와 비밀번호 입력값을 검사한다.
-  const { valid } = await loginForm.value.validate();
-
-  // 입력값 검증에 실패하면 서버에 요청하지 않는다.
-  if (!valid) {
+  if (isLoggingIn.value) {
     return;
   }
 
-  try {
-    // 로그인 요청 진행 상태를 활성화한다.
-    isLoggingIn.value = true;
+  loginError.value = '';
 
-    /**
-     * Laravel 로그인 API 호출
-     *
-     * 아이디의 앞뒤 공백을 제거한 뒤
-     * 비밀번호와 함께 서버로 전달한다.
-     *
-     * window.axios는 bootstrap.js에서
-     * Laravel Session 및 XSRF 처리를 위한
-     * 공통 설정이 적용되어 있다.
-     */
-    await window.axios.post('/tillwhite/login', {
+  const validation = await loginForm.value.validate();
+
+  if (!validation.valid) {
+    return;
+  }
+
+  isLoggingIn.value = true;
+
+  try {
+    const payload = {
       ...form.value,
       id: form.value.id.trim(),
-    });
+    };
 
     /**
-     * 로그인 성공
+     * 기존 사용자 캐시 초기화
      *
-     * Vue Router를 사용하여 페이지 전체를 새로고침하지 않고
-     * Till White 메인 화면으로 이동한다.
+     * 이전 로그인 세션의 사용자 정보를
+     * 새 로그인 이후 재사용하지 않게 합니다.
+     */
+    clear();
+
+    /**
+     * Laravel 로그인 요청
+     */
+    const data = await requestLogin(payload);
+
+    /**
+     * 로그인 응답에 포함된 실제 사용자 정보 저장
+     *
+     * 기존 AuthController가
+     * user 객체를 반환하는 구조를 그대로 사용합니다.
+     */
+    if (!data?.user) {
+      throw new Error(
+        '로그인 사용자 정보를 확인할 수 없습니다.',
+      );
+    }
+
+    setUser(data.user);
+
+    /**
+     * 로그인 성공 후 메인 이동
+     *
+     * sessionExpired 쿼리를 가지고 가지 않습니다.
      */
     await router.push({
       name: 'main',
     });
   } catch (error) {
-    /**
-     * 로그인 실패
-     *
-     * 서버가 message를 반환했다면 해당 내용을 표시한다.
-     *
-     * 서버 메시지가 없는 예상하지 못한 오류라면
-     * 기본 오류 메시지를 표시한다.
-     */
-    loginError.value =
-      error.response?.data?.message ??
-      '로그인 중 오류가 발생했습니다.';
+    const status = error.response?.status;
+
+    if (status === 419) {
+      loginError.value =
+        '로그인 보안 세션이 만료되었습니다. 다시 시도해주세요.';
+    } else if (status === 401) {
+      loginError.value =
+        error.response?.data?.message
+        ?? '아이디 또는 비밀번호를 확인해주세요.';
+    } else if (status === 403) {
+      loginError.value =
+        error.response?.data?.message
+        ?? '현재 로그인할 수 없는 계정입니다.';
+    } else if (status === 422) {
+      loginError.value =
+        error.response?.data?.message
+        ?? '입력 내용을 확인해주세요.';
+    } else {
+      loginError.value =
+        error.response?.data?.message
+        ?? error.message
+        ?? '로그인 중 오류가 발생했습니다.';
+    }
   } finally {
-    // 성공 또는 실패와 관계없이 로그인 요청 상태를 종료한다.
     isLoggingIn.value = false;
   }
 }
