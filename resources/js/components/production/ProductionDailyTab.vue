@@ -547,28 +547,6 @@
             {{ selectedProductAnalysis }}
           </p>
         </section>
-
-        <!-- 레시피 미등록 안내 -->
-        <template v-if="!productDetail?.recipes?.length">
-          <v-divider />
-
-          <section
-            class="production-product-section empty-inline-state"
-          >
-            <v-icon
-              icon="mdi-book-open-variant-outline"
-              size="20"
-            />
-
-            <div>
-              <strong>등록된 레시피가 없습니다.</strong>
-              <span>
-                제품 관리에서 레시피를 등록하면
-                여기에서 확인할 수 있습니다.
-              </span>
-            </div>
-          </section>
-        </template>
       </template>
     </ProductDetailDialog>
 

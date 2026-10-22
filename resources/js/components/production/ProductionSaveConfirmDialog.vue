@@ -1,184 +1,280 @@
 <template>
-  <!-- 생산 기록 등록 및 수정 전 입력 내용을 확인합니다. -->
-  <v-dialog
+  <AppDialogLayout
     :model-value="modelValue"
-    max-width="480"
-    persistent
+    :title="editing ? '생산 기록 수정 확인' : '생산 기록 등록 확인'"
+    :max-width="480"
+    :persistent="true"
+    :busy="loading"
+    card-class="production-save-confirm"
+    body-class="production-save-confirm__body"
     @update:model-value="emit('update:modelValue', $event)"
   >
-    <v-card rounded="lg" class="app-dialog-card production-save-confirm">
-      <v-card-title class="app-dialog-header">
-        {{ editing ? '생산 기록 수정 확인' : '생산 기록 등록 확인' }}
-      </v-card-title>
+    <!-- 이상 수량 경고 -->
+    <v-alert
+      v-if="abnormal"
+      type="warning"
+      variant="tonal"
+      density="compact"
+      class="app-supporting-alert production-save-confirm__alert"
+    >
+      <div
+        v-if="warningTitle"
+        class="font-weight-medium"
+      >
+        {{ warningTitle }}
+      </div>
 
-      <v-card-text class="app-dialog-body">
-        <v-alert
-          v-if="abnormal"
-          type="warning"
+      <div
+        v-if="warningMessage"
+        class="mt-1"
+      >
+        {{ warningMessage }}
+      </div>
+    </v-alert>
+
+    <!-- 제품명 및 등록·수정 수량 -->
+    <div
+      class="production-save-confirm__summary d-flex align-center justify-space-between flex-wrap ga-3"
+    >
+      <div
+        class="production-save-confirm__product-info d-flex flex-column ga-1 flex-grow-1"
+      >
+        <span class="production-save-confirm__label">
+          {{ editing ? '수정할 제품' : '등록할 제품' }}
+        </span>
+
+        <strong class="production-save-confirm__product">
+          {{ productName || '제품' }}
+        </strong>
+      </div>
+
+      <div
+        class="production-save-confirm__quantity-info d-flex flex-column align-end ga-1"
+      >
+        <span class="production-save-confirm__label">
+          {{ editing ? '변경 수량' : '등록 수량' }}
+        </span>
+
+        <strong class="production-save-confirm__quantity">
+          {{ quantity }}개
+        </strong>
+      </div>
+    </div>
+
+    <!-- 현재 및 예상 총생산량 -->
+    <div
+      class="production-save-confirm__section d-flex flex-column ga-2"
+    >
+      <div
+        class="production-save-confirm__row d-flex align-start justify-space-between ga-3"
+      >
+        <span>현재 총생산량</span>
+
+        <strong>
+          {{ formatQuantity(currentTotal) }}
+        </strong>
+      </div>
+
+      <div
+        class="production-save-confirm__row d-flex align-start justify-space-between ga-3"
+      >
+        <span>
+          {{ editing ? '수정 후 총생산량' : '등록 후 총생산량' }}
+        </span>
+
+        <strong class="production-save-confirm__expected">
+          {{ formatQuantity(expectedTotal) }}
+        </strong>
+      </div>
+    </div>
+
+    <!-- 작업자 -->
+    <div class="production-save-confirm__section">
+      <div class="production-save-confirm__section-title">
+        선택한 작업자
+      </div>
+
+      <div
+        class="production-save-confirm__workers-list d-flex flex-wrap ga-2"
+      >
+        <v-chip
+          v-for="worker in selectedWorkers"
+          :key="worker.id"
+          size="small"
           variant="tonal"
-          density="compact"
-          icon="mdi-alert-outline"
-          class="app-supporting-alert mb-3"
+          class="production-save-confirm__worker-chip"
         >
-          <div v-if="warningTitle" class="font-weight-medium">
-            {{ warningTitle }}
-          </div>
-          <div v-if="warningMessage" class="mt-1">
-            {{ warningMessage }}
-          </div>
-        </v-alert>
+          {{ worker.name }}
+        </v-chip>
 
-        <!-- 제품명과 등록 수량을 간결하게 표시합니다. -->
-        <div class="production-save-confirm__summary">
-          <div class="production-save-confirm__product-info">
-            <span class="production-save-confirm__label">
-              {{ editing ? '수정할 제품' : '등록할 제품' }}
-            </span>
+        <span
+          v-if="!selectedWorkers.length"
+          class="production-save-confirm__empty"
+        >
+          선택한 작업자가 없습니다.
+        </span>
+      </div>
+    </div>
 
-            <strong class="production-save-confirm__product">
-              {{ productName || '제품' }}
-            </strong>
-          </div>
+    <!-- 레시피 변경 내용 -->
+    <div
+      v-if="!editing && recipeDeviated"
+      class="production-save-confirm__section d-flex flex-column ga-2"
+    >
+      <strong class="production-save-confirm__section-title">
+        레시피 변경
+      </strong>
 
-          <div class="production-save-confirm__quantity-info">
-            <span class="production-save-confirm__label">
-              {{ editing ? '변경 수량' : '등록 수량' }}
-            </span>
+      <div class="production-save-confirm__detail-text">
+        {{ recipeDeviationNote || '변경 내용 없음' }}
+      </div>
+    </div>
 
-            <strong class="production-save-confirm__quantity">
-              {{ quantity }}개
-            </strong>
-          </div>
-        </div>
+    <!-- 추천 생산량 참고 -->
+    <div
+      v-if="!editing && recommendationReferenced"
+      class="production-save-confirm__section d-flex flex-column ga-2"
+    >
+      <strong class="production-save-confirm__section-title">
+        추천 생산량 참고
+      </strong>
 
-        <!-- 현재 생산량과 저장 후 예상 총생산량을 구분해 표시합니다. -->
-        <div class="production-save-confirm__totals">
-          <div class="production-save-confirm__row">
-            <span>현재 총생산량</span>
-            <strong>{{ formatQuantity(currentTotal) }}</strong>
-          </div>
+      <div class="production-save-confirm__detail-text">
+        {{ recommendationDeviationReason || '추천 범위 변경 사유 없음' }}
+      </div>
+    </div>
 
-          <div class="production-save-confirm__row">
-            <span>{{ editing ? '수정 후 총생산량' : '등록 후 총생산량' }}</span>
-            <strong class="production-save-confirm__expected">
-              {{ formatQuantity(expectedTotal) }}
-            </strong>
-          </div>
-        </div>
+    <!-- 메모 -->
+    <div
+      v-if="typeof note === 'string' && note.trim()"
+      class="production-save-confirm__section d-flex flex-column ga-2"
+    >
+      <strong class="production-save-confirm__section-title">
+        메모
+      </strong>
 
-        <!-- 선택한 작업자 이름을 표시합니다. -->
-        <div class="production-save-confirm__workers">
-          <div class="production-save-confirm__workers-label">
-            선택한 작업자
-          </div>
+      <div class="production-save-confirm__detail-text">
+        {{ note }}
+      </div>
+    </div>
 
-          <div class="production-save-confirm__workers-list">
-            <v-chip
-              v-for="worker in selectedWorkers"
-              :key="worker.id"
-              size="small"
-              variant="tonal"
-              class="production-save-confirm__worker-chip"
-            >
-              {{ worker.name }}
-            </v-chip>
-          </div>
-        </div>
+    <!-- 최근 생산량 비교 -->
+    <div
+      class="production-save-confirm__section d-flex flex-column ga-3"
+    >
+      <div class="production-save-confirm__section-title">
+        생산량 비교
+      </div>
 
-        <!-- 레시피 변경, 추천 생산량, 메모 통합 스타일 -->
+      <div
+        class="production-save-confirm__group d-flex flex-column ga-2"
+      >
         <div
-          v-if="!editing && recipeDeviated"
-          class="production-save-confirm__detail"
+          class="production-save-confirm__row d-flex align-start justify-space-between ga-3"
         >
-          <strong>레시피 변경</strong>
-          <div>{{ recipeDeviationNote || "변경 내용 없음" }}</div>
-        </div>
+          <span>최근 7일 평균</span>
 
-        <div
-          v-if="!editing && recommendationReferenced"
-          class="production-save-confirm__detail"
-        >
-          <strong>추천 생산량 참고</strong>
-          <div>{{ recommendationDeviationReason || "추천 범위 변경 사유 없음" }}</div>
+          <strong>
+            {{ formatQuantity(averageQuantity) }}
+          </strong>
         </div>
 
         <div
-          v-if="typeof note === 'string' && note.trim()"
-          class="production-save-confirm__detail"
+          class="production-save-confirm__row d-flex align-start justify-space-between ga-3"
         >
-          <strong>메모</strong>
-          <div>{{ note }}</div>
+          <span>전날 생산량</span>
+
+          <strong>
+            {{ formatQuantity(previousQuantity) }}
+          </strong>
+        </div>
+      </div>
+
+      <v-divider />
+
+      <div
+        class="production-save-confirm__group d-flex flex-column ga-2"
+      >
+        <div
+          class="production-save-confirm__row d-flex align-start justify-space-between ga-3"
+        >
+          <span>7일 평균 대비</span>
+
+          <strong>
+            {{ formatComparison(averageQuantity) }}
+          </strong>
         </div>
 
-        <!-- 최근 생산량과 입력 수량의 차이를 구분해 표시합니다. -->
-        <div class="production-save-confirm__comparison">
-          <div class="production-save-confirm__group">
-            <div class="production-save-confirm__row">
-              <span>최근 7일 평균</span>
-              <strong>{{ formatQuantity(averageQuantity) }}</strong>
-            </div>
-
-            <div class="production-save-confirm__row">
-              <span>전날 생산량</span>
-              <strong>{{ formatQuantity(previousQuantity) }}</strong>
-            </div>
-          </div>
-
-          <v-divider class="my-2" />
-
-          <div class="production-save-confirm__group">
-            <div class="production-save-confirm__row">
-              <span>7일 평균 대비</span>
-              <strong>{{ formatComparison(averageQuantity) }}</strong>
-            </div>
-
-            <div class="production-save-confirm__row">
-              <span>전날 대비</span>
-              <strong>{{ formatComparison(previousQuantity) }}</strong>
-            </div>
-          </div>
-        </div>
-
-        <!-- 생산 기록 등록 및 수정 전 최종 확인 내용을 안내합니다. -->
-        <div class="production-save-confirm__guide">
-          <template v-if="editing">
-            생산 수량을 {{ originalQuantity }}개에서
-            {{ quantity }}개로 수정하시겠습니까?
-            작업자 변경도 함께 저장됩니다.
-          </template>
-
-          <template v-else>
-            위 내용으로 생산 기록을 등록하시겠습니까?
-          </template>
-        </div>
-      </v-card-text>
-
-      <v-card-actions class="app-dialog-footer px-4 pb-4">
-        <v-btn
-          variant="text"
-          :disabled="loading"
-          @click="emit('update:modelValue', false)"
+        <div
+          class="production-save-confirm__row d-flex align-start justify-space-between ga-3"
         >
-          아니오
-        </v-btn>
+          <span>전날 대비</span>
 
-        <v-spacer />
+          <strong>
+            {{ formatComparison(previousQuantity) }}
+          </strong>
+        </div>
+      </div>
+    </div>
 
-        <v-btn
-          variant="flat"
-          :loading="loading"
-          :disabled="loading"
-          @click="emit('confirm')"
-        >
-          예
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+    <!-- 최종 확인 안내 -->
+    <div class="production-save-confirm__guide">
+      <template v-if="editing">
+        생산 수량을 {{ originalQuantity }}개에서
+        {{ quantity }}개로 수정하시겠습니까?
+        작업자 변경도 함께 저장됩니다.
+      </template>
+
+      <template v-else>
+        위 내용으로 생산 기록을 등록하시겠습니까?
+      </template>
+    </div>
+
+    <!-- 공통 다이얼로그 하단 버튼 -->
+    <template #footer>
+      <AppDialogFooter
+        :loading="loading"
+        :confirm-action="editing ? 'edit' : 'save'"
+        cancel-text="아니오"
+        confirm-text="예"
+        @cancel="emit('update:modelValue', false)"
+        @confirm="emit('confirm')"
+      >
+        <template #cancel>
+          <v-btn
+            block
+            variant="outlined"
+            min-height="44"
+            :disabled="loading"
+            @click="emit('update:modelValue', false)"
+          >
+            아니오
+          </v-btn>
+        </template>
+
+        <template #confirm>
+          <v-btn
+            block
+            variant="outlined"
+            :color="editing ? 'primary' : 'success'"
+            min-height="44"
+            :loading="loading"
+            :disabled="loading"
+            @click="emit('confirm')"
+          >
+            예
+          </v-btn>
+        </template>
+      </AppDialogFooter>
+    </template>
+  </AppDialogLayout>
 </template>
 
 <script setup>
-// 부모 컴포넌트에서 계산한 생산 정보를 전달받습니다.
+import AppDialogLayout from '../common/AppDialogLayout.vue';
+import AppDialogFooter from '../common/AppDialogFooter.vue';
+
+// 기존 부모 컴포넌트 속성 유지
 const props = defineProps({
   modelValue: {
     type: Boolean,
@@ -205,25 +301,23 @@ const props = defineProps({
     default: 0,
   },
 
-  // 선택 날짜에 이미 등록된 해당 제품의 총생산량입니다.
+  // 선택 날짜의 해당 제품 총생산량
   currentTotal: {
     type: Number,
     default: null,
   },
 
-  // 신규 등록 또는 수정 후 예상되는 하루 총생산량입니다.
+  // 등록·수정 후 예상 총생산량
   expectedTotal: {
     type: Number,
     default: null,
   },
 
-  // 생산 기록에 선택한 작업자 목록입니다.
   selectedWorkers: {
     type: Array,
     default: () => [],
   },
 
-  // 신규 생산 등록 시 레시피 변경 정보
   recipeDeviated: {
     type: Boolean,
     default: false,
@@ -231,10 +325,9 @@ const props = defineProps({
 
   recipeDeviationNote: {
     type: String,
-    default: "",
+    default: '',
   },
 
-  // 신규 생산 등록 시 추천 생산량 참고 정보
   recommendationReferenced: {
     type: Boolean,
     default: false,
@@ -242,12 +335,12 @@ const props = defineProps({
 
   recommendationDeviationReason: {
     type: String,
-    default: "",
+    default: '',
   },
 
   note: {
     type: String,
-    default: "",
+    default: '',
   },
 
   averageQuantity: {
@@ -260,7 +353,6 @@ const props = defineProps({
     default: null,
   },
 
-  // 생산 이력 API의 조회 상태를 구분합니다.
   historyStatus: {
     type: String,
     default: 'idle',
@@ -287,11 +379,15 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue', 'confirm']);
+// 기존 이벤트 유지
+const emit = defineEmits([
+  'update:modelValue',
+  'confirm',
+]);
 
 /**
- * 생산 이력 조회 상태에 따라 수량을 표시합니다.
- * 조회 실패, 미확인 기록 및 실제 0개를 구분합니다.
+ * 생산 이력 조회 상태에 따른 수량 표시.
+ * 조회 실패, 미확인 및 실제 0개를 구분합니다.
  */
 function formatQuantity(value) {
   if (props.historyStatus === 'loading') {
@@ -314,11 +410,9 @@ function formatQuantity(value) {
 }
 
 /**
- * 저장 후 예상 총생산량과 기존 생산량의 증감 수량 및 증감률을 표시합니다.
- * 조회 실패, 미확인 기록 및 실제 생산량 0개를 구분합니다.
+ * 예상 총생산량과 기존 생산량의 증감 수량·증감률 표시.
  */
 function formatComparison(baseline) {
-  // 생산 이력 조회 상태를 먼저 확인합니다.
   if (props.historyStatus === 'loading') {
     return '조회 중...';
   }
@@ -331,7 +425,6 @@ function formatComparison(baseline) {
     return '미확인';
   }
 
-  // 비교 기준과 저장 후 예상 총생산량이 유효한지 확인합니다.
   const total = props.expectedTotal;
 
   if (
@@ -344,10 +437,10 @@ function formatComparison(baseline) {
   }
 
   const difference = total - baseline;
+
   const differenceText =
     `${difference > 0 ? '+' : ''}${Number(difference.toFixed(1))}개`;
 
-  // 기준 생산량이 0개이면 증감률을 계산하지 않습니다.
   if (baseline === 0) {
     return `${differenceText} (증감률 계산 불가)`;
   }
@@ -362,53 +455,63 @@ function formatComparison(baseline) {
 </script>
 
 <style scoped>
-/* 레시피 변경 · 추천 생산량 참고 · 메모 공통 스타일 */
-.production-save-confirm__detail {
-  margin-bottom: 12px;
+/*
+ * 생산 기록 등록·수정 확인 다이얼로그
+ *
+ * 레이아웃 및 푸터는 공통 컴포넌트 사용.
+ * 이 파일에서는 내부 카드 디자인과 간격만 조정.
+ */
+
+/* 다이얼로그 */
+.production-save-confirm {
+  min-width: 0;
+}
+
+/*
+ * 본문 카드 사이 간격:
+ * PC 8px / 모바일 6px
+ *
+ * 공통 AppDialogLayout의 gap보다 우선 적용.
+ */
+:deep(.production-save-confirm__body) {
+  min-width: 0;
+  gap: 8px !important;
+  row-gap: 8px !important;
+}
+
+/* 이상 수량 경고 */
+.production-save-confirm__alert {
+  margin: 0 !important;
+}
+
+/* 공통 정보 카드 */
+.production-save-confirm__summary,
+.production-save-confirm__section {
+  min-width: 0;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
   padding: 12px 14px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 10px;
   background: rgba(var(--v-theme-on-surface), 0.035);
   font-size: 0.8rem;
   line-height: 1.6;
-  overflow-wrap: anywhere;
 }
 
-.production-save-confirm__detail strong {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
-.production-save-confirm__detail > div {
-  color: rgba(var(--v-theme-on-surface), 0.72);
-  white-space: pre-wrap;
-}
-
-/* 제품 정보와 등록 수량을 기존 다이얼로그에 맞춰 간결하게 정렬합니다. */
+/* 제품 / 수량 요약 */
 .production-save-confirm__summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  margin-bottom: 16px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
+  gap: 12px;
 }
 
-.production-save-confirm__product-info,
-.production-save-confirm__quantity-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.production-save-confirm__product-info {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .production-save-confirm__quantity-info {
-  flex-shrink: 0;
-  align-items: flex-end;
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
 }
 
 .production-save-confirm__label {
@@ -419,57 +522,103 @@ function formatComparison(baseline) {
 .production-save-confirm__product {
   font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .production-save-confirm__quantity {
   font-size: 1rem;
   font-weight: 700;
+  line-height: 1.4;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* 생산량 비교 영역 공통 박스 스타일 */
-.production-save-confirm__comparison {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
+/* 각 정보 섹션 제목 */
+.production-save-confirm__section-title {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
-.production-save-confirm__group {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
+/* flex 섹션에서는 gap으로 간격 관리 */
+.production-save-confirm__section.d-flex
+  > .production-save-confirm__section-title {
+  margin-bottom: 0;
 }
 
+/* 카드 내부 간격 */
+.production-save-confirm__section.d-flex {
+  gap: 8px !important;
+}
+
+/* 정보 행 */
 .production-save-confirm__row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  min-width: 0;
   font-size: 0.8rem;
   line-height: 1.5;
 }
 
-.production-save-confirm__row span {
-  flex-shrink: 0;
+.production-save-confirm__row > span {
+  flex: 0 1 auto;
+  min-width: 0;
   color: rgba(var(--v-theme-on-surface), 0.65);
+  overflow-wrap: anywhere;
 }
 
-.production-save-confirm__row strong {
+.production-save-confirm__row > strong {
+  flex: 0 1 auto;
   min-width: 0;
-  text-align: right;
   font-size: 0.8rem;
   font-weight: 600;
+  text-align: right;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
-/* 등록 및 수정 확인 안내를 구분선 아래에 간결하게 표시합니다. */
+/* 등록·수정 후 예상 생산량 */
+.production-save-confirm__expected {
+  color: rgb(var(--v-theme-primary));
+}
+
+/* 작업자 목록 */
+.production-save-confirm__workers-list {
+  min-width: 0;
+}
+
+.production-save-confirm__worker-chip {
+  max-width: 100%;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.production-save-confirm__empty {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+/* 레시피 / 추천 생산량 / 메모 */
+.production-save-confirm__detail-text {
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: rgba(var(--v-theme-on-surface), 0.72);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* 생산량 비교 */
+.production-save-confirm__group {
+  min-width: 0;
+}
+
+/* 최종 확인 안내 */
 .production-save-confirm__guide {
-  margin-top: 16px;
-  padding-top: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 2px 0;
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   font-size: 0.8rem;
   line-height: 1.6;
@@ -477,94 +626,70 @@ function formatComparison(baseline) {
   overflow-wrap: anywhere;
 }
 
-/* 현재 총생산량과 저장 후 예상 총생산량을 강조합니다. */
-.production-save-confirm__totals {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
+/* 공통 푸터 버튼 동일 너비 */
+.production-save-confirm :deep(.app-dialog-footer-item) {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
-.production-save-confirm__expected {
-  color: rgb(var(--v-theme-primary));
+.production-save-confirm :deep(.app-dialog-footer-item > .v-btn) {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
 }
 
-/* 선택한 작업자 이름을 작은 칩 형태로 표시합니다. */
-.production-save-confirm__workers {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
-  border-radius: 10px;
-  background: rgba(var(--v-theme-on-surface), 0.035);
-}
-
-.production-save-confirm__workers-label {
-  margin-bottom: 8px;
-  font-size: 0.75rem;
-  color: rgba(var(--v-theme-on-surface), 0.65);
-}
-
-.production-save-confirm__workers-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.production-save-confirm__worker-chip {
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-/* 작은 화면에서도 생산 정보와 비교 수량을 읽기 쉽게 표시합니다. */
+/* 모바일 */
 @media (max-width: 600px) {
-  .production-save-confirm__summary {
-    gap: 10px;
-    padding: 11px 12px;
-    margin-bottom: 12px;
+  :deep(.production-save-confirm__body) {
+    gap: 6px !important;
+    row-gap: 6px !important;
   }
 
-  .production-save-confirm__product-info {
-    flex: 1;
-    min-width: 0;
+  .production-save-confirm__summary,
+  .production-save-confirm__section {
+    padding: 11px 12px;
+  }
+
+  .production-save-confirm__summary {
+    gap: 10px;
   }
 
   .production-save-confirm__product {
     font-size: 0.8rem;
-    line-height: 1.4;
-    overflow-wrap: anywhere;
   }
 
   .production-save-confirm__quantity {
     font-size: 0.9rem;
   }
 
-  .production-save-confirm__group {
+  .production-save-confirm__row,
+  .production-save-confirm__row > strong,
+  .production-save-confirm__detail-text {
+    font-size: 0.75rem;
+  }
+
+  .production-save-confirm__guide {
+    font-size: 0.75rem;
+  }
+}
+
+/* 320px 등 좁은 화면 */
+@media (max-width: 360px) {
+  .production-save-confirm__summary,
+  .production-save-confirm__section {
+    padding: 10px;
+  }
+
+  .production-save-confirm__summary {
     gap: 8px;
   }
 
   .production-save-confirm__row {
-    align-items: flex-start;
     gap: 8px;
-    font-size: 0.75rem;
   }
 
-  .production-save-confirm__row span {
-    flex-shrink: 0;
-  }
-
-  .production-save-confirm__row strong {
-    font-size: 0.75rem;
-    line-height: 1.5;
-  }
-
-  .production-save-confirm__guide {
-    margin-top: 14px;
-    padding-top: 10px;
-    font-size: 0.75rem;
+  .production-save-confirm__quantity {
+    font-size: 0.85rem;
   }
 }
 </style>
