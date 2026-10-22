@@ -1,160 +1,141 @@
 <template>
-  <!--
-    Till White 메인 화면
-
-    로그인 이후 가장 먼저 사용하는 메인 페이지입니다.
-
-    공통 화면 틀(AppShell)을 사용하여
-    공통 헤더, 내비게이션 메뉴 및 오류 처리를 관리합니다.
-
-    전체 화면 로딩은
-    애플리케이션 공통 로딩(useAppLoading)에서 관리합니다.
-
-    메인 화면 구성:
-    1. 접근 권한 안내
-    2. 현재 로그인한 사용자 정보
-    3. 오늘 생산·폐기·로스 현황
-    4. 자주 사용하는 업무의 빠른 메뉴
-    5. 권한 및 개발 중 기능 안내
-  -->
   <AppShell :title="pageTitle">
-    <!--
-      공통 화면 틀(AppShell)의 기본 슬롯
-
-      user:
-      - 현재 로그인한 사용자 정보
-
-      can:
-      - 현재 사용자가 특정 권한(Permission)을
-        가지고 있는지 확인하는 함수
-
-      sessionReady:
-      - AppShell의 최초 사용자 정보 조회 완료 여부
-    -->
     <template #default="{ user, can, sessionReady }">
-      <!--
-        AppShell의 사용자 정보 준비 상태를
-        메인 화면의 준비 상태와 연결합니다.
-      -->
       <PageReadyWatcher
         :session-ready="sessionReady"
         @session-ready="handleSessionReady"
       />
 
-      <!--
-        접근 권한 안내
-
-        권한이 없는 화면에 접근했을 때
-        Vue Router가 메인 화면으로 이동시키면서
-        전달한 안내 메시지를 표시합니다.
-      -->
-      <v-alert
-        v-if="accessDeniedMessage"
-        class="mb-4"
-        type="warning"
-        variant="tonal"
-        density="compact"
-        closable
-        @click:close="clearAccessDeniedMessage"
-      >
-        {{ accessDeniedMessage }}
-      </v-alert>
-
-      <!-- 로그인 사용자 정보 -->
-      <UserInfoCard
-        v-if="user"
-        :user="user"
-      />
-
-      <!-- 사용자 정보와 오늘 현황 영역 구분선 -->
-      <v-divider class="my-4" />
-
-      <!--
-        오늘 생산·폐기·로스 현황
-
-        생산·폐기 조회 권한(production.view)을 가진
-        사용자에게만 표시합니다.
-
-        최초 API 조회가 완료되면
-        준비 완료(ready) 이벤트를 전달받습니다.
-      -->
-      <ProductionSummaryCard
-        v-if="can('production.view')"
-        @ready="handleSummaryReady"
-      />
-
-      <!--
-        생산 현황 조회 권한이 없는 경우에는
-        기다릴 생산 현황 API가 없음을 처리합니다.
-      -->
-      <PageReadyWatcher
-        v-else
-        :session-ready="sessionReady"
-        :summary-not-required="true"
-        @summary-ready="handleSummaryReady"
-      />
-
-      <!-- 오늘 현황과 빠른 메뉴 영역 구분선 -->
-      <v-divider
-        v-if="can('production.view')"
-        class="my-4"
-      />
-
-      <!-- 빠른 메뉴 제목 -->
-      <SectionTitle
-        title="빠른 메뉴"
-        icon="mdi-view-grid-outline"
-      />
-
-      <!--
-        빠른 메뉴
-
-        Vue Router의 :to를 그대로 사용합니다.
-
-        이제 공통 로딩 시작은 Router가 담당하므로
-        빠른 메뉴에서 별도로 로딩을 시작할 필요가 없습니다.
-      -->
-      <div class="d-grid">
-        <v-btn
-          v-for="item in quickItems.filter((item) => can(item.permission))"
-          :key="item.title"
-          :to="item.developing ? undefined : item.to"
-          :disabled="item.developing"
-          variant="outlined"
-          class="mb-2"
-          block
+      <main class="main-dashboard d-flex flex-column ga-3">
+        <!-- 접근 거부 안내 -->
+        <v-alert
+          v-if="accessDeniedMessage"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          closable
+          class="app-supporting-alert"
+          @click:close="clearAccessDeniedMessage"
         >
-          <!-- 메뉴 아이콘 -->
-          <v-icon
-            start
-            :icon="item.icon"
+          {{ accessDeniedMessage }}
+        </v-alert>
+
+        <!-- 사용자 정보 -->
+        <section
+          v-if="user"
+          class="main-dashboard__section"
+          aria-label="로그인 사용자 정보"
+        >
+          <UserInfoCard :user="user" />
+        </section>
+
+        <!-- 금일 생산 현황 -->
+        <template v-if="can('production.view')">
+          <v-divider
+            v-if="user"
+            class="main-dashboard__divider"
           />
 
-          <!-- 메뉴 이름 -->
-          {{ item.title }}
-
-          <!-- 개발 중인 기능 표시 -->
-          <v-chip
-            v-if="item.developing"
-            class="ml-2"
-            size="x-small"
-            variant="tonal"
+          <section
+            class="main-dashboard__section"
+            aria-label="금일 생산 현황"
           >
-            개발 중
-          </v-chip>
-        </v-btn>
-      </div>
+            <ProductionSummaryCard
+              @ready="handleSummaryReady"
+            />
+          </section>
+        </template>
 
-      <!-- 메뉴 및 권한 안내 -->
-      <v-alert
-        class="mt-3"
-        type="info"
-        variant="tonal"
-        density="compact"
-      >
-        권한에 따라 사용할 수 있는 기능이 제한됩니다.
-        개발 중인 기능은 현재 사용할 수 없습니다.
-      </v-alert>
+        <!-- 생산 조회 권한이 없으면 API 대기 생략 -->
+        <PageReadyWatcher
+          v-else
+          :session-ready="sessionReady"
+          :summary-not-required="true"
+          @summary-ready="handleSummaryReady"
+        />
+
+        <!-- 업무 바로가기 구분선 -->
+        <v-divider
+          v-if="user || can('production.view')"
+          class="main-dashboard__divider"
+        />
+
+        <!-- 업무 바로가기 -->
+        <section
+          class="main-dashboard__section d-flex flex-column ga-3"
+          aria-labelledby="main-quick-title"
+        >
+          <div class="d-flex flex-column ga-1">
+            <h3
+              id="main-quick-title"
+              class="main-dashboard__section-title"
+            >
+              업무 바로가기
+            </h3>
+
+            <span class="main-dashboard__description">
+              필요한 업무를 선택하세요.
+            </span>
+          </div>
+
+          <div
+            v-if="availableQuickItems.length"
+            class="d-flex flex-column ga-2"
+          >
+            <v-btn
+              v-for="item in availableQuickItems"
+              :key="item.title"
+              :to="item.developing ? undefined : item.to"
+              :disabled="item.developing"
+              variant="text"
+              block
+              class="main-dashboard__menu-button"
+            >
+              <span
+                class="main-dashboard__menu-content d-flex align-center justify-space-between ga-2 w-100"
+              >
+                <span
+                  class="main-dashboard__menu-copy d-flex flex-column align-start ga-1"
+                >
+                  <strong class="main-dashboard__menu-title">
+                    {{ item.title }}
+                  </strong>
+
+                  <span class="main-dashboard__description">
+                    {{ item.description }}
+                  </span>
+                </span>
+
+                <span
+                  v-if="item.developing"
+                  class="main-dashboard__developing flex-shrink-0"
+                >
+                  개발 중
+                </span>
+
+                <v-icon
+                  v-else
+                  icon="mdi-chevron-right"
+                  size="18"
+                  class="main-dashboard__arrow flex-shrink-0"
+                  aria-hidden="true"
+                />
+              </span>
+            </v-btn>
+          </div>
+
+          <div
+            v-else
+            class="main-dashboard__empty app-card d-flex flex-column ga-1"
+          >
+            <strong>사용 가능한 메뉴가 없습니다.</strong>
+            <span>
+              메뉴 접근 권한이 필요한 경우
+              관리자에게 문의해 주세요.
+            </span>
+          </div>
+        </section>
+      </main>
     </template>
   </AppShell>
 </template>
@@ -173,7 +154,6 @@ import {
   useRouter,
 } from 'vue-router';
 
-import SectionTitle from '../components/common/SectionTitle.vue';
 import AppShell from '../components/layout/AppShell.vue';
 import ProductionSummaryCard from '../components/production/ProductionSummaryCard.vue';
 import UserInfoCard from '../components/user/UserInfoCard.vue';
@@ -181,70 +161,37 @@ import UserInfoCard from '../components/user/UserInfoCard.vue';
 import { useAppLoading } from '../composables/useAppLoading';
 import { useSession } from '../composables/useSession';
 
-// * 현재 화면의 주소 정보(Route)
 const route = useRoute();
-
-// * 현재 주소 변경에 사용하는 Vue Router
 const router = useRouter();
 
-/**
- * 애플리케이션 공통 전체 화면 로딩
- *
- * 메인 화면에서는 다음 두 조건이 모두 준비된 뒤
- * 공통 로딩을 완료합니다.
- *
- * 1. 로그인 사용자 정보 준비
- * 2. 생산 현황 데이터 준비
- */
 const {
   completePageLoading,
 } = useAppLoading();
 
-// * 현재 로그인 사용자의 권한 확인 기능
 const {
   can,
 } = useSession();
 
-// * 현재 페이지 제목
 const pageTitle = '메인';
 
-// * AppShell 사용자 정보 준비 여부
 const sessionIsReady = ref(false);
 
-/**
- * 생산 현황 준비 여부
- *
- * 생산 현황 조회 권한(production.view)이 없는 경우에는
- * 조회할 데이터 자체가 없으므로 준비 완료로 처리합니다.
- */
 const summaryIsReady = ref(
   !can('production.view'),
 );
 
-/**
- * 현재 화면의 공통 로딩 완료 처리가
- * 이미 실행되었는지 여부입니다.
- *
- * 여러 준비 상태가 비슷한 시점에 변경되더라도
- * completePageLoading()을 중복 호출하지 않도록 보호합니다.
- */
 const pageLoadingCompleted = ref(false);
 
-/**
- * 권한이 없는 화면에서 전달된
- * 접근 거부 안내 메시지입니다.
- */
+/* 접근 거부 메시지 */
 const accessDeniedMessage = computed(() => {
   return typeof route.query.accessDenied === 'string'
     ? route.query.accessDenied
     : '';
 });
 
-// * 접근 거부 안내 메시지를 URL에서 제거합니다.
+/* 안내 닫기 */
 async function clearAccessDeniedMessage() {
-  if (!route.query.accessDenied) {
-    return;
-  }
+  if (!route.query.accessDenied) return;
 
   const query = {
     ...route.query,
@@ -258,42 +205,24 @@ async function clearAccessDeniedMessage() {
   });
 }
 
-/**
- * 메인 화면이 실제로 준비되었는지 확인합니다.
- *
- * 다음 조건이 모두 충족되어야 합니다.
- *
- * 1. AppShell 사용자 정보 조회 완료
- * 2. 생산 현황 조회 완료
- *
- * 모든 조건이 충족된 뒤에만
- * 애플리케이션 공통 전체 화면 로딩을 종료합니다.
+/*
+ * 세션과 생산 현황 조회가 모두 끝나면
+ * 기존 애플리케이션 공통 로딩을 종료합니다.
  */
 async function tryCompletePageLoading() {
-  if (pageLoadingCompleted.value) {
-    return;
-  }
-
-  if (!sessionIsReady.value) {
-    return;
-  }
-
-  if (!summaryIsReady.value) {
-    return;
-  }
+  if (pageLoadingCompleted.value) return;
+  if (!sessionIsReady.value) return;
+  if (!summaryIsReady.value) return;
 
   pageLoadingCompleted.value = true;
 
   await completePageLoading();
 }
 
-// * AppShell 사용자 정보 준비 완료 처리
+/* 세션 준비 완료 */
 async function handleSessionReady() {
   sessionIsReady.value = true;
 
-  // 권한 리다이렉트 직후에는 이전 화면에서 보유하던 권한 상태를 기준으로
-  // summaryIsReady가 초기화되어 있을 수 있습니다. 최신 세션 기준으로 생산 조회 권한이
-  // 없다면 기다릴 API가 없으므로 즉시 준비 완료로 처리하여 무한 로딩을 방지합니다.
   if (!can('production.view')) {
     summaryIsReady.value = true;
   }
@@ -301,29 +230,16 @@ async function handleSessionReady() {
   await tryCompletePageLoading();
 }
 
-/**
- * 생산 현황 준비 완료 처리
- *
- * API 조회 성공/실패와 관계없이
- * 화면에 표시할 결과가 결정되면 준비 완료로 처리합니다.
- */
+/* 생산 현황 준비 완료 */
 async function handleSummaryReady() {
   summaryIsReady.value = true;
 
   await tryCompletePageLoading();
 }
 
-/**
- * AppShell의 slot 값인 sessionReady를
- * 일반 script 상태와 연결하기 위한 내부 컴포넌트입니다.
- *
- * 화면 요소를 실제로 렌더링하지 않으며
- * sessionReady가 true가 되는 순간
- * 부모 MainPage에 이벤트만 전달합니다.
- *
- * summaryNotRequired가 true인 경우에는
- * 생산 현황 조회 권한(production.view)이 없어
- * 별도로 기다릴 생산 현황 API가 없음을 전달합니다.
+/*
+ * AppShell 슬롯의 sessionReady를
+ * 기존 페이지 로딩 이벤트에 연결합니다.
  */
 const PageReadyWatcher = defineComponent({
   name: 'PageReadyWatcher',
@@ -358,9 +274,17 @@ const PageReadyWatcher = defineComponent({
       },
     );
 
-    if (props.summaryNotRequired) {
-      emit('summary-ready');
-    }
+    watch(
+      () => props.summaryNotRequired,
+      (notRequired) => {
+        if (notRequired) {
+          emit('summary-ready');
+        }
+      },
+      {
+        immediate: true,
+      },
+    );
 
     return () => h('span', {
       style: {
@@ -370,40 +294,192 @@ const PageReadyWatcher = defineComponent({
   },
 });
 
-/**
- * 메인 화면 빠른 메뉴 목록
- *
- * 공통 로딩 시작은 Vue Router에서 처리하므로
- * 각 빠른 메뉴가 별도의 로딩 코드를 가지지 않습니다.
+/*
+ * 기존 권한과 라우터 경로 유지
  */
 const quickItems = [
   {
-    title: '제품 관리',
-    to: '/tillwhite/products',
-    permission: 'product.view',
-    icon: 'mdi-food-croissant',
+    title: '생산·폐기 관리',
+    description: '생산·이월·로스·폐기 기록',
+    to: '/tillwhite/production',
+    permission: 'production.view',
     developing: false,
   },
   {
-    title: '생산·폐기 관리',
-    to: '/tillwhite/production',
-    permission: 'production.view',
-    icon: 'mdi-baguette',
+    title: '제품 관리',
+    description: '제품 정보 및 레시피 확인',
+    to: '/tillwhite/products',
+    permission: 'product.view',
     developing: false,
   },
   {
     title: '근무 관리',
+    description: '근무 일정 및 업무 관리',
     to: '/tillwhite/work',
     permission: 'schedule.view',
-    icon: 'mdi-calendar-clock',
     developing: true,
   },
   {
     title: '매출 관리',
+    description: '매출 현황 및 실적 관리',
     to: '/tillwhite/sales',
     permission: 'sales.view',
-    icon: 'mdi-cash-register',
     developing: true,
   },
 ];
+
+/* 권한별 접근 가능 메뉴 */
+const availableQuickItems = computed(() =>
+  quickItems.filter((item) => can(item.permission))
+);
 </script>
+
+<style scoped>
+/*
+ * 메인 전용 디자인.
+ * 기본 배치는 Vuetify 유틸리티,
+ * 공통 카드와 안내는 글로벌 CSS 재사용.
+ */
+
+.main-dashboard {
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 12px;
+
+  --main-line: rgba(var(--v-theme-on-surface), 0.12);
+  --main-fill: rgba(var(--v-theme-on-surface), 0.025);
+}
+
+/* 섹션 경계 */
+.main-dashboard__section {
+  width: 100%;
+  min-width: 0;
+}
+
+.main-dashboard__divider {
+  border-color: var(--main-line);
+  opacity: 1;
+}
+
+/* 제목 */
+.main-dashboard__section-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+/* 보조 설명 */
+.main-dashboard__description {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.45;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  overflow-wrap: anywhere;
+}
+
+/* 업무 메뉴 */
+.main-dashboard__menu-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 60px;
+  height: auto !important;
+  padding: 11px 13px;
+
+  border: 1px solid var(--main-line);
+  border-radius: 10px;
+  background: var(--main-fill);
+
+  box-shadow: none;
+  color: rgb(var(--v-theme-on-surface));
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Vuetify 버튼 콘텐츠 */
+.main-dashboard__menu-button :deep(.v-btn__content) {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+  text-align: left;
+}
+
+.main-dashboard__menu-content {
+  min-width: 0;
+}
+
+.main-dashboard__menu-copy {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.main-dashboard__menu-title {
+  width: 100%;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.main-dashboard__arrow {
+  opacity: 0.45;
+}
+
+.main-dashboard__developing {
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+  white-space: nowrap;
+}
+
+/* 비활성 메뉴 */
+.main-dashboard__menu-button.v-btn--disabled {
+  opacity: 0.55;
+}
+
+/* 메뉴 없음 */
+.main-dashboard__empty {
+  padding: 14px;
+  border: 1px solid var(--main-line);
+  border-radius: 10px;
+  background: var(--main-fill);
+}
+
+.main-dashboard__empty strong {
+  font-size: 0.8rem;
+}
+
+.main-dashboard__empty span {
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+/* 마우스 및 키보드 조작 */
+@media (hover: hover) {
+  .main-dashboard__menu-button:not(.v-btn--disabled):hover {
+    background: rgba(var(--v-theme-on-surface), 0.06);
+  }
+}
+
+.main-dashboard__menu-button:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+
+/* 320px 모바일 */
+@media (max-width: 360px) {
+  .main-dashboard__menu-button {
+    min-height: 56px;
+    padding: 10px;
+  }
+
+  .main-dashboard__menu-title {
+    font-size: 0.8rem;
+  }
+
+  .main-dashboard__description {
+    font-size: 0.7rem;
+  }
+}
+</style>

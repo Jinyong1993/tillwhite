@@ -1,27 +1,15 @@
 <template>
-  <!--
-    생산·폐기·로스 현황 요약
+  <section class="production-summary d-flex flex-column ga-3">
+    <!-- 제목 하나만 표시 -->
+    <h3 class="production-summary__title">
+      {{ title }}
+    </h3>
 
-    지정된 날짜의 생산, 폐기, 로스 수량을
-    한눈에 확인할 수 있도록 표시하는 공통 컴포넌트입니다.
-
-    기본적으로 오늘 날짜의 현황을 조회합니다.
-
-    최초 현황 조회가 성공하거나 실패하여
-    화면에 표시할 상태가 결정되면
-    부모 화면에 준비 완료(ready) 이벤트를 전달합니다.
-  -->
-  <div>
-    <!-- 현황 제목 -->
-    <SectionTitle
-      :title="title"
-      icon="mdi-chart-box-outline"
-    />
-
-    <!-- 현황 조회 중 -->
+    <!-- 데이터 조회 중 -->
     <div
       v-if="loading"
-      class="d-flex justify-center py-6"
+      class="d-flex justify-center align-center py-6"
+      aria-label="생산 현황 조회 중"
     >
       <v-progress-circular
         indeterminate
@@ -29,76 +17,62 @@
       />
     </div>
 
-    <!-- 현황 조회 실패 -->
+    <!-- 데이터 조회 실패 -->
     <v-alert
       v-else-if="errorMessage"
       type="error"
       variant="tonal"
       density="compact"
+      class="app-supporting-alert"
     >
       {{ errorMessage }}
     </v-alert>
 
-    <!-- 현황 조회 완료 -->
-    <v-row
+    <!-- 조회 성공 -->
+    <div
       v-else
-      density="compact"
+      class="production-summary__metrics d-flex ga-2"
     >
-      <!-- 생산 수량 -->
-      <v-col cols="4">
-        <v-card
-          variant="outlined"
-          class="text-center h-100"
-        >
-          <v-card-text class="px-2 py-3">
-            <div class="text-caption text-medium-emphasis mb-1">
-              생산
-            </div>
+      <!-- 생산 -->
+      <div
+        class="production-summary__metric app-card d-flex flex-column align-center justify-center ga-1"
+      >
+        <span class="production-summary__label">
+          생산
+        </span>
 
-            <div class="text-h6 font-weight-black">
-              {{ summary.production_quantity }}
-            </div>
-          </v-card-text>
-        </v-card>
-      </v-col>
+        <strong class="production-summary__value">
+          {{ formatQuantity(summary.production_quantity) }}
+        </strong>
+      </div>
 
-      <!-- 폐기 수량 -->
-      <v-col cols="4">
-        <v-card
-          variant="outlined"
-          class="text-center h-100"
-        >
-          <v-card-text class="px-2 py-3">
-            <div class="text-caption text-medium-emphasis mb-1">
-              폐기
-            </div>
+      <!-- 폐기 -->
+      <div
+        class="production-summary__metric app-card d-flex flex-column align-center justify-center ga-1"
+      >
+        <span class="production-summary__label">
+          폐기
+        </span>
 
-            <div class="text-h6 font-weight-black">
-              {{ summary.waste_quantity }}
-            </div>
-          </v-card-text>
-        </v-card>
-      </v-col>
+        <strong class="production-summary__value">
+          {{ formatQuantity(summary.waste_quantity) }}
+        </strong>
+      </div>
 
-      <!-- 로스 수량 -->
-      <v-col cols="4">
-        <v-card
-          variant="outlined"
-          class="text-center h-100"
-        >
-          <v-card-text class="px-2 py-3">
-            <div class="text-caption text-medium-emphasis mb-1">
-              로스
-            </div>
+      <!-- 폐기율 -->
+      <div
+        class="production-summary__metric app-card d-flex flex-column align-center justify-center ga-1"
+      >
+        <span class="production-summary__label">
+          폐기율
+        </span>
 
-            <div class="text-h6 font-weight-black">
-              {{ summary.loss_quantity }}
-            </div>
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
-  </div>
+        <strong class="production-summary__value">
+          {{ formatWasteRate(summary.waste_rate) }}
+        </strong>
+      </div>
+    </div>
+  </section>
 </template>
 
 <script setup>
@@ -108,16 +82,10 @@ import {
 } from 'vue';
 
 import axios from 'axios';
-
-import SectionTitle from '../common/SectionTitle.vue';
 import { toLocalDateString } from '../../utils/localDate';
 
-/**
- * 생산 현황 요약 컴포넌트 속성
- *
- * title:
- * - 현황 영역에 표시할 제목
- * - 기본값은 "금일 생산 현황"
+/*
+ * 제목은 기존 기본값을 유지합니다.
  */
 defineProps({
   title: {
@@ -126,48 +94,67 @@ defineProps({
   },
 });
 
-/**
- * 부모 컴포넌트로 전달하는 이벤트입니다.
- *
- * ready:
- * - 최초 생산 현황 조회가 끝났음을 알립니다.
- * - 조회 성공뿐만 아니라 실패한 경우에도 전달합니다.
- *
- * 실패한 경우에도 오류 메시지를 표시할 준비가 끝난 상태이므로
- * 페이지 입장에서는 화면 준비가 완료된 것으로 처리합니다.
+/*
+ * 기존 ready 이벤트 유지.
+ * 조회 성공과 실패 모두 완료 후 전달합니다.
  */
 const emit = defineEmits([
   'ready',
 ]);
 
-/**
- * 생산·폐기·로스 합계
- *
- * 조회 결과가 없더라도
- * 화면에는 0을 표시할 수 있도록 초기화합니다.
+/*
+ * API에서 읽는 요약 정보.
+ * 수치 미제공과 실제 0을 구분합니다.
  */
 const summary = ref({
-  production_quantity: 0,
-  waste_quantity: 0,
-  loss_quantity: 0,
+  production_quantity: null,
+  waste_quantity: null,
+  waste_rate: null,
 });
 
-// * 현황 조회 상태
 const loading = ref(true);
 const errorMessage = ref('');
 
-/**
- * 생산·폐기·로스 현황 조회
+/*
+ * 생산 수량 표시
+ */
+function formatQuantity(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return '-';
+  }
+
+  return number.toLocaleString('ko-KR');
+}
+
+/*
+ * 폐기율 표시
  *
- * 서버에서 현재 사용자의 조회 범위에 맞는
- * 오늘 생산·폐기·로스 합계를 가져옵니다.
- *
- * 점포 및 권한에 따른 데이터 범위는
- * Laravel 서버에서 결정합니다.
- *
- * 성공 또는 실패와 관계없이
- * 최초 요청 처리가 끝나면 부모 컴포넌트에
- * 준비 완료(ready) 이벤트를 전달합니다.
+ * 서버에서 계산한 폐기율을 사용합니다.
+ * 서버 값이 없으면 임의 계산하지 않습니다.
+ */
+function formatWasteRate(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return '-';
+  }
+
+  return `${Number(number.toFixed(1))}%`;
+}
+
+/*
+ * 기존 생산 관리 API 유지.
+ * 날짜, 점포 및 권한 범위는 서버 기준입니다.
  */
 async function loadSummary() {
   loading.value = true;
@@ -176,49 +163,112 @@ async function loadSummary() {
   try {
     const response = await axios.get(
       '/tillwhite/api/production-management/daily',
-      { params: { date: toLocalDateString() } },
+      {
+        params: {
+          date: toLocalDateString(),
+        },
+      },
     );
+
+    const totals = response.data?.totals || {};
 
     summary.value = {
       production_quantity:
-        response.data.totals?.production ?? 0,
+        totals.production ?? 0,
 
       waste_quantity:
-        response.data.totals?.waste ?? 0,
+        totals.waste ?? 0,
 
-      loss_quantity:
-        response.data.totals?.loss ?? 0,
+      waste_rate:
+        totals.waste_rate ?? null,
     };
   } catch (error) {
     errorMessage.value =
       error.response?.data?.message
       ?? '오늘 현황을 불러오지 못했습니다.';
   } finally {
-    /**
-     * 성공/실패 여부와 관계없이
-     * 컴포넌트 내부 로딩을 종료합니다.
-     */
     loading.value = false;
 
-    /**
-     * 화면에 표시할 결과가 결정되었으므로
-     * 부모 화면에 준비 완료를 알립니다.
-     *
-     * 공통 전체 화면 로딩 자체는
-     * 이 컴포넌트에서 직접 종료하지 않습니다.
-     *
-     * 페이지 전체가 준비되었는지는
-     * 부모인 MainPage가 판단합니다.
-     */
+    // 기존 페이지 로딩 완료 처리 유지
     emit('ready');
   }
 }
 
-/**
- * 컴포넌트가 화면에 표시되면
- * 오늘 생산·폐기·로스 현황을 조회합니다.
- */
 onMounted(() => {
   loadSummary();
 });
 </script>
+
+<style scoped>
+.production-summary {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 제목 */
+.production-summary__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+/* 세 항목을 한 줄에 동일한 너비로 배치 */
+.production-summary__metrics {
+  width: 100%;
+  min-width: 0;
+}
+
+/*
+ * 기존 v-card outlined 제거.
+ * 연한 회색 테두리와 약한 배경색만 사용.
+ */
+.production-summary__metric {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 84px;
+  padding: 12px 6px;
+
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 10px;
+
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  box-shadow: none;
+
+  text-align: center;
+}
+
+/* 항목명 */
+.production-summary__label {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+/* 수치 */
+.production-summary__value {
+  max-width: 100%;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.4;
+
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* 320px 모바일 */
+@media (max-width: 360px) {
+  .production-summary__metric {
+    min-height: 76px;
+    padding: 10px 4px;
+  }
+
+  .production-summary__value {
+    font-size: 1rem;
+  }
+
+  .production-summary__label {
+    font-size: 0.7rem;
+  }
+}
+</style>
