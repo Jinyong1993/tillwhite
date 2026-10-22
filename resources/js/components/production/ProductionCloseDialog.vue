@@ -294,7 +294,7 @@
         class="app-dialog-footer close-dialog__footer d-flex align-center ga-2 px-4 py-3"
       >
         <v-btn
-          variant="outlined"
+          variant="tonal"
           block
           class="close-dialog__footer-button flex-grow-1"
           @click="emit('update:modelValue', false)"
@@ -303,7 +303,7 @@
         </v-btn>
 
         <v-btn
-          variant="outlined"
+          variant="flat"
           color="primary"
           block
           class="close-dialog__footer-button flex-grow-1"
