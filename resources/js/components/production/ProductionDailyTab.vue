@@ -350,7 +350,7 @@
 
       <v-btn
         v-if="daily.closure_status === 'closed'"
-        variant="tonal"
+        color="primary"
         class="app-btn"
         :disabled="!canCorrect"
         @click="correctionOpen = true"
@@ -360,7 +360,7 @@
 
       <v-btn
         v-else
-        variant="tonal"
+        color="primary"
         class="app-btn"
         :disabled="
           daily.closure_status === 'store_closed' || !canMutate
