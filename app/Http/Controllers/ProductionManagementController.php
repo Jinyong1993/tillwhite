@@ -3300,7 +3300,14 @@ class ProductionManagementController extends Controller
     // 생산 배치 요청을 검증합니다.
     private function validateBatch(Request $request): array
     {
-        return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['required', 'array', 'min:1'], 'workers.*.user_id' => ['required', 'integer', 'exists:users,id'], 'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
+        return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['required', 'array', 'min:1'], 
+            'workers.*.user_id' => [
+                'required',
+                'integer',
+                'distinct',
+                'exists:users,id',
+            ],
+            'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
     }
 
     /**

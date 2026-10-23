@@ -16,10 +16,7 @@
           :color="productionFormOpen ? undefined : 'success'"
           :disabled="saving || Boolean(editingBatch)"
           :prepend-icon="productionFormOpen ? 'mdi-chevron-up' : undefined"
-          @click="
-            productionFormOpen = !productionFormOpen;
-            zeroCardOpen = false;
-          "
+          @click="toggleProductionForm"
         >
           {{
             productionFormOpen
@@ -251,31 +248,62 @@
               "
             />
 
-            <!-- 작업자 -->
-            <v-select
-              v-model="productionForm.workerIds"
-              :items="workers"
-              item-title="name"
-              item-value="id"
-              label="작업자 · 필수"
-              variant="outlined"
-              density="compact"
-              multiple
-              chips
-              closable-chips
-              clearable
-              hide-details="auto"
-              no-data-text="선택할 수 있는 작업자가 없습니다"
-              :error="productionErrors.workers"
-              :error-messages="
-                productionErrors.workers
-                  ? '작업자를 선택해 주세요.'
-                  : []
-              "
-              @update:model-value="
-                productionErrors.workers = false
-              "
-            />
+            <!-- 작업자: 생산 입력 카드 전용 -->
+            <div class="d-flex flex-column ga-2 min-width-0">
+              <strong class="text-body-2">
+                작업자 · 필수
+              </strong>
+
+              <div
+                v-for="(workerId, index) in workerRows"
+                :key="index"
+                class="d-flex align-center ga-2 min-width-0"
+              >
+                <v-select
+                  class="flex-grow-1 flex-shrink-1 min-width-0"
+                  :model-value="workerId"
+                  :items="availableWorkerItems(index)"
+                  item-title="name"
+                  item-value="id"
+                  :label="`작업자 ${index + 1}`"
+                  variant="outlined"
+                  density="compact"
+                  hide-details="auto"
+                  :disabled="!canMutate || saving"
+                  :error="productionErrors.workers"
+                  no-data-text="선택 가능한 작업자가 없습니다"
+                  @update:model-value="setWorker(index, $event)"
+                />
+
+                <v-btn
+                  v-if="index > 0"
+                  icon="mdi-close"
+                  color="error"
+                  variant="outlined"
+                  :width="44"
+                  :height="44"
+                  class="flex-shrink-0"
+                  :aria-label="`작업자 ${index + 1} 삭제`"
+                  :disabled="!canMutate || saving"
+                  @click="removeWorker(index)"
+                />
+              </div>
+
+              <v-btn
+                block
+                color="primary"
+                variant="outlined"
+                class="app-btn"
+                :disabled="
+                  !canMutate ||
+                  saving ||
+                  workerRows.length >= workers.length
+                "
+                @click="addWorker"
+              >
+                작업자 추가
+              </v-btn>
+            </div>
           </div>
 
           <!-- 카드 2: 레시피 및 추천 정보 -->
@@ -511,7 +539,7 @@
             </button>
 
             <div v-if="expandedBatchIds.includes(batch.id)">
-              <!-- 작업자 -->
+              <!-- 저장된 생산 기록의 작업자: 읽기 전용 -->
               <div
                 v-if="batch.workers?.length"
                 class="inventory-dialog__record-detail"
@@ -694,6 +722,7 @@ import { computed, reactive, ref, watch, nextTick } from "vue";
 import ConfirmDialog from "../../common/ConfirmDialog.vue";
 import ProductionSaveConfirmDialog from "../ProductionSaveConfirmDialog.vue";
 import { addLocalDays } from "../../../utils/localDate";
+import { useSession } from "../../../composables/useSession";
 
 // 통합 다이얼로그에서 전달받는 데이터
 const props = defineProps({
@@ -766,6 +795,182 @@ const saving = ref(false);
 
 // 생산 기록 수정 대상
 const editingBatch = ref(null);
+
+// 기존 로그인 세션 재사용
+const {
+  user: sessionUser,
+  loadUser,
+} = useSession();
+
+// 작업자별 단일 선택 행
+const workerRows = ref([null]);
+
+// 로그인 사용자가 현재 점포의 선택 가능한 작업자인지 확인
+function defaultWorkerId() {
+  const currentId = Number(sessionUser.value?.id);
+
+  if (!Number.isInteger(currentId) || currentId <= 0) {
+    return null;
+  }
+
+  const worker = props.workers.find(
+    (item) => Number(item.id) === currentId
+  );
+
+  return worker ? Number(worker.id) : null;
+}
+
+// 작업자 배열을 기존 API 형식으로 동기화
+function syncWorkerIds() {
+  productionForm.workerIds = workerRows.value
+    .filter((id) => id !== null && id !== undefined && id !== "")
+    .map(Number);
+}
+
+// 다른 행에서 선택된 작업자는 목록에서 제외
+function availableWorkerItems(index) {
+  const otherIds = new Set(
+    workerRows.value
+      .filter((id, rowIndex) =>
+        rowIndex !== index &&
+        id !== null &&
+        id !== undefined
+      )
+      .map(Number)
+  );
+
+  return props.workers.filter(
+    (worker) => !otherIds.has(Number(worker.id))
+  );
+}
+
+// 한 명의 작업자 선택
+function setWorker(index, workerId) {
+  if (!props.canMutate || saving.value) return;
+
+  const id = workerId == null ? null : Number(workerId);
+
+  if (
+    id !== null &&
+    !availableWorkerItems(index).some(
+      (worker) => Number(worker.id) === id
+    )
+  ) {
+    productionErrors.workers = true;
+    emit("error", "이미 선택했거나 선택할 수 없는 작업자입니다.");
+    return;
+  }
+
+  workerRows.value[index] = id;
+  productionErrors.workers = false;
+  syncWorkerIds();
+}
+
+// 새 드롭다운 추가
+function addWorker() {
+  if (
+    !props.canMutate ||
+    saving.value ||
+    workerRows.value.length >= props.workers.length
+  ) {
+    return;
+  }
+
+  workerRows.value.push(null);
+  productionErrors.workers = false;
+}
+
+// 마지막 드롭다운 삭제
+function removeWorker(index) {
+  if (
+    !props.canMutate ||
+    saving.value ||
+    workerRows.value.length <= 1 ||
+    index <= 0 ||
+    index >= workerRows.value.length
+  ) {
+    return;
+  }
+
+  // 지정한 작업자 행만 제거
+  workerRows.value.splice(index, 1);
+
+  productionErrors.workers = false;
+  syncWorkerIds();
+}
+
+async function toggleProductionForm() {
+  if (saving.value || editingBatch.value) return;
+
+  // 취소 버튼: 확인창 없이 모든 입력값 즉시 초기화
+  if (productionFormOpen.value) {
+    resetProductionEditor();
+    return;
+  }
+
+  // 생산 수량 추가 버튼: 신규 입력 시작
+  resetProductionEditor();
+
+  productionFormOpen.value = true;
+  zeroCardOpen.value = false;
+
+  // 로그인 사용자 정보 확인
+  if (!sessionUser.value) {
+    try {
+      await loadUser();
+    } catch {
+      // 조회 실패 시 사용자가 직접 작업자 선택
+    }
+  }
+
+  // 비동기 조회 중 사용자가 취소했다면 다시 선택하지 않음
+  if (!productionFormOpen.value || editingBatch.value) {
+    return;
+  }
+
+  // 로그인 사용자가 선택 가능한 작업자라면 자동 선택
+  initializeDefaultWorker();
+}
+
+// 신규 생산 입력의 기본 작업자 설정
+function initializeDefaultWorker() {
+  if (editingBatch.value) return;
+
+  if (
+    workerRows.value.length !== 1 ||
+    workerRows.value[0] !== null
+  ) {
+    return;
+  }
+
+  const id = defaultWorkerId();
+
+  if (id !== null) {
+    workerRows.value = [id];
+    syncWorkerIds();
+  }
+}
+
+// 로그인 정보 또는 선택 가능 작업자 목록이 늦게 도착해도 반영
+watch(
+  [
+    () => sessionUser.value?.id,
+    () => props.workers,
+  ],
+  () => {
+    if (props.modelValue && !editingBatch.value) {
+      initializeDefaultWorker();
+    }
+  },
+  { immediate: true }
+);
+
+// 기존 세션 캐시에 사용자가 없는 경우에만 조회
+if (!sessionUser.value) {
+  loadUser().catch(() => {
+    // 인증 오류는 기존 공통 처리에 맡깁니다.
+  });
+}
 
 // 생산 기록 상세 펼침 상태
 const expandedBatchIds = ref([]);
@@ -1332,10 +1537,53 @@ function askSave() {
     return;
   }
 
+  
+  // 현재 드롭다운과 저장 배열 동기화
+  syncWorkerIds();
+
   if (!productionForm.workerIds.length) {
     productionErrors.workers = true;
     productionCardIndex.value = 0;
     emit("error", "작업자를 선택해 주세요.");
+    return;
+  }
+
+  // 빈 추가 드롭다운은 저장할 수 없습니다.
+  if (
+    workerRows.value.some(
+      (id) => id === null || id === undefined || id === ""
+    )
+  ) {
+    productionErrors.workers = true;
+    productionCardIndex.value = 0;
+    emit("error", "추가한 작업자를 선택하거나 삭제해 주세요.");
+    return;
+  }
+
+  // 동일 작업자 중복 방지
+  if (
+    new Set(productionForm.workerIds.map(Number)).size !==
+    productionForm.workerIds.length
+  ) {
+    productionErrors.workers = true;
+    productionCardIndex.value = 0;
+    emit("error", "같은 작업자를 중복 선택할 수 없습니다.");
+    return;
+  }
+
+  // 서버에서 제공한 선택 가능 작업자 검사
+  const allowedIds = new Set(
+    props.workers.map((worker) => Number(worker.id))
+  );
+
+  if (
+    productionForm.workerIds.some(
+      (id) => !allowedIds.has(Number(id))
+    )
+  ) {
+    productionErrors.workers = true;
+    productionCardIndex.value = 0;
+    emit("error", "선택할 수 없는 작업자가 포함되어 있습니다.");
     return;
   }
 
@@ -1524,7 +1772,10 @@ function hasUnsavedProductionChanges() {
 
   return (
     Number(productionForm.quantity) !== DEFAULT_PRODUCTION_QUANTITY ||
-    productionForm.workerIds.length > 0 ||
+    workerRows.value.length > 1 ||
+    productionForm.workerIds.some(
+      (id) => Number(id) !== defaultWorkerId()
+    ) ||
     productionForm.recipeDeviated ||
     Boolean(productionForm.recipeDeviationNote.trim()) ||
     productionForm.recommendationReferenced ||
@@ -1583,7 +1834,11 @@ function resetProductionEditor() {
   expandedBatchIds.value = [];
 
   productionForm.quantity = DEFAULT_PRODUCTION_QUANTITY;
-  productionForm.workerIds = [];
+
+  // 신규 생산 입력은 로그인 사용자를 기본 선택
+  workerRows.value = [defaultWorkerId()];
+  syncWorkerIds();
+
   productionForm.recipeDeviated = false;
   productionForm.recipeDeviationNote = "";
   productionForm.recommendationReferenced = false;
@@ -1619,9 +1874,16 @@ function applyBatchToEditor(batch) {
 
   productionForm.quantity = Number(batch.quantity);
 
-  productionForm.workerIds = (batch.workers || []).map(
-    (worker) => worker.id
-  );
+  // 수정 모드에서는 저장된 작업자를 우선합니다.
+  const existingWorkerIds = (batch.workers || [])
+    .map((worker) => Number(worker.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+
+  workerRows.value = existingWorkerIds.length
+    ? [...existingWorkerIds]
+    : [null];
+
+  syncWorkerIds();
 
   productionForm.recipeDeviated =
     Boolean(batch.recipe_deviated);
