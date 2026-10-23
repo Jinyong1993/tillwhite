@@ -613,6 +613,9 @@
       v-model="confirmSave"
       :title="`${dialogTitle} 저장`"
       :message="confirmMessage"
+      confirm-text="저장"
+      cancel-text="취소"
+      confirm-action="save"
       :loading="saving"
       @confirm="save"
     />
@@ -621,17 +624,23 @@
     <ConfirmDialog
       v-model="confirmClose"
       title="작성 취소"
-      message="작성 중인 내용이 있습니다. 닫으시겠습니까?"
+      message="작성 중인 내용을 삭제하고 입력을 종료하시겠습니까?"
+      confirm-text="작성 취소"
+      cancel-text="계속 작성"
+      confirm-action="close"
       :loading="saving"
       @update:model-value="handleCloseConfirmChange"
       @confirm="forceClose"
     />
-
+    
     <!-- 개별 저장 기록 삭제 확인 -->
     <ConfirmDialog
       v-model="deleteConfirmOpen"
       :title="`${dialogTitle} 기록 삭제`"
       message="선택한 기록을 삭제하시겠습니까? 다른 사유와 생산 기록은 유지됩니다."
+      confirm-text="삭제"
+      cancel-text="취소"
+      confirm-action="delete"
       :loading="saving"
       @confirm="deleteSavedReason"
     />
@@ -1944,12 +1953,31 @@ async function save() {
   } catch (error) {
     confirmSave.value = false;
 
-    emit(
-      "error",
-      error.response?.data?.message ||
-        error.message ||
-        `${dialogTitle.value}을 저장하지 못했습니다.`
-    );
+    const status = Number(error?.response?.status);
+
+    let message = `${dialogTitle.value}을 저장하지 못했습니다.`;
+
+    if (status === 401) {
+      message = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+    } else if (status === 403) {
+      message = "이 작업을 수행할 권한이 없습니다.";
+    } else if (status === 422) {
+      message =
+        error.response?.data?.message ||
+        "입력 내용을 확인해 주세요.";
+    } else if (status === 409) {
+      message = "다른 사용자가 기록을 변경했습니다. 최신 내용을 확인해 주세요.";
+    } else if (status >= 500) {
+      message = "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+    } else if (!error?.response) {
+      message = "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+    } else if (
+      typeof error.response?.data?.message === "string"
+    ) {
+      message = error.response.data.message;
+    }
+
+    emit("error", message);
 
     // 삭제 실패 후에는 서버의 기존 데이터를 기준으로 복원합니다.
     if (!savingZero.value) {

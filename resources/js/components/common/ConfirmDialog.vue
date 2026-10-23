@@ -36,6 +36,7 @@
         :loading="loading"
         :cancel-text="cancelText"
         :confirm-text="confirmText"
+        :confirm-action="confirmAction"
         @cancel="cancel"
         @confirm="confirm"
       />
@@ -87,6 +88,21 @@ const props = defineProps({
   confirmText: {
     type: String,
     default: '예',
+  },
+
+  confirmAction: {
+    type: String,
+    default: 'confirm',
+    validator: (value) => [
+      'save',
+      'edit',
+      'confirm',
+      'delete',
+      'disable',
+      'enable',
+      'restore',
+      'close',
+    ].includes(value),
   },
 
   cancelText: {

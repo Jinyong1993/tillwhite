@@ -22,17 +22,17 @@
         * 표시는 필수 입력 항목입니다.
       </v-alert>
 
-      <!-- 입력 검증 알림 -->
-      <div
+      <!-- 입력 검증 알림: 직원 등록창 내부에 표시 -->
+      <v-alert
         v-if="validationMessage"
+        type="warning"
+        variant="tonal"
+        density="compact"
+        icon="mdi-alert-circle-outline"
         class="w-100"
       >
-        <AppAlert
-          v-model="validationMessage"
-          type="warning"
-          variant="tonal"
-        />
-      </div>
+        {{ validationMessage }}
+      </v-alert>
 
       <!-- 기본 정보 -->
       <v-card
@@ -449,7 +449,6 @@ import {
 
 import AppDialogLayout from '../common/AppDialogLayout.vue';
 import AppDialogFooter from '../common/AppDialogFooter.vue';
-import AppAlert from '../common/AppAlert.vue';
 
 const props = defineProps({
   modelValue: {

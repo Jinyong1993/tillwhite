@@ -99,11 +99,6 @@
           </v-window-item>
         </v-window>
       </div>
-
-      <AppAlert
-          v-model="successMessage"
-          type="success"
-      />
     </template>
   </AppShell>
 </template>
@@ -116,7 +111,6 @@ import {
     ref,
 } from 'vue';
 import { useRouter } from 'vue-router';
-import AppAlert from '../../components/common/AppAlert.vue';
 import AppErrorState from '../../components/common/AppErrorState.vue';
 import AppShell from '../../components/layout/AppShell.vue';
 import ProductionAnalysisTab from '../../components/production/ProductionAnalysisTab.vue';
@@ -146,7 +140,6 @@ const workDate = ref(toLocalDateString());
 const storeId = ref(null);
 const options = ref({ stores: [], products: [], workers: [] });
 const daily = ref({ rows: [], totals: {}, complete_count: 0, required_count: 0 });
-const successMessage = ref('');
 const loadError = ref('');
 const loading = ref(false);
 const ready = ref(false);
@@ -279,9 +272,16 @@ async function loadPage({ force = false, date = workDate.value } = {}) {
       await router.replace({ name: 'login', query: { sessionExpired: '1' } });
       return false;
     }
-
+    
     loadError.value = getLoadErrorMessage(error);
-    appShellRef.value?.setError(loadError.value);
+
+    // 최초 로딩 실패는 화면 내부 오류 UI에서 안내합니다.
+    // 이미 화면을 사용 중인 상태에서 발생한 오류만
+    // 상단 공통 알림으로 표시합니다.
+    if (ready.value) {
+      appShellRef.value?.setError(loadError.value);
+    }
+
     return false;
   } finally {
     if (activeRequest === controller) {
@@ -382,7 +382,7 @@ async function jumpToDate(value, done) {
 
 // 서버 저장 성공 메시지는 프로젝트 공통 알림으로 표시합니다.
 function showSuccess(message) {
-  successMessage.value = message;
+  appShellRef.value?.setSuccess(message);
 }
 
 // 최초 데이터 준비가 끝난 뒤 메뉴 이동에서 시작된 공통 로딩 오버레이를 종료합니다.

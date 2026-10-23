@@ -127,17 +127,20 @@
         @submit="requestSaveEmployee"
       />
 
-      <!-- 직원 등록 확인창 -->
+      <!-- 직원 등록 관련 공통 확인창 -->
       <ConfirmDialog
         v-model="confirmDialog.open"
         :title="confirmDialog.title"
         :message="confirmDialog.message"
         :confirm-text="confirmDialog.confirmText"
         :cancel-text="confirmDialog.cancelText"
-        :loading="isRegisterProcessing"
-        @confirm="
-          handleConfirm(setError, setSuccess)
+        :confirm-action="
+          confirmDialog.action === 'delete' ? 'delete' :
+          confirmDialog.action === 'cancel' ? 'close' :
+          'save'
         "
+        :loading="isRegisterProcessing"
+        @confirm="handleConfirm(setError, setSuccess)"
         @cancel="clearConfirmDialog"
       />
 
@@ -186,19 +189,23 @@
         "
       />
 
-      <!-- 직원 삭제 및 복구 확인창 -->
+      <!-- 직원 수정·상태 변경·삭제·복구 확인창 -->
       <ConfirmDialog
         v-model="employeeConfirm.open"
         :title="employeeConfirm.title"
         :message="employeeConfirm.message"
         :confirm-text="employeeConfirm.confirmText"
         cancel-text="취소"
+        :confirm-action="
+          employeeConfirm.action === 'delete' ? 'delete' :
+          employeeConfirm.action === 'restore' ? 'restore' :
+          employeeConfirm.action === 'edit' ? 'save' :
+          'edit'
+        "
         :loading="
           employeeActionLoading === employeeConfirm.action
         "
-        @confirm="
-          executeEmployeeAction(setError, setSuccess)
-        "
+        @confirm="executeEmployeeAction(setError, setSuccess)"
         @cancel="clearEmployeeConfirm"
       />
     </template>
@@ -721,7 +728,35 @@ function hasRegisterFormChanges() {
  * 메시지가 없는 경우 기본 오류 메시지를 반환합니다.
  */
 function errorMessage(error, fallback) {
-  return error.response?.data?.message ?? fallback;
+  const status = Number(error?.response?.status);
+
+  // 인증 문제는 기존 세션 처리와 충돌하지 않도록
+  // 사용자에게 간결하게 안내합니다.
+  if (status === 401) {
+    return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+  }
+
+  if (status === 403) {
+    return "이 작업을 수행할 권한이 없습니다.";
+  }
+
+  if (status === 422) {
+    return "입력 내용을 확인해 주세요.";
+  }
+
+  if (status === 409) {
+    return "다른 사용자가 데이터를 변경했습니다. 최신 내용을 확인해 주세요.";
+  }
+
+  if (status >= 500) {
+    return "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  }
+
+  if (!error?.response) {
+    return "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+  }
+
+  return fallback;
 }
 
 // * 직원 등록 관련 공통 확인창을 엽니다.

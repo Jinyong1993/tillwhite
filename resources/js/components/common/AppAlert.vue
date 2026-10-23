@@ -13,6 +13,8 @@
         :type="type"
         :variant="variant"
         closable
+        :role="type === 'error' || type === 'warning' ? 'alert' : 'status'"
+        aria-live="polite"
         @click:close="close"
       >
         {{ modelValue }}
@@ -52,21 +54,40 @@ const emit = defineEmits([
   'update:modelValue',
 ]);
 
-
 let autoCloseTimer = null;
 
-// 성공·일반 안내는 업무를 가리지 않도록 5초 뒤 자동으로 닫고 오류·경고는 직접 확인하게 둡니다.
-watch(() => props.modelValue, (message) => {
-  if (autoCloseTimer) clearTimeout(autoCloseTimer);
-  autoCloseTimer = null;
-
-  if (message && ['success', 'info'].includes(props.type)) {
-    autoCloseTimer = setTimeout(close, 5000);
+function clearAutoCloseTimer() {
+  if (autoCloseTimer !== null) {
+    clearTimeout(autoCloseTimer);
+    autoCloseTimer = null;
   }
-}, { immediate: true });
+}
+
+watch(
+  () => [props.modelValue, props.type],
+  ([message, type]) => {
+    clearAutoCloseTimer();
+
+    if (!message) return;
+
+    // 성공과 안내만 자동 종료
+    const duration =
+      type === 'success' ? 3500 :
+      type === 'info' ? 4500 :
+      null;
+
+    if (duration === null) return;
+
+    autoCloseTimer = setTimeout(() => {
+      autoCloseTimer = null;
+      close();
+    }, duration);
+  },
+  { immediate: true }
+);
 
 onBeforeUnmount(() => {
-  if (autoCloseTimer) clearTimeout(autoCloseTimer);
+  clearAutoCloseTimer();
 });
 
 // 사용자가 닫기 버튼을 누르면 현재 공통 알림을 종료합니다.
@@ -80,14 +101,25 @@ function close() {
 .app-global-alert {
   position: fixed;
   z-index: 10050;
+
   top: calc(env(safe-area-inset-top, 0px) + 12px);
   left: 50%;
+
   width: min(calc(100vw - 24px), 420px);
+  max-height: min(35dvh, 220px);
+
   margin: 0;
   transform: translateX(-50%);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
+
+  overflow-x: hidden;
+  overflow-y: auto;
   overflow-wrap: anywhere;
   word-break: break-word;
+
+  font-size: 13px;
+  line-height: 1.5;
+
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.24);
 }
 
 /* 공통 알림은 짧은 이동과 투명도 변화만 사용해 업무 흐름을 방해하지 않습니다. */

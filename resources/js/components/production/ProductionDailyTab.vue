@@ -1061,7 +1061,10 @@
     <ConfirmDialog
       v-model="correctionConfirmOpen"
       title="마감 후 수정"
-      message="마감된 기록의 수정을 시작하시겠습니까? 연결된 이월, 로스, 폐기 기록이 있으면 함께 확인해야 합니다."
+      message="마감된 생산 기록의 수정을 시작하시겠습니까? 연결된 이월·로스·폐기 기록도 확인해야 합니다."
+      confirm-text="수정 시작"
+      cancel-text="취소"
+      confirm-action="edit"
       @confirm="openCorrection"
     />
 
@@ -1069,7 +1072,10 @@
     <ConfirmDialog
       v-model="bulkZeroConfirmOpen"
       :title="`${bulkZeroLabel} 일괄 확인`"
-      :message="`미확인 제품 ${bulkZeroCount}개를 없음(0)으로 확인합니다. 기존에 입력된 기록은 변경하지 않습니다.`"
+      :message="`미확인 제품 ${bulkZeroCount}개를 없음(0)으로 확인하시겠습니까? 기존 입력 기록은 변경하지 않습니다.`"
+      confirm-text="일괄 확인"
+      cancel-text="취소"
+      confirm-action="confirm"
       :loading="bulkZeroLoading"
       @confirm="bulkZero"
     />
@@ -1077,8 +1083,11 @@
     <!-- 생산 마감 최종 확인 -->
     <ConfirmDialog
       v-model="confirmCloseOpen"
-      title="마감 최종확인"
-      message="현재 확인한 내용으로 업무를 마감하시겠습니까? 마감 후 일반 수정은 제한됩니다."
+      title="생산 마감 최종 확인"
+      message="현재 확인한 내용으로 업무를 마감하시겠습니까? 마감 후에는 일반 수정이 제한됩니다."
+      confirm-text="마감 확정"
+      cancel-text="취소"
+      confirm-action="close"
       :loading="closing"
       @confirm="closeDay"
     />
@@ -1241,6 +1250,50 @@ const closePreview = ref(null);
 const closing = ref(false);
 const closePage = ref(1);
 const closePageSize = 10;
+
+function getProductionErrorMessage(error, fallback) {
+  const status = Number(error?.response?.status);
+  const serverMessage = error?.response?.data?.message;
+
+  // 로그인 만료
+  if (status === 401) {
+    return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+  }
+
+  // 권한 없음
+  if (status === 403) {
+    return "이 작업을 수행할 권한이 없습니다.";
+  }
+
+  // 입력값 검증 오류
+  if (status === 422) {
+    return typeof serverMessage === "string" &&
+      serverMessage.trim()
+      ? serverMessage
+      : "입력 내용을 확인해 주세요.";
+  }
+
+  // 동시 수정·업무 상태 충돌
+  if (status === 409) {
+    return typeof serverMessage === "string" &&
+      serverMessage.trim()
+      ? serverMessage
+      : "데이터가 변경되었습니다. 최신 내용을 확인해 주세요.";
+  }
+
+  // 서버 내부 오류
+  if (status >= 500) {
+    return "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  }
+
+  // 연결 실패
+  if (!error?.response) {
+    return "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+  }
+
+  // 기타 오류: 업무별 기본 문구
+  return fallback;
+}
 
 const activeRows = computed(() => (props.daily.rows || []).filter((row) => row.is_active));
 
@@ -2107,7 +2160,7 @@ async function openProduct(row) {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '제품 정보를 불러오지 못했습니다.'
+      getProductionErrorMessage(error, '제품 정보를 불러오지 못했습니다.')
     );
   } finally {
     productDetailLoading.value = false;
@@ -2178,7 +2231,7 @@ async function bulkZero() {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '일괄 확인 중 오류가 발생했습니다.'
+      getProductionErrorMessage(error, '일괄 확인 중 오류가 발생했습니다.')
     );
   } finally {
     bulkZeroLoading.value = false;
@@ -2313,7 +2366,7 @@ async function openHistory() {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '변경 이력을 불러오지 못했습니다.'
+      getProductionErrorMessage(error, '변경 이력을 불러오지 못했습니다.')
     );
   }
 }
@@ -2348,7 +2401,7 @@ async function openCorrection() {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '마감 후 수정을 시작하지 못했습니다.'
+      getProductionErrorMessage(error, '마감 후 수정을 시작하지 못했습니다.')
     );
   }
 }
@@ -2386,7 +2439,7 @@ async function refreshClosePreview() {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '마감 내용을 다시 확인하지 못했습니다.'
+      getProductionErrorMessage(error, '마감 내용을 다시 확인하지 못했습니다.')
     );
   }
 }
@@ -2414,7 +2467,7 @@ async function previewClose() {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '마감 내용을 확인하지 못했습니다.'
+      getProductionErrorMessage(error, '마감 내용을 확인하지 못했습니다.')
     );
   }
 }
@@ -2454,7 +2507,7 @@ async function closeDay() {
   } catch (error) {
     emit(
       'error',
-      error.response?.data?.message || '마감하지 못했습니다.'
+      getProductionErrorMessage(error, '마감하지 못했습니다.')
     );
   } finally {
     closing.value = false;

@@ -693,7 +693,10 @@
   <ConfirmDialog
     v-model="confirmZeroOpen"
     title="생산 0개 확인"
-    message="오늘 이 제품을 생산하지 않은 것으로 확정하시겠습니까? 선택한 사유는 이후 분석에서 일반 수요와 구분해 사용합니다."
+    message="오늘 이 제품을 생산하지 않은 것으로 확인하시겠습니까? 선택한 사유는 생산 분석에 반영됩니다."
+    confirm-text="확인"
+    cancel-text="취소"
+    confirm-action="confirm"
     :loading="saving"
     @confirm="saveZero"
   />
@@ -711,7 +714,10 @@
   <ConfirmDialog
     v-model="deleteConfirmOpen"
     title="생산 기록 삭제"
-    message="이 생산 기록을 삭제하시겠습니까? 이미 이월과 연결된 기록은 삭제할 수 없습니다."
+    message="이 생산 기록을 삭제하시겠습니까? 이월과 연결된 기록은 삭제할 수 없습니다."
+    confirm-text="삭제"
+    cancel-text="취소"
+    confirm-action="delete"
     :loading="saving"
     @confirm="deleteBatch"
   />

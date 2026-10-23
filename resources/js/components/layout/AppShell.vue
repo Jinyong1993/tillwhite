@@ -212,8 +212,6 @@ const {
   can,
 } = useSession();
 
-let alertTimer = null;
-
 /**
  * 공통 알림을 설정합니다.
  *
@@ -228,20 +226,28 @@ let alertTimer = null;
  * 별도의 상태를 추가할 필요가 없습니다.
  */
 function setAlert(type, message) {
-  if (alertTimer) {
-    window.clearTimeout(alertTimer);
-    alertTimer = null;
+  const allowedTypes = ['success', 'error', 'warning', 'info'];
+
+  const nextType = allowedTypes.includes(type)
+    ? type
+    : 'error';
+
+  const nextMessage = typeof message === 'string'
+    ? message.trim()
+    : '';
+
+  if (!nextMessage) return;
+
+  // 같은 종류의 동일 메시지가 이미 표시 중이면 중복 호출 방지
+  if (
+    alert.type === nextType &&
+    alert.message === nextMessage
+  ) {
+    return;
   }
 
-  alert.type = type;
-  alert.message = message;
-
-  // 성공/안내 메시지는 자동으로 사라지고 오류/경고는 사용자가 충분히 확인할 수 있게 더 오래 유지합니다.
-  const timeout = type === 'success' ? 3200 : (type === 'info' ? 4500 : 7000);
-  alertTimer = window.setTimeout(() => {
-    if (alert.message === message) alert.message = '';
-    alertTimer = null;
-  }, timeout);
+  alert.type = nextType;
+  alert.message = nextMessage;
 }
 
 // * 오류(error) 알림을 표시합니다.
@@ -317,8 +323,5 @@ onMounted(async () => {
   } finally {
     sessionReady.value = true;
   }
-});
-onBeforeUnmount(() => {
-  if (alertTimer) window.clearTimeout(alertTimer);
 });
 </script>

@@ -257,19 +257,35 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+  
   <ConfirmDialog
-      v-model="confirmDayStatus"
-      title="영업일 상태 변경"
-      :message="selectedDay?.status==='store_closed' ? '이 날짜의 휴점을 해제하시겠습니까?' : '이 날짜를 휴점일로 설정하시겠습니까? 기존 업무 기록이 있으면 설정할 수 없습니다.'"
-      :loading="saving"
-      @confirm="saveDayStatus"
+    v-model="confirmDayStatus"
+    title="영업일 상태 변경"
+    :message="
+      selectedDay?.status === 'store_closed'
+        ? '이 날짜의 휴점을 해제하시겠습니까?'
+        : '이 날짜를 휴점일로 설정하시겠습니까? 기존 업무 기록이 있으면 설정할 수 없습니다.'
+    "
+    :confirm-text="
+      selectedDay?.status === 'store_closed'
+        ? '휴점 해제'
+        : '휴점 설정'
+    "
+    cancel-text="취소"
+    confirm-action="confirm"
+    :loading="saving"
+    @confirm="saveDayStatus"
   />
+
   <ConfirmDialog
-      v-model="confirmEvent"
-      title="행사 저장"
-      message="입력한 일정과 조건으로 행사를 저장하시겠습니까?"
-      :loading="saving"
-      @confirm="saveEvent"
+    v-model="confirmEvent"
+    title="행사 저장"
+    message="입력한 일정과 조건으로 행사를 저장하시겠습니까?"
+    confirm-text="저장"
+    cancel-text="취소"
+    confirm-action="save"
+    :loading="saving"
+    @confirm="saveEvent"
   />
 </div>
 </template>
@@ -308,6 +324,44 @@ const eventOpen = ref(false);
 const eventTarget = ref('all');
 const confirmEvent = ref(false);
 const saving = ref(false);
+
+function getCalendarErrorMessage(error, fallback) {
+  const status = Number(error?.response?.status);
+  const serverMessage = error?.response?.data?.message;
+
+  if (status === 401) {
+    return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+  }
+
+  if (status === 403) {
+    return "이 작업을 수행할 권한이 없습니다.";
+  }
+
+  if (status === 422) {
+    return typeof serverMessage === "string" &&
+      serverMessage.trim()
+      ? serverMessage
+      : "입력 내용을 확인해 주세요.";
+  }
+
+  if (status === 409) {
+    return typeof serverMessage === "string" &&
+      serverMessage.trim()
+      ? serverMessage
+      : "다른 사용자가 데이터를 변경했습니다. 최신 내용을 확인해 주세요.";
+  }
+
+  if (status >= 500) {
+    return "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  }
+
+  if (!error?.response) {
+    return "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+  }
+
+  return fallback;
+}
+
 const jumping = ref(false);
 let calendarRequest = null;
 
@@ -400,13 +454,13 @@ const leadingBlanks = computed(() => {
 watch(() => props.storeId, () => load(), { immediate: true });
 
 // 선택 월의 날짜별 요약을 조회하며 이미 확인한 월은 메모리 캐시를 재사용합니다.
-async function load({ force = false } = {}) {
-  if (!props.storeId) return;
+async function load({ force = false, afterSave = false } = {}) {
+  if (!props.storeId) return false;
 
   const key = `${props.storeId}:${month.value}`;
   if (!force && monthCache.has(key)) {
     days.value = monthCache.get(key);
-    return;
+    return true;
   }
 
   calendarRequest?.abort();
@@ -424,14 +478,29 @@ async function load({ force = false } = {}) {
       timeout: 20000,
     });
 
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) return null;
 
     const nextDays = data.days || [];
     monthCache.set(key, nextDays);
     days.value = nextDays;
+
+    return true;
   } catch (error) {
-    if (controller.signal.aborted) return;
-    emit('error', error.response?.data?.message || '캘린더를 불러오지 못했습니다.');
+    if (controller.signal.aborted) return null;
+
+    // 일반 조회 실패만 즉시 알립니다.
+    // 저장 후 재조회 실패는 저장 함수에서 안내합니다.
+    if (!afterSave) {
+      emit(
+        "error",
+        getCalendarErrorMessage(
+          error,
+          "캘린더를 불러오지 못했습니다."
+        )
+      );
+    }
+
+    return false;
   } finally {
     if (calendarRequest === controller) {
       calendarRequest = null;
@@ -541,9 +610,27 @@ async function saveDayStatus() {
 
     confirmDayStatus.value = false;
     dayOpen.value = false;
-    emit('success', nextStatus === 'closed' ? '휴점일로 설정했습니다.' : '휴점을 해제했습니다.');
+
     monthCache.delete(`${props.storeId}:${month.value}`);
-    await load({ force: true });
+
+    const refreshed = await load({
+      force: true,
+      afterSave: true,
+    });
+
+    if (refreshed === false) {
+      emit(
+        "error",
+        "휴점 변경은 저장됐지만 캘린더 화면을 갱신하지 못했습니다. 새로고침해 주세요."
+      );
+    } else {
+      emit(
+        "success",
+        nextStatus === "closed"
+          ? "휴점일로 설정했습니다."
+          : "휴점을 해제했습니다."
+      );
+    }
   } catch (error) {
     emit('error', error.response?.data?.message || '영업일 상태를 변경하지 못했습니다.');
   } finally {
@@ -563,9 +650,22 @@ async function saveEvent() {
 
     confirmEvent.value = false;
     eventOpen.value = false;
-    emit('success', '캘린더 일정을 저장했습니다.');
+
     monthCache.delete(`${props.storeId}:${month.value}`);
-    await load({ force: true });
+
+    const refreshed = await load({
+      force: true,
+      afterSave: true,
+    });
+
+    if (refreshed === false) {
+      emit(
+        "error",
+        "행사는 저장됐지만 캘린더 화면을 갱신하지 못했습니다. 새로고침해 주세요."
+      );
+    } else {
+      emit("success", "캘린더 일정을 저장했습니다.");
+    }
   } catch (error) {
     emit('error', error.response?.data?.message || '행사를 저장하지 못했습니다.');
   } finally {

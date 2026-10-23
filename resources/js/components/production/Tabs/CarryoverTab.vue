@@ -486,6 +486,9 @@
     v-model="confirmSave"
     title="이월 저장"
     :message="confirmMessage"
+    confirm-text="저장"
+    cancel-text="취소"
+    confirm-action="save"
     :loading="saving"
     @confirm="save"
   />
@@ -494,7 +497,10 @@
   <ConfirmDialog
     v-model="confirmDiscard"
     title="작성 취소"
-    message="작성 중인 내용이 있습니다. 닫으시겠습니까?"
+    message="작성 중인 내용을 삭제하고 입력을 종료하시겠습니까?"
+    confirm-text="작성 취소"
+    cancel-text="계속 작성"
+    confirm-action="close"
     :loading="saving"
     @update:model-value="handleDiscardDialogChange"
     @confirm="confirmDiscardChanges"
@@ -1278,12 +1284,32 @@ async function save() {
     // 저장 실패 시 입력값 유지
     confirmSave.value = false;
 
-    emit(
-      "error",
-      error.response?.data?.message ||
-        error.message ||
-        "이월을 저장하지 못했습니다."
-    );
+    const status = Number(error?.response?.status);
+    const serverMessage = error?.response?.data?.message;
+
+    let message = "이월 수량을 저장하지 못했습니다.";
+
+    if (status === 401) {
+      message = "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+    } else if (status === 403) {
+      message = "이 작업을 수행할 권한이 없습니다.";
+    } else if (status === 422) {
+      message =
+        typeof serverMessage === "string" && serverMessage.trim()
+          ? serverMessage
+          : "입력 내용을 확인해 주세요.";
+    } else if (status === 409) {
+      message =
+        typeof serverMessage === "string" && serverMessage.trim()
+          ? serverMessage
+          : "다른 사용자가 데이터를 변경했습니다. 최신 내용을 확인해 주세요.";
+    } else if (status >= 500) {
+      message = "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+    } else if (!error?.response) {
+      message = "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+    }
+
+    emit("error", message);
   } finally {
     saving.value = false;
   }
