@@ -14,7 +14,7 @@
         :variant="variant"
         closable
         :role="type === 'error' || type === 'warning' ? 'alert' : 'status'"
-        aria-live="polite"
+        :aria-live="type === 'error' || type === 'warning' ? 'assertive' : 'polite'"
         @click:close="close"
       >
         {{ modelValue }}

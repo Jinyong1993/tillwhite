@@ -110,7 +110,6 @@ import {
     onMounted,
     ref,
 } from 'vue';
-import { useRouter } from 'vue-router';
 import AppErrorState from '../../components/common/AppErrorState.vue';
 import AppShell from '../../components/layout/AppShell.vue';
 import ProductionAnalysisTab from '../../components/production/ProductionAnalysisTab.vue';
@@ -118,20 +117,16 @@ import ProductionCalendarTab from '../../components/production/ProductionCalenda
 import ProductionDailyTab from '../../components/production/ProductionDailyTab.vue';
 import ProductionStatisticsTab from '../../components/production/ProductionStatisticsTab.vue';
 import { useAppLoading } from '../../composables/useAppLoading';
-import { useSession } from '../../composables/useSession';
 import {
     addLocalDays,
     toLocalDateString,
 } from '../../utils/localDate';
-const router = useRouter();
 
 const {
   beginNavigationLoading,
   completePageLoading,
   cancelLoading,
 } = useAppLoading();
-
-const { clear } = useSession();
 
 const appShellRef = ref(null);
 const pageTitle = '생산·폐기 관리';
@@ -266,10 +261,9 @@ async function loadPage({ force = false, date = workDate.value } = {}) {
   } catch (error) {
     if (controller.signal.aborted || disposed) return false;
 
-    if (error.response?.status === 401) {
-      clear();
+    if (error?.response?.status === 401) {
+      // 로그인 이동은 전역 Axios 인터셉터에서 처리합니다.
       cancelLoading();
-      await router.replace({ name: 'login', query: { sessionExpired: '1' } });
       return false;
     }
     

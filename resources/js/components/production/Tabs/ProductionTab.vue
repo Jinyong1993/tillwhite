@@ -799,6 +799,38 @@ const productionErrors = reactive({
 // 생산 기록 저장·삭제 중복 실행 방지
 const saving = ref(false);
 
+function getProductionTabErrorMessage(error, fallback) {
+  const status = Number(error?.response?.status);
+  const serverMessage = error?.response?.data?.message;
+
+  if (status === 401) {
+    return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+  }
+
+  if (status === 403) {
+    return "이 작업을 수행할 권한이 없습니다.";
+  }
+
+  if (status === 422 || status === 409) {
+    return typeof serverMessage === "string" &&
+      serverMessage.trim()
+      ? serverMessage
+      : status === 422
+        ? "입력 내용을 확인해 주세요."
+        : "다른 사용자가 기록을 변경했습니다. 최신 내용을 확인해 주세요.";
+  }
+
+  if (status >= 500) {
+    return "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  }
+
+  if (!error?.response) {
+    return "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+  }
+
+  return fallback;
+}
+
 // 생산 기록 수정 대상
 const editingBatch = ref(null);
 
@@ -1277,8 +1309,10 @@ async function loadPreviousProduction() {
 
     emit(
       "error",
-      error.response?.data?.message ||
+      getProductionTabErrorMessage(
+        error,
         "전날 생산량을 조회하지 못했습니다."
+      )
     );
   } finally {
     if (requestId === previousProductionRequestId) {
@@ -1349,11 +1383,13 @@ async function loadRecommendedProduction() {
     ) ? item.recommendation.reasons : [];
   } catch (error) {
     if (requestId !== recommendationRequestId) return;
-
+    
     emit(
       "error",
-      error.response?.data?.message ||
+      getProductionTabErrorMessage(
+        error,
         "추천 생산량을 조회하지 못했습니다."
+      )
     );
   } finally {
     if (requestId === recommendationRequestId) {
@@ -1663,8 +1699,10 @@ async function saveProduction() {
   } catch (error) {
     emit(
       "error",
-      error.response?.data?.message ||
+      getProductionTabErrorMessage(
+        error,
         "생산 기록을 저장하지 못했습니다."
+      )
     );
   } finally {
     saving.value = false;
@@ -1711,8 +1749,10 @@ async function saveZero() {
   } catch (error) {
     emit(
       "error",
-      error.response?.data?.message ||
+      getProductionTabErrorMessage(
+        error,
         "생산 0개를 확인하지 못했습니다."
+      )
     );
   } finally {
     saving.value = false;
@@ -1762,8 +1802,10 @@ async function deleteBatch() {
   } catch (error) {
     emit(
       "error",
-      error.response?.data?.message ||
+      getProductionTabErrorMessage(
+        error,
         "생산 기록을 삭제하지 못했습니다."
+      )
     );
   } finally {
     saving.value = false;

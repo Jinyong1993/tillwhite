@@ -18,6 +18,62 @@ import '@mdi/font/css/materialdesignicons.css';
 import App from './App.vue';
 import router from './router';
 
+import { useSession } from './composables/useSession';
+
+/**
+ * 전역 Axios 401 세션 만료 처리
+ *
+ * 로그인 요청 실패는 기존 LoginPage에서 처리합니다.
+ * 인증된 화면에서 발생한 401만 세션 만료로 처리합니다.
+ */
+let sessionRedirecting = false;
+
+window.axios.interceptors.response.use(
+  response => {
+    const requestUrl = String(response?.config?.url ?? '');
+    const requestMethod = String(
+      response?.config?.method ?? ''
+    ).toLowerCase();
+
+    // 로그인 성공 시 다음 세션 만료를 처리할 수 있도록 초기화
+    if (
+      requestMethod === 'post' &&
+      /\/tillwhite\/login(?:[?#]|$)/.test(requestUrl)
+    ) {
+      sessionRedirecting = false;
+    }
+
+    return response;
+  },
+  error => {
+    const status = Number(error?.response?.status);
+    const requestUrl = String(error?.config?.url ?? '');
+
+    const isLoginRequest =
+      /\/tillwhite\/login(?:[?#]|$)/.test(requestUrl);
+
+    if (
+      status === 401 &&
+      !isLoginRequest &&
+      router.currentRoute.value.name !== 'login' &&
+      !sessionRedirecting
+    ) {
+      sessionRedirecting = true;
+
+      useSession().clear();
+
+      router.replace({
+        name: 'login',
+        query: { sessionExpired: '1' },
+      }).finally(() => {
+        sessionRedirecting = false;
+      });
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 /**
  * Till White에서 사용할 Vuetify 인스턴스를 생성합니다.
  *

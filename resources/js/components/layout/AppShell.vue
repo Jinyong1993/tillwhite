@@ -133,13 +133,10 @@
 
 <script setup>
 import {
-  onBeforeUnmount,
   onMounted,
   reactive,
   ref,
 } from 'vue';
-
-import { useSession } from '../../composables/useSession';
 
 import AppAlert from '../common/AppAlert.vue';
 import AppHeader from './AppHeader.vue';
@@ -317,9 +314,13 @@ onMounted(async () => {
   try {
     await loadUser();
   } catch (error) {
-    setError(
-      '사용자 정보를 불러오지 못했습니다.',
-    );
+    if (error?.response?.status === 401) {
+      // 세션 초기화와 로그인 이동은
+      // 전역 Axios 인터셉터에서 처리합니다.
+      return;
+    }
+
+    setError('사용자 정보를 불러오지 못했습니다.');
   } finally {
     sessionReady.value = true;
   }

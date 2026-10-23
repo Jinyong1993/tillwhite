@@ -574,7 +574,13 @@ async function openDay(day) {
     });
     selectedDayDaily.value = data;
   } catch (error) {
-    emit('error', error.response?.data?.message || '일일 상세 기록을 불러오지 못했습니다.');
+    emit(
+      "error",
+      getCalendarErrorMessage(
+        error,
+        "일일 상세 기록을 불러오지 못했습니다."
+      )
+    );
   } finally {
     dayDetailLoading.value = false;
   }
@@ -618,7 +624,7 @@ async function saveDayStatus() {
       afterSave: true,
     });
 
-    if (refreshed === false) {
+    if (refreshed !== true) {
       emit(
         "error",
         "휴점 변경은 저장됐지만 캘린더 화면을 갱신하지 못했습니다. 새로고침해 주세요."
@@ -632,7 +638,13 @@ async function saveDayStatus() {
       );
     }
   } catch (error) {
-    emit('error', error.response?.data?.message || '영업일 상태를 변경하지 못했습니다.');
+    emit(
+      "error",
+      getCalendarErrorMessage(
+        error,
+        "영업일 상태를 변경하지 못했습니다."
+      )
+    );
   } finally {
     saving.value = false;
   }
@@ -658,7 +670,7 @@ async function saveEvent() {
       afterSave: true,
     });
 
-    if (refreshed === false) {
+    if (refreshed !== true) {
       emit(
         "error",
         "행사는 저장됐지만 캘린더 화면을 갱신하지 못했습니다. 새로고침해 주세요."
@@ -667,7 +679,13 @@ async function saveEvent() {
       emit("success", "캘린더 일정을 저장했습니다.");
     }
   } catch (error) {
-    emit('error', error.response?.data?.message || '행사를 저장하지 못했습니다.');
+    emit(
+      "error",
+      getCalendarErrorMessage(
+        error,
+        "행사를 저장하지 못했습니다."
+      )
+    );
   } finally {
     saving.value = false;
   }

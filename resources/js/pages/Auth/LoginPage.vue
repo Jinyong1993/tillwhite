@@ -279,15 +279,14 @@ async function login() {
       name: 'main',
     });
   } catch (error) {
-    const status = error.response?.status;
+    const status = error?.response?.status;
 
     if (status === 419) {
       loginError.value =
         '로그인 보안 세션이 만료되었습니다. 다시 시도해주세요.';
     } else if (status === 401) {
       loginError.value =
-        error.response?.data?.message
-        ?? '아이디 또는 비밀번호를 확인해주세요.';
+        '아이디 또는 비밀번호를 확인해주세요.';
     } else if (status === 403) {
       loginError.value =
         error.response?.data?.message
@@ -296,11 +295,33 @@ async function login() {
       loginError.value =
         error.response?.data?.message
         ?? '입력 내용을 확인해주세요.';
+    } else if (
+      error?.message ===
+      '로그인 사용자 정보를 확인할 수 없습니다.'
+    ) {
+      loginError.value =
+        '로그인 응답을 확인하지 못했습니다. 다시 시도해 주세요.';
+    } else if (
+      error?.message ===
+      '토큰을 발급받지 못했습니다.'
+    ) {
+      loginError.value =
+        '로그인 보안 토큰을 확인하지 못했습니다. 다시 시도해 주세요.';
+    } else if (
+      error?.message ===
+      '로그인 요청을 완료하지 못했습니다.'
+    ) {
+      loginError.value =
+        '로그인 요청을 완료하지 못했습니다. 다시 시도해 주세요.';
+    } else if (!error?.response) {
+      loginError.value =
+        '서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.';
+    } else if (status >= 500) {
+      loginError.value =
+        '서버 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.';
     } else {
       loginError.value =
-        error.response?.data?.message
-        ?? error.message
-        ?? '로그인 중 오류가 발생했습니다.';
+        '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.';
     }
   } finally {
     isLoggingIn.value = false;

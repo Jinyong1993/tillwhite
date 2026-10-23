@@ -245,6 +245,7 @@
             :loading="productActionLoading === 'clone-product'"
             cancel-text="취소"
             confirm-text="등록"
+            confirm-action="save"
             @cancel="requestCloseCloneProductDialog"
             @confirm="createClonedProduct(setError, setSuccess)"
           />
@@ -256,6 +257,24 @@
         v-model="confirmDialog.open"
         :title="confirmDialog.title"
         :message="confirmDialog.message"
+        :confirm-text="confirmDialog.confirmText"
+        :confirm-action="
+          confirmDialog.action === 'delete' ||
+          confirmDialog.action === 'clear-draft'
+            ? 'delete'
+            : confirmDialog.action === 'clone-product-discard'
+              ? 'close'
+              : confirmDialog.action === 'restore'
+                ? 'restore'
+                : confirmDialog.action === 'toggle'
+                  ? selectedProduct?.is_active
+                    ? 'disable'
+                    : 'enable'
+                  : confirmDialog.action === 'edit' ||
+                      confirmDialog.action === 'category-rename'
+                    ? 'edit'
+                    : 'save'
+        "
         :loading="Boolean(productActionLoading)"
         @confirm="executeConfirmedAction(setError, setSuccess)"
         @cancel="clearConfirmDialog"
@@ -632,17 +651,27 @@ async function runCategoryRequest(
 
   productActionLoading.value = 'category';
 
+  let requestCompleted = false;
+
   try {
     await request();
-    setSuccess(successMessage);
+    requestCompleted = true;
+
     await load();
+    setSuccess(successMessage);
   } catch (error) {
-    setError(
-      requestFailureMessage(
-        error,
-        '카테고리 처리에 실패했습니다.'
-      )
-    );
+    if (requestCompleted) {
+      setError(
+        '카테고리 작업은 완료되었지만 목록을 새로고침하지 못했습니다.'
+      );
+    } else {
+      setError(
+        requestFailureMessage(
+          error,
+          '카테고리 처리에 실패했습니다.'
+        )
+      );
+    }
   } finally {
     productActionLoading.value = null;
   }
@@ -1322,8 +1351,8 @@ function requestCloseCloneProductDialog() {
 
 async function createClonedProduct(setError, setSuccess) {
   if (
-    !selectedProduct.value
-    || productActionLoading.value
+    !selectedProduct.value ||
+    productActionLoading.value
   ) return;
 
   if (!cloneProductName.value.trim()) {
@@ -1333,8 +1362,11 @@ async function createClonedProduct(setError, setSuccess) {
 
   productActionLoading.value = 'clone-product';
 
+  let response;
+
+  // 제품 복사 요청과 후속 화면 갱신을 분리합니다.
   try {
-    const response = await window.axios.post(
+    response = await window.axios.post(
       `/tillwhite/api/products/${selectedProduct.value.id}/clone`,
       {
         name: cloneProductName.value.trim(),
@@ -1343,14 +1375,26 @@ async function createClonedProduct(setError, setSuccess) {
           : cloneWithRecipe.value,
       }
     );
+  } catch (error) {
+    setError(
+      requestFailureMessage(
+        error,
+        '새 제품을 만들지 못했습니다.'
+      )
+    );
+    productActionLoading.value = null;
+    return;
+  }
 
+  try {
     cloneProductDialog.value = false;
+
+    // 제품 목록 갱신까지 완료한 뒤 성공 알림을 표시합니다.
+    await load();
 
     setSuccess(
       response.data.message ?? '새 제품을 만들었습니다.'
     );
-
-    await load();
 
     const created = products.value.find(
       item =>
@@ -1358,18 +1402,21 @@ async function createClonedProduct(setError, setSuccess) {
     );
 
     if (created) {
-      await openDetailDialog(
-        created,
-        currentUser.value,
-        setError
-      );
+      try {
+        await openDetailDialog(
+          created,
+          currentUser.value,
+          setError
+        );
+      } catch (error) {
+        setError(
+          '제품은 생성됐지만 상세 화면을 열지 못했습니다.'
+        );
+      }
     }
   } catch (error) {
     setError(
-      requestFailureMessage(
-        error,
-        '새 제품을 만들지 못했습니다.'
-      )
+      '제품은 생성됐지만 목록을 새로고침하지 못했습니다.'
     );
   } finally {
     productActionLoading.value = null;
@@ -1514,25 +1561,67 @@ function closeDetailDialogAfterAction() {
 }
 
 function errorMessage(error, fallback) {
-  return error.response?.data?.message ?? fallback;
+  const status = Number(error?.response?.status);
+  const serverMessage = error?.response?.data?.message;
+
+  if (status === 401) {
+    return "로그인이 만료되었습니다. 다시 로그인해 주세요.";
+  }
+
+  if (status === 403) {
+    return "이 작업을 수행할 권한이 없습니다.";
+  }
+
+  if (status === 409 || status === 422) {
+    if (
+      typeof serverMessage === "string" &&
+      serverMessage.trim()
+    ) {
+      return serverMessage;
+    }
+
+    return status === 409
+      ? "다른 사용자가 정보를 변경했습니다. 최신 내용을 확인해 주세요."
+      : "입력 내용을 확인해 주세요.";
+  }
+
+  if (status >= 500) {
+    return "서버 처리 중 문제가 발생했습니다. 다시 시도해 주세요.";
+  }
+
+  if (!error?.response) {
+    return "서버에 연결하지 못했습니다. 네트워크를 확인해 주세요.";
+  }
+
+  return fallback;
 }
 
 function requestFailureMessage(error, fallback) {
-  if (!error.response) {
-    return '서버 응답을 확인하지 못했습니다. 작업이 이미 반영되었을 수 있으므로 목록을 다시 확인해주세요.';
+  const status = Number(error?.response?.status);
+
+  // 서버 응답이 없는 저장 요청은 처리 여부를 확정할 수 없습니다.
+  if (!error?.response) {
+    return "서버 응답을 확인하지 못했습니다. 작업이 이미 반영되었을 수 있으므로 목록을 다시 확인해 주세요.";
+  }
+
+  // 인증·권한·충돌·서버 장애를 우선 처리합니다.
+  if (status !== 422) {
+    return errorMessage(error, fallback);
   }
 
   const validationErrors = error.response?.data?.errors;
 
   if (
-    validationErrors
-    && typeof validationErrors === 'object'
+    validationErrors &&
+    typeof validationErrors === "object"
   ) {
-    const firstMessage = Object.values(
-      validationErrors
-    )
+    const firstMessage = Object.values(validationErrors)
       .flat()
-      .find(Boolean);
+      .find(
+        (value) =>
+          typeof value === "string" &&
+          value.trim()
+      );
 
     if (firstMessage) {
       return firstMessage;
