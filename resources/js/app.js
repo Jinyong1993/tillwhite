@@ -65,9 +65,14 @@ window.axios.interceptors.response.use(
       router.replace({
         name: 'login',
         query: { sessionExpired: '1' },
-      }).finally(() => {
-        sessionRedirecting = false;
-      });
+      }).then(
+        () => {
+          sessionRedirecting = false;
+        },
+        () => {
+          sessionRedirecting = false;
+        }
+      );
     }
 
     return Promise.reject(error);

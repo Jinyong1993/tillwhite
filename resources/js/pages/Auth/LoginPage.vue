@@ -303,7 +303,7 @@ async function login() {
         '로그인 응답을 확인하지 못했습니다. 다시 시도해 주세요.';
     } else if (
       error?.message ===
-      '토큰을 발급받지 못했습니다.'
+      'CSRF 토큰을 발급받지 못했습니다.'
     ) {
       loginError.value =
         '로그인 보안 토큰을 확인하지 못했습니다. 다시 시도해 주세요.';
