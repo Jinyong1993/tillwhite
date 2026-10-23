@@ -1,8 +1,13 @@
-// Laravel에서 Axios 등의 기본 설정을 불러옵니다.
+/**
+ * Laravel Axios 기본 설정
+ */
 import './bootstrap';
 
 import { createApp } from 'vue';
 import { createVuetify } from 'vuetify';
+
+// Vuetify 한국어 및 영어 번역
+import { ko, en } from 'vuetify/locale';
 
 // Vuetify 기본 스타일
 import 'vuetify/styles';
@@ -16,11 +21,22 @@ import router from './router';
 /**
  * Till White에서 사용할 Vuetify 인스턴스를 생성합니다.
  *
- * 생성한 Vuetify 인스턴스는 아래에서 Vue 애플리케이션에
- * 플러그인으로 등록하여 모든 화면에서 Vuetify 컴포넌트를
- * 사용할 수 있도록 합니다.
+ * 한국어를 기본 언어로 지정하고,
+ * 한국어 번역이 없는 경우 영어를 사용합니다.
+ *
+ * 날짜 선택기 및 Vuetify 공통 컴포넌트의
+ * 번역 경고를 방지합니다.
  */
-const vuetify = createVuetify();
+const vuetify = createVuetify({
+  locale: {
+    locale: 'ko',
+    fallback: 'en',
+    messages: {
+      ko,
+      en,
+    },
+  },
+});
 
 /**
  * Till White Vue 애플리케이션을 생성합니다.
