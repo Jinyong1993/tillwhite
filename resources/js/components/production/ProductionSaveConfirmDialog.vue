@@ -255,7 +255,7 @@
         <template #confirm>
           <v-btn
             block
-            variant="outlined"
+            variant="flat"
             :color="editing ? 'primary' : 'success'"
             min-height="44"
             :loading="loading"
