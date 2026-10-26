@@ -82,7 +82,51 @@
     .app-input input,
     .app-input textarea,
     .app-select input,
-    .app-combobox input {
+    .app-combobox input,
+    .inventory-dialog input,
+    .inventory-dialog textarea {
+        font-size: 16px;
+    }
+}
+
+/*
+ * 모바일 수량 입력 공통 UI
+ *
+ * 생산·이월·로스·폐기에서 함께 사용합니다.
+ * Vuetify VNumberInput의 split 컨트롤을 기준으로 합니다.
+ *
+ * 실제 수량 계산, 최소·최대값 및 저장 검증은
+ * 각 업무 컴포넌트와 서버에서 처리합니다.
+ */
+.app-number-input {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.app-number-input .v-field {
+    min-width: 0;
+    min-height: 44px;
+}
+
+.app-number-input .v-field__input {
+    min-width: 0;
+}
+
+/*
+ * 증가·감소 버튼의 최소 터치 영역을 확보합니다.
+ * 버튼의 기존 클릭 이벤트와 비활성화 처리는 유지합니다.
+ */
+.app-number-input .v-number-input__control .v-btn {
+    min-width: 44px;
+    min-height: 44px;
+}
+
+/*
+ * 모바일에서 실제 숫자 입력 글꼴 크기를 유지합니다.
+ * iOS Safari 입력 포커스 시 자동 확대 방지
+ */
+@media (max-width: 600px) {
+    .app-number-input input {
         font-size: 16px;
     }
 }
@@ -154,6 +198,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
+    scroll-padding-block: 16px 24px;
 }
 
 /*

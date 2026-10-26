@@ -26,12 +26,15 @@
       </slot>
 
       <main
+        ref="dialogBodyRef"
         :class="[
           'app-dialog-body',
           bodyClass,
         ]"
         :aria-busy="loading ? 'true' : undefined"
         tabindex="-1"
+        @focusin="handleFocusIn"
+        @focusout="handleFocusOut"
       >
         <slot v-if="loading" name="loading">
           <div
@@ -132,6 +135,9 @@
 <script setup>
 import {
   computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
   ref,
   watch,
 } from 'vue';
@@ -227,6 +233,182 @@ const emit = defineEmits([
 ]);
 
 const retryRequested = ref(false);
+
+// 모바일 키패드 대응
+const dialogBodyRef = ref(null);
+
+let focusedInput = null;
+let scrollTimers = [];
+
+function clearScrollTimers() {
+  scrollTimers.forEach(clearTimeout);
+  scrollTimers = [];
+}
+
+function resetKeyboardScroll() {
+  clearScrollTimers();
+  focusedInput = null;
+
+  if (dialogBodyRef.value) {
+    dialogBodyRef.value.style.removeProperty('padding-bottom');
+  }
+}
+
+function adjustFocusedInput() {
+  const body = dialogBodyRef.value;
+  const input = focusedInput;
+
+  if (
+    !props.modelValue ||
+    !body ||
+    !input ||
+    !body.contains(input) ||
+    document.activeElement !== input
+  ) {
+    return;
+  }
+
+  const viewport = window.visualViewport;
+
+  const visibleTop = viewport?.offsetTop ?? 0;
+  const visibleBottom = viewport
+    ? viewport.offsetTop + viewport.height
+    : window.innerHeight;
+
+  const bodyRect = body.getBoundingClientRect();
+
+  // 키패드에 가려진 본문 하단 영역 확보
+  const coveredBottom = Math.max(
+    0,
+    bodyRect.bottom - visibleBottom
+  );
+
+  body.style.paddingBottom = coveredBottom > 0
+    ? `${Math.ceil(coveredBottom + 24)}px`
+    : '';
+
+  const inputRect = input.getBoundingClientRect();
+
+  const safeTop = Math.max(
+    bodyRect.top,
+    visibleTop
+  ) + 16;
+
+  const safeBottom = Math.min(
+    bodyRect.bottom,
+    visibleBottom
+  ) - 16;
+
+  if (safeBottom <= safeTop) {
+    return;
+  }
+
+  // 입력창이 키패드 아래에 가려진 경우
+  if (inputRect.bottom > safeBottom) {
+    body.scrollTop += inputRect.bottom - safeBottom;
+  }
+
+  // 입력창이 화면 상단에 가려진 경우
+  else if (inputRect.top < safeTop) {
+    body.scrollTop -= safeTop - inputRect.top;
+  }
+}
+
+function scheduleInputScroll() {
+  clearScrollTimers();
+
+  // 포커스 직후와 키패드 애니메이션 이후 모두 확인
+  [0, 150, 350].forEach((delay) => {
+    scrollTimers.push(
+      setTimeout(adjustFocusedInput, delay)
+    );
+  });
+}
+
+function handleFocusIn(event) {
+  const target = event.target;
+
+  if (
+    !(target instanceof HTMLElement) ||
+    !target.matches(
+      'input, textarea, [contenteditable="true"]'
+    )
+  ) {
+    return;
+  }
+
+  focusedInput = target;
+  scheduleInputScroll();
+}
+
+function handleFocusOut() {
+  setTimeout(() => {
+    const body = dialogBodyRef.value;
+
+    if (
+      !body ||
+      !body.contains(document.activeElement)
+    ) {
+      resetKeyboardScroll();
+    }
+  }, 0);
+}
+
+function handleViewportChange() {
+  if (!focusedInput) {
+    return;
+  }
+
+  scheduleInputScroll();
+}
+
+onMounted(() => {
+  window.visualViewport?.addEventListener(
+    'resize',
+    handleViewportChange
+  );
+
+  window.visualViewport?.addEventListener(
+    'scroll',
+    handleViewportChange
+  );
+
+  window.addEventListener(
+    'resize',
+    handleViewportChange
+  );
+});
+
+onBeforeUnmount(() => {
+  resetKeyboardScroll();
+
+  window.visualViewport?.removeEventListener(
+    'resize',
+    handleViewportChange
+  );
+
+  window.visualViewport?.removeEventListener(
+    'scroll',
+    handleViewportChange
+  );
+
+  window.removeEventListener(
+    'resize',
+    handleViewportChange
+  );
+});
+
+watch(
+  () => props.modelValue,
+  async (open) => {
+    if (!open) {
+      resetKeyboardScroll();
+      return;
+    }
+
+    await nextTick();
+  }
+);
 
 watch(
   () => [

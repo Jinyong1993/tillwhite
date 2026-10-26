@@ -16,6 +16,8 @@
             :rules="rules.id"
             label="사원번호"
             variant="outlined"
+            class="app-input"
+            autocomplete="username"
             :disabled="isLoggingIn"
           />
 
@@ -29,6 +31,8 @@
             "
             label="비밀번호"
             variant="outlined"
+            class="app-input"
+            autocomplete="current-password"
             :disabled="isLoggingIn"
             @click:append-inner="
               showPassword = !showPassword

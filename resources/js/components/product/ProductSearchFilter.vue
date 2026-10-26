@@ -15,7 +15,7 @@
       >
         <!-- 제품 검색 -->
         <v-text-field
-          class="search-field"
+          class="search-field app-input"
           :model-value="searchQuery"
           prepend-inner-icon="mdi-magnify"
           label="제품 검색"
@@ -30,7 +30,7 @@
         <!-- 점포 -->
         <v-select
           v-if="showStore"
-          class="store-field mobile-extra-filter"
+          class="store-field mobile-extra-filter app-select"
           :model-value="storeFilter"
           :items="storeItems"
           label="점포"
@@ -42,7 +42,7 @@
 
         <!-- 카테고리 -->
         <v-select
-          class="category-field mobile-extra-filter"
+          class="category-field mobile-extra-filter app-select"
           :model-value="categoryFilter"
           :items="categoryItems"
           label="카테고리"
@@ -54,7 +54,7 @@
 
         <!-- 상태 -->
         <v-select
-          class="status-field"
+          class="status-field app-select"
           :model-value="statusFilter"
           :items="statusItems"
           label="상태"
@@ -66,7 +66,7 @@
 
         <!-- 판매 유형 -->
         <v-select
-          class="sales-type-field mobile-extra-filter"
+          class="sales-type-field mobile-extra-filter app-select"
           :model-value="salesTypeFilter"
           :items="salesTypeItems"
           label="판매 유형"
@@ -78,7 +78,7 @@
 
         <!-- 페이지당 표시 개수 -->
         <v-select
-          class="last-filter mobile-extra-filter"
+          class="last-filter mobile-extra-filter app-select"
           :model-value="itemsPerPage"
           :items="pageSizeItems"
           label="페이지당"

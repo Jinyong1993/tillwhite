@@ -265,13 +265,15 @@
               <!-- 이월 수량 -->
               <v-number-input
                 v-model="carryoverQuantity"
+                class="app-number-input"
+                inputmode="numeric"
                 label="이월 수량"
                 variant="outlined"
                 density="compact"
                 hide-details
                 :min="0"
                 :max="carryoverSourceAvailable"
-                control-variant="stacked"
+                control-variant="split"
                 :disabled="selectedCarryoverLotId == null"
               />
 

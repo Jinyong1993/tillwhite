@@ -357,6 +357,8 @@
                 <!-- 이월탭과 동일한 수량 입력 컴포넌트 -->
                 <v-number-input
                   :model-value="entry.row.quantity"
+                  class="app-number-input"
+                  inputmode="numeric"
                   :label="`${dialogTitle} 수량`"
                   variant="outlined"
                   density="compact"
@@ -366,7 +368,7 @@
                     (selectedStockAvailable ?? 0) -
                     (selectedEnteredQuantity - Number(entry.row.quantity || 0))
                   )"
-                  control-variant="stacked"
+                  control-variant="split"
                   :disabled="saving || !canMutate"
                   @update:model-value="
                     (value) =>

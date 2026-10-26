@@ -232,6 +232,8 @@
             <!-- 생산 수량 -->
             <v-number-input
               v-model="productionForm.quantity"
+              class="app-number-input"
+              inputmode="numeric"
               :error="productionErrors.quantity"
               :error-messages="
                 productionErrors.quantity
@@ -242,7 +244,7 @@
               variant="outlined"
               density="compact"
               :min="DEFAULT_PRODUCTION_QUANTITY"
-              control-variant="stacked"
+              control-variant="split"
               @update:model-value="
                 productionErrors.quantity = false
               "
