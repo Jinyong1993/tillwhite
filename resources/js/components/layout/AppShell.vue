@@ -143,6 +143,7 @@ import AppHeader from './AppHeader.vue';
 import AppNavigationDrawer from './AppNavigationDrawer.vue';
 import AppPageCard from './AppPageCard.vue';
 import AppPageContainer from './AppPageContainer.vue';
+import { useSession } from '../../composables/useSession';
 
 /**
  * AppShell 속성

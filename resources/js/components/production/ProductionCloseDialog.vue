@@ -303,8 +303,8 @@
         </v-btn>
 
         <v-btn
-          variant="flat"
-          color="primary"
+          :variant="preview?.can_close ? 'flat' : 'tonal'"
+          :color="preview?.can_close ? 'primary' : undefined"
           block
           class="close-dialog__footer-button flex-grow-1"
           :disabled="!preview?.can_close"
