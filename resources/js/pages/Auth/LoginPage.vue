@@ -231,17 +231,17 @@ async function login() {
     return;
   }
 
+  // 입력값 검증 단계부터 중복 실행 차단
+  isLoggingIn.value = true;
   loginError.value = '';
 
-  const validation = await loginForm.value.validate();
-
-  if (!validation.valid) {
-    return;
-  }
-
-  isLoggingIn.value = true;
-
   try {
+    const validation = await loginForm.value.validate();
+
+    if (!validation.valid) {
+      return;
+    }
+
     const payload = {
       ...form.value,
       id: form.value.id.trim(),
@@ -328,6 +328,7 @@ async function login() {
         '로그인 중 오류가 발생했습니다. 다시 시도해 주세요.';
     }
   } finally {
+    // 검증 실패·로그인 성공·오류 발생 모두 로딩 해제
     isLoggingIn.value = false;
   }
 }
