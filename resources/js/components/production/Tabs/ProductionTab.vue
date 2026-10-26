@@ -158,11 +158,12 @@
                 <strong v-if="recommendationLoading">
                   조회 중...
                 </strong>
-
-                <strong v-else-if="recommendedQuantity !== null">
+                <strong v-else-if="recommendationCenter !== null">
                   {{ recommendationMin }}~{{ recommendationMax }}개
                 </strong>
-
+                <strong v-else-if="recommendationError">
+                  조회 실패
+                </strong>
                 <strong v-else>
                   데이터 부족
                 </strong>
@@ -183,51 +184,16 @@
               </v-btn>
             </div>
 
-            <!-- 추천 생산량 계산 이유 -->
-            <div
-              v-if="!editingBatch && recommendedQuantity !== null"
-              class="inventory-dialog__recommendation-reasons"
+            <!-- 추천 이유와 분석 -->
+            <v-btn
+              v-if="!editingBatch && props.product?.id"
+              color="primary"
+              variant="outlined"
+              block
+              @click="recommendationDetailsOpen = true"
             >
-              <button
-                type="button"
-                class="inventory-dialog__recommendation-reasons-toggle"
-                :aria-expanded="recommendationReasonsOpen"
-                @click="
-                  recommendationReasonsOpen = !recommendationReasonsOpen
-                "
-              >
-                <span class="inventory-dialog__recommendation-reasons-title">
-                  이 수량을 추천하는 이유
-                </span>
-
-                <v-icon
-                  :icon="
-                    recommendationReasonsOpen
-                      ? 'mdi-chevron-up'
-                      : 'mdi-chevron-down'
-                  "
-                  size="16"
-                />
-              </button>
-
-              <div
-                v-if="recommendationReasonsOpen"
-                class="inventory-dialog__recommendation-reasons-content"
-              >
-                <template v-if="shortRecommendationReasons.length">
-                  <p
-                    v-for="(reason, index) in shortRecommendationReasons"
-                    :key="index"
-                  >
-                    <span>{{ reason }}</span>
-                  </p>
-                </template>
-
-                <p v-else>
-                  추천 이유를 확인할 수 없습니다.
-                </p>
-              </div>
-            </div>
+              추천 이유와 분석
+            </v-btn>
 
             <!-- 생산 수량 -->
             <v-number-input
@@ -723,11 +689,29 @@
     :loading="saving"
     @confirm="deleteBatch"
   />
+
+  <!-- 추천 이유와 분석 -->
+  <ProductionRecommendationAnalysisDialog
+    v-model="recommendationDetailsOpen"
+    :product-name="props.product?.name || ''"
+    :data="recommendationData"
+    :loading="recommendationLoading"
+    :error="recommendationError"
+    @retry="loadRecommendedProduction"
+  />
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch, nextTick } from "vue";
+import {
+  computed,
+  reactive,
+  ref,
+  watch,
+  nextTick,
+  onBeforeUnmount,
+} from "vue";
 import ConfirmDialog from "../../common/ConfirmDialog.vue";
+import ProductionRecommendationAnalysisDialog from "../ProductionRecommendationAnalysisDialog.vue";
 import ProductionSaveConfirmDialog from "../ProductionSaveConfirmDialog.vue";
 import { addLocalDays } from "../../../utils/localDate";
 import { useSession } from "../../../composables/useSession";
@@ -1065,47 +1049,58 @@ const previousProduction = ref(null);
 const previousProductionLoading = ref(false);
 
 // 추천 생산량
+const recommendationCenter = ref(null);
 const recommendationMin = ref(null);
 const recommendationMax = ref(null);
 const recommendationLoading = ref(false);
 
+// 추천 상세 분석에 사용할 서버 응답
+const recommendationData = ref(null);
+
+// 추천 상세 다이얼로그 표시 여부
+const recommendationDetailsOpen = ref(false);
+
+// 추천 조회 실패 메시지
+const recommendationError = ref("");
+
 // 추천 생산량 계산 이유
 const recommendationReasons = ref([]);
-
-// 추천 이유 펼치기 여부
-const recommendationReasonsOpen = ref(false);
-
-// 작업자에게 핵심 이유 2개만 표시
-const shortRecommendationReasons = computed(() =>
-  recommendationReasons.value.slice(0, 2)
-);
 
 // 비동기 요청 구분
 let previousProductionRequestId = 0;
 let productionHistoryRequestId = 0;
 let recommendationRequestId = 0;
 
-// 추천 범위의 중간값을 실제 입력 수량으로 사용
+// 현재 조회 중인 제품·날짜
+let recommendationActiveKey = null;
+
+/**
+ * 실제 입력에 사용할 추천 생산량
+ *
+ * 추천 범위의 중간값이 아닌
+ * 서버에서 계산한 최종 추천 수량을 사용합니다.
+ *
+ * 서버가 0개를 추천한 경우에는
+ * 생산 수량 입력에 자동 적용하지 않습니다.
+ * 기존 생산 입력 최소 수량 정책을 유지합니다.
+ */
 const recommendedQuantity = computed(() => {
-  const min = Number(recommendationMin.value);
-  const max = Number(recommendationMax.value);
+  const center = recommendationCenter.value;
+
+  if (center === null || center === undefined) {
+    return null;
+  }
+
+  const quantity = Number(center);
 
   if (
-    recommendationMin.value === null ||
-    recommendationMax.value === null ||
-    !Number.isFinite(min) ||
-    !Number.isFinite(max) ||
-    min < 0 ||
-    max < min
+    !Number.isInteger(quantity) ||
+    quantity < DEFAULT_PRODUCTION_QUANTITY
   ) {
     return null;
   }
 
-  const quantity = Math.round((min + max) / 2);
-
-  return quantity >= DEFAULT_PRODUCTION_QUANTITY
-    ? quantity
-    : null;
+  return quantity;
 });
 
 // 생산 수량 경고
@@ -1323,22 +1318,45 @@ async function loadPreviousProduction() {
   }
 }
 
-// 기존 분석 API에서 제품별 추천 생산량 조회
+// 제품별 추천 생산량 및 상세 분석 조회
 async function loadRecommendedProduction() {
+  const storeId = props.storeId;
+  const productId = props.product?.id;
+  const workDate = props.workDate;
+
+  const requestKey =
+    `${storeId ?? ""}:${productId ?? ""}:${workDate ?? ""}`;
+
+  /*
+   * 같은 제품·날짜의 조회가 이미 진행 중이면
+   * 중복 요청하지 않습니다.
+   */
+  if (
+    recommendationLoading.value &&
+    recommendationActiveKey === requestKey
+  ) {
+    return;
+  }
+
   const requestId = ++recommendationRequestId;
 
+  recommendationActiveKey = requestKey;
+  recommendationError.value = "";
+
+  recommendationCenter.value = null;
   recommendationMin.value = null;
   recommendationMax.value = null;
+  recommendationData.value = null;
   recommendationReasons.value = [];
-  recommendationReasonsOpen.value = false;
 
   if (
     !props.modelValue ||
-    !props.storeId ||
-    !props.workDate ||
-    !props.product?.id
+    !storeId ||
+    !workDate ||
+    !productId
   ) {
     recommendationLoading.value = false;
+    recommendationActiveKey = null;
     return;
   }
 
@@ -1349,53 +1367,96 @@ async function loadRecommendedProduction() {
       "/tillwhite/api/production-management/analysis",
       {
         params: {
-          store_id: props.storeId,
-          date: props.workDate,
+          store_id: storeId,
+          product_id: productId,
+          date: workDate,
           days: 30,
         },
       }
     );
 
-    if (requestId !== recommendationRequestId) return;
+    /*
+     * 이전 제품·날짜의 늦은 응답은
+     * 현재 화면에 반영하지 않습니다.
+     */
+    if (requestId !== recommendationRequestId) {
+      return;
+    }
 
     const item = (response.data?.items ?? []).find(
       (row) =>
-        Number(row.product_id) === Number(props.product.id)
+        Number(row.product_id) === Number(productId)
     );
 
-    const min = item?.recommendation?.min;
-    const max = item?.recommendation?.max;
+    if (!item) {
+      throw new Error(
+        "해당 제품의 추천 분석 결과를 찾지 못했습니다."
+      );
+    }
+
+    const recommendation = item.recommendation;
+
+    const center = recommendation?.center;
+    const min = recommendation?.min;
+    const max = recommendation?.max;
+
+    /*
+     * 기록이 부족하면 추천 수량은 없더라도
+     * 서버가 제공한 분석 상태는 유지합니다.
+     */
+    recommendationData.value = item;
+
+    recommendationReasons.value = Array.isArray(
+      recommendation?.reasons
+    )
+      ? recommendation.reasons
+      : [];
 
     if (
+      center == null ||
       min == null ||
-      max == null ||
-      !Number.isFinite(Number(min)) ||
-      !Number.isFinite(Number(max)) ||
-      Number(min) < 0 ||
-      Number(max) < Number(min)
+      max == null
     ) {
       return;
     }
 
+    if (
+      !Number.isInteger(Number(center)) ||
+      !Number.isFinite(Number(min)) ||
+      !Number.isFinite(Number(max)) ||
+      Number(center) < 0 ||
+      Number(min) < 0 ||
+      Number(max) < Number(min) ||
+      Number(center) < Number(min) ||
+      Number(center) > Number(max)
+    ) {
+      throw new Error(
+        "추천 수량을 확인할 수 없습니다."
+      );
+    }
+
+    recommendationCenter.value = Number(center);
     recommendationMin.value = Number(min);
     recommendationMax.value = Number(max);
-
-    recommendationReasons.value = Array.isArray(
-      item?.recommendation?.reasons
-    ) ? item.recommendation.reasons : [];
   } catch (error) {
-    if (requestId !== recommendationRequestId) return;
-    
-    emit(
-      "error",
-      getProductionTabErrorMessage(
-        error,
-        "추천 생산량을 조회하지 못했습니다."
-      )
-    );
+    if (requestId !== recommendationRequestId) {
+      return;
+    }
+
+    recommendationError.value =
+      error?.response
+        ? getProductionTabErrorMessage(
+            error,
+            "추천 분석을 불러오지 못했습니다."
+          )
+        : (
+            error?.message ||
+            "추천 분석을 불러오지 못했습니다."
+          );
   } finally {
     if (requestId === recommendationRequestId) {
       recommendationLoading.value = false;
+      recommendationActiveKey = null;
     }
   }
 }
@@ -1499,7 +1560,15 @@ async function loadProductionHistory() {
   }
 }
 
-// 다이얼로그 열림 / 제품·날짜 변경 시 추천 생산량 갱신
+/**
+ * 제품 통합 다이얼로그 열림 및
+ * 제품·날짜 변경 시 추천 조회
+ *
+ * 통합 다이얼로그가 닫히기 시작해도
+ * 데이터를 즉시 지우지 않습니다.
+ *
+ * 실제 화면이 제거될 때 데이터를 초기화합니다.
+ */
 watch(
   () => [
     props.modelValue,
@@ -1508,19 +1577,70 @@ watch(
     props.workDate,
   ],
   () => {
-    if (props.modelValue) {
-      loadRecommendedProduction();
-    } else {
+    /*
+     * 통합 다이얼로그가 닫히는 경우
+     */
+    if (!props.modelValue) {
+      // 이전 조회 응답이 화면에 반영되지 않게 합니다.
       recommendationRequestId++;
-      recommendationLoading.value = false;
-      recommendationMin.value = null;
-      recommendationMax.value = null;
-      recommendationReasons.value = [];
-      recommendationReasonsOpen.value = false;
+
+      // 진행 중인 조회 구분값만 해제합니다.
+      recommendationActiveKey = null;
+
+      // 상세 분석 다이얼로그도 닫습니다.
+      recommendationDetailsOpen.value = false;
+
+      /*
+       * 아직 추천 데이터는 초기화하지 않습니다.
+       * 닫힘 애니메이션 동안 기존 화면을 유지합니다.
+       */
+      return;
     }
+
+    /*
+     * 제품 또는 날짜가 변경되면
+     * 이전 제품의 분석 화면을 닫습니다.
+     */
+    recommendationDetailsOpen.value = false;
+
+    /*
+     * 현재 제품·날짜의 추천 분석을 조회합니다.
+     * 기존 조회 함수에서 이전 데이터를 초기화하고
+     * 새로운 조회를 시작합니다.
+     */
+    loadRecommendedProduction();
   },
   { immediate: true }
 );
+
+/**
+ * 생산 탭 화면이 완전히 제거될 때
+ * 추천 조회 상태와 데이터를 초기화합니다.
+ *
+ * 통합 다이얼로그의 닫힘 애니메이션 중에는
+ * 기존 데이터를 유지합니다.
+ */
+onBeforeUnmount(() => {
+  // 진행 중인 요청 무효화
+  recommendationRequestId++;
+  recommendationActiveKey = null;
+
+  // 상세 분석 다이얼로그 닫기
+  recommendationDetailsOpen.value = false;
+
+  // 조회 상태 초기화
+  recommendationLoading.value = false;
+  recommendationError.value = "";
+
+  // 추천 수량 초기화
+  recommendationCenter.value = null;
+  recommendationMin.value = null;
+  recommendationMax.value = null;
+
+  // 분석 자료 초기화
+  recommendationData.value = null;
+  recommendationReasons.value = [];
+});
 
 // 다이얼로그 열림 / 제품 변경 시 전날 생산량 갱신
 watch(

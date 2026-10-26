@@ -602,7 +602,8 @@ class ProductionManagementController extends Controller
                 $workers[] = [
                     'production_batch_id' => $batch->id,
                     'user_id' => $worker['user_id'],
-                    'process_type' => $worker['process_type'] ?? 'all',
+                    'process_type' =>
+                        $worker['process_type'] ?? 'all',
                     'created_at' => $now,
                     'updated_at' => $now,
                 ];
@@ -637,127 +638,125 @@ class ProductionManagementController extends Controller
             );
 
             /**
-             * 추천을 참고한 경우에만 이전 28일의 기록을 조회합니다.
-             * 추천 대상, 조회 순서 및 행사 적용 조건은 유지합니다.
+             * 추천을 참고한 경우에만 추천 스냅샷을 저장합니다.
+             *
+             * 생산 입력창과 동일하게 최근 최대 12개월의
+             * 제품별 데이터를 사용합니다.
+             *
+             * 기존 추천 참고 여부, 편차 사유 및
+             * 추천 결과 저장 정책은 유지합니다.
              */
-            $recommendationReferenced =
-            (bool) ($data['recommendation_referenced'] ?? false);
-
-            $recommendationDeviationReason = trim(
-                (string) ($data['recommendation_deviation_reason'] ?? '')
+            $recommendationReferenced = (bool) (
+                $data['recommendation_referenced'] ?? false
             );
 
-            if ($recommendationReferenced || $recommendationDeviationReason !== '') {
-                // 추천 대상 날짜 및 최근 28일 이력 준비
-                $history = collect();
-                $target = Carbon::parse($data['work_date']);
+            $recommendationDeviationReason = trim(
+                (string) (
+                    $data['recommendation_deviation_reason'] ?? ''
+                )
+            );
+
+            if (
+                $recommendationReferenced ||
+                $recommendationDeviationReason !== ''
+            ) {
+                $target = Carbon::parse(
+                    $data['work_date']
+                );
 
                 $storeId = (int) $data['store_id'];
                 $productId = (int) $data['product_id'];
 
-                $historyFrom = $target->copy()
-                    ->subDays(28)
-                    ->toDateString();
-
-                $historyTo = $target->copy()
-                    ->subDay()
-                    ->toDateString();
-
-                // 분석 탭과 동일한 판매·날씨 데이터 조회
-                $recommendationContext = $this->recommendationData(
-                    $storeId,
-                    $historyFrom,
-                    $historyTo
-                );
-
-                for ($i = 28; $i >= 1; $i--) {
-                    $historyDate = $target->copy()
-                        ->subDays($i)
-                        ->toDateString();
-
-                    $daily = $this->dailyService->build(
+                /*
+                * 생산 입력창과 동일한 12개월 조회 함수 사용
+                *
+                * 날짜별 dailyService->build() 반복 호출을
+                * 기간별 집계 방식으로 변경합니다.
+                */
+                $history =
+                    $this->recommendationHistoryForProduct(
                         $storeId,
-                        $historyDate
+                        $productId,
+                        $target
                     );
 
-                    $row = collect($daily['rows'])
-                        ->first(
-                            fn ($item) =>
-                                (int) ($item['id'] ?? 0)
-                                    === $productId
-                        );
-
-                    if (
-                        !$row ||
-                        !($row['production_confirmed'] ?? false)
-                    ) {
-                        continue;
-                    }
-
-                    // 해당 날짜의 행사 정보
-                    $events = $this->eventsForDate(
-                        $storeId,
-                        $historyDate
-                    );
-
-                    // 판매량·날씨·행사를 동일한 방식으로 반영
-                    $history->push(
-                        $this->recommendationHistoryRow(
-                            $row,
-                            $historyDate,
-                            $events,
-                            $recommendationContext
-                        )
-                    );
-                }
-
-                // 대상 날짜의 행사 중 현재 제품에 적용되는 행사를 선택합니다.
+                /*
+                * 추천 대상 날짜의 행사 조회
+                *
+                * 현재 제품에 적용되는 행사만 선택합니다.
+                */
                 $targetEvents = collect(
                     $this->eventsForDate(
-                        (int) $data['store_id'],
+                        $storeId,
                         $data['work_date']
                     )
                 )
                     ->filter(
                         fn (array $event) =>
                             empty($event['products'])
-                            || collect($event['products'])->contains(
+                            || collect(
+                                $event['products']
+                            )->contains(
                                 'id',
-                                (int) $data['product_id']
+                                $productId
                             )
                     )
                     ->values()
                     ->all();
 
-                // 추천 대상 날짜의 날씨를 추가합니다.
-                $targetWeather = StoreDailyWeather::query()
-                    ->where('store_id', $storeId)
-                    ->whereDate(
-                        'work_date',
-                        $data['work_date']
-                    )
-                    ->first(['condition']);
+                /*
+                * 추천 대상 날짜의 날씨
+                *
+                * 기존 날씨 보정 정책을 유지합니다.
+                */
+                $targetWeatherCode =
+                    StoreDailyWeather::query()
+                        ->where('store_id', $storeId)
+                        ->whereDate(
+                            'work_date',
+                            $data['work_date']
+                        )
+                        ->value('condition');
 
-                if (
-                    $targetWeather
-                    && !empty($targetWeather->condition)
-                ) {
+                if (!empty($targetWeatherCode)) {
                     $targetEvents[] = [
                         'weather_code' =>
-                            (string) $targetWeather->condition,
+                            (string) $targetWeatherCode,
                     ];
                 }
 
-                // 기존 추천 계산과 추천 결과 저장을 유지합니다.
-                $recommendation = $this->recommendationService->recommend(
-                    $history,
-                    $target,
-                    $targetEvents
-                );
+                /*
+                * 생산 기록 저장 시에도 이월 재고를 반영해
+                * 화면에서 조회한 추천량과 계산 기준을 맞춥니다.
+                */
+                $targetCarryoverIn = (int) ProductStockMovement::query()
+                    ->where('store_id', $storeId)
+                    ->where('product_id', $productId)
+                    ->whereDate('work_date', $data['work_date'])
+                    ->where('movement_type', 'carryover_in')
+                    ->sum('quantity');
 
+                $targetEvents[] = [
+                    'condition_type' => 'target_inventory',
+                    'carryover_in' => $targetCarryoverIn,
+                ];
+
+                $recommendation =
+                    $this->recommendationService->recommend(
+                        $history,
+                        $target,
+                        $targetEvents
+                    );
+
+                /*
+                * 기존 추천 스냅샷 저장
+                *
+                * 생산 기록 ID, 편차 사유,
+                * 추천 참고 여부를 그대로 유지합니다.
+                */
                 $this->recommendationService->snapshot(
-                    (int) $data['store_id'],
-                    (int) $data['product_id'],
+                    $storeId,
+                    $productId,
                     $data['work_date'],
                     $recommendation,
                     $batch->id,
@@ -2798,6 +2797,13 @@ class ProductionManagementController extends Controller
 
     /**
      * 기존 생산 기록에 판매량, 날씨, 행사 정보를 결합합니다.
+     *
+     * 기존 폐기율은 최초 생산일 귀속 정책을 유지합니다.
+     *
+     * 추천 분석에서는 당일 재고 흐름을 별도로 계산하고,
+     * 정상 마감된 날짜에 한해 추정 판매량을 산출합니다.
+     *
+     * 판매량은 별도로 입력받지 않습니다.
      */
     private function recommendationHistoryRow(
         array $row,
@@ -2818,6 +2824,7 @@ class ProductionManagementController extends Controller
             )
             ->values();
 
+        // 기존 추천 분석 데이터 유지
         $result = [
             ...$row,
             'product_id' => $productId,
@@ -2836,83 +2843,777 @@ class ProductionManagementController extends Controller
                 ->first(),
         ];
 
-        // 확정 판매 기록이 있는 날짜만 판매 수량 추가
-        if (isset($context['sales'][$date]) &&
-            array_key_exists($productId, $context['sales'][$date])) {
+        /*
+        * 기존 확정 판매 기록 연동은 유지합니다.
+        *
+        * 다만 이번 생산 추천은 별도 판매 입력에
+        * 의존하지 않도록 재고 기반 추정값을 사용합니다.
+        */
+        if (
+            isset($context['sales'][$date]) &&
+            array_key_exists(
+                $productId,
+                $context['sales'][$date]
+            )
+        ) {
             $result['sales_quantity'] =
                 (int) $context['sales'][$date][$productId];
+
+            $result['sales_source'] =
+                'confirmed';
+        }
+
+        /*
+        * 추천 분석용 당일 재고 흐름
+        *
+        * 최초 생산일 귀속 폐기율은 변경하지 않습니다.
+        */
+        $production = max(
+            0,
+            (int) ($row['production'] ?? 0)
+        );
+
+        $carryoverIn = max(
+            0,
+            (int) ($row['carryover_in'] ?? 0)
+        );
+
+        $carryoverOut = max(
+            0,
+            (int) ($row['carryover_out'] ?? 0)
+        );
+
+        $operationalLoss = max(
+            0,
+            (int) ($row['operational_loss'] ?? 0)
+        );
+
+        $operationalWaste = max(
+            0,
+            (int) ($row['operational_waste'] ?? 0)
+        );
+
+        /*
+        * 실제 해당 날짜의 사용 가능 수량
+        */
+        $availableQuantity =
+            $production + $carryoverIn;
+
+        /*
+        * 당일 남은 수량
+        *
+        * 폐기와 이월은 과잉 생산 분석에서
+        * 동등한 잔여 수량으로 취급합니다.
+        */
+        $remainingQuantity =
+            $operationalWaste + $carryoverOut;
+
+        /*
+        * 로스·폐기·이월 합계가 사용 가능 수량을
+        * 초과하면 정상적인 재고 흐름이 아닙니다.
+        */
+        $consumedQuantity =
+            $operationalLoss + $remainingQuantity;
+
+        $validQuantity =
+            $consumedQuantity <= $availableQuantity;
+
+        /*
+        * 추천 전용 분석 지표
+        */
+        $result['daily_available_quantity'] =
+            $availableQuantity;
+
+        $result['daily_remaining_quantity'] =
+            $remainingQuantity;
+
+        $result['daily_quantity_valid'] =
+            $validQuantity;
+
+        /*
+        * 수량이 0인 경우에는 비율을 계산하지 않습니다.
+        * 정상적인 생산 0개 확인 기록은 유지합니다.
+        */
+        $canCalculateRate =
+            $validQuantity &&
+            $availableQuantity > 0;
+
+        $result['daily_remaining_rate'] =
+            $canCalculateRate
+                ? round(
+                    $remainingQuantity /
+                    $availableQuantity * 100,
+                    2
+                )
+                : null;
+
+        $result['daily_waste_rate'] =
+            $canCalculateRate
+                ? round(
+                    $operationalWaste /
+                    $availableQuantity * 100,
+                    2
+                )
+                : null;
+
+        $result['daily_carryover_rate'] =
+            $canCalculateRate
+                ? round(
+                    $carryoverOut /
+                    $availableQuantity * 100,
+                    2
+                )
+                : null;
+
+        /*
+        * 자동 추정 판매량
+        *
+        * 생산 + 이월 입고
+        * - 로스 - 폐기 - 이월 출고
+        *
+        * 정상 마감되고 재고 흐름이 유효한 경우에만
+        * 추정 판매량을 계산합니다.
+        */
+        $closureStatus =
+            $row['closure_status'] ?? null;
+
+        $canEstimateSales =
+            $closureStatus === 'closed' &&
+            $validQuantity;
+
+        $result['estimated_sales_quantity'] =
+            $canEstimateSales
+                ? $availableQuantity -
+                    $consumedQuantity
+                : null;
+
+        /*
+        * 별도 판매량 입력 없이도 추천 엔진이
+        * 자동 추정 판매량을 사용할 수 있도록 합니다.
+        *
+        * 기존 recommendationService의 sales_quantity
+        * 입력 구조를 재사용합니다.
+        */
+        if ($canEstimateSales) {
+            $result['sales_quantity'] =
+                $result['estimated_sales_quantity'];
+
+            $result['sales_source'] =
+                'inventory_estimate';
         }
 
         return $result;
     }
 
-    // 선택 기간의 흐름과 제품별 현황을 반환하며 추천 계산은 최근 28일 이내 기록만 사용합니다.
+    /**
+     * 제품별 추천 상세 분석 화면에 필요한 자료 구성
+     *
+     * 기존에 조회한 최대 12개월 생산 기록을 재사용합니다.
+     * 여기서는 추가 DB 조회를 하지 않습니다.
+     *
+     * 정상 마감되고 수량이 유효한 기록만 계산합니다.
+     * 기록이 없는 날짜를 판매량 0개로 만들지 않습니다.
+     *
+     * 요일별 평균은 일반 영업일 기록만 사용합니다.
+     */
+    private function recommendationAnalysisDetails(
+        Collection $history,
+        Carbon $targetDate
+    ): array {
+        $monthly = [];
+
+        $weekdayNames = [
+            '일요일',
+            '월요일',
+            '화요일',
+            '수요일',
+            '목요일',
+            '금요일',
+            '토요일',
+        ];
+
+        $weekdays = [];
+
+        foreach ($weekdayNames as $index => $name) {
+            $weekdays[$index] = [
+                'weekday' => $index,
+                'name' => $name,
+                'record_count' => 0,
+                'sales_total' => 0,
+            ];
+        }
+
+        $daily = [];
+
+        $totals = [
+            'valid_days' => 0,
+            'production' => 0,
+            'carryover_in' => 0,
+            'loss' => 0,
+            'waste' => 0,
+            'carryover_out' => 0,
+            'estimated_sales' => 0,
+        ];
+
+        foreach ($history as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            if (
+                ($row['closure_status'] ?? null)
+                    !== 'closed'
+            ) {
+                continue;
+            }
+
+            if (
+                ($row['daily_quantity_valid'] ?? false)
+                    !== true
+            ) {
+                continue;
+            }
+
+            $sales = $row['estimated_sales_quantity']
+                ?? null;
+
+            if (
+                $sales === null
+                || !is_numeric($sales)
+                || (float) $sales < 0
+            ) {
+                continue;
+            }
+
+            $dateValue = $row['date'] ?? null;
+
+            if (!$dateValue) {
+                continue;
+            }
+
+            $date = Carbon::parse($dateValue);
+            $dateString = $date->toDateString();
+            $monthKey = $date->format('Y-m');
+            $weekday = $date->dayOfWeek;
+
+            $production = max(
+                0,
+                (int) ($row['production'] ?? 0)
+            );
+
+            $carryoverIn = max(
+                0,
+                (int) ($row['carryover_in'] ?? 0)
+            );
+
+            $loss = max(
+                0,
+                (int) ($row['operational_loss'] ?? 0)
+            );
+
+            $waste = max(
+                0,
+                (int) ($row['operational_waste'] ?? 0)
+            );
+
+            $carryoverOut = max(
+                0,
+                (int) ($row['carryover_out'] ?? 0)
+            );
+
+            $estimatedSales = (int) $sales;
+
+            $available = $production + $carryoverIn;
+
+            $remaining = $waste + $carryoverOut;
+
+            $specialDay = (bool) (
+                $row['special_day'] ?? false
+            );
+
+            /*
+            * 날짜별 그래프 자료
+            */
+            $daily[] = [
+                'date' => $dateString,
+                'weekday' => $weekday,
+                'production' => $production,
+                'carryover_in' => $carryoverIn,
+                'loss' => $loss,
+                'waste' => $waste,
+                'carryover_out' => $carryoverOut,
+                'available' => $available,
+                'remaining' => $remaining,
+                'estimated_sales' => $estimatedSales,
+                'special_day' => $specialDay,
+            ];
+
+            /*
+            * 월별 그래프 자료
+            */
+            if (!isset($monthly[$monthKey])) {
+                $monthly[$monthKey] = [
+                    'month' => $monthKey,
+                    'record_count' => 0,
+                    'production' => 0,
+                    'carryover_in' => 0,
+                    'loss' => 0,
+                    'waste' => 0,
+                    'carryover_out' => 0,
+                    'estimated_sales' => 0,
+                ];
+            }
+
+            $monthly[$monthKey]['record_count']++;
+            $monthly[$monthKey]['production'] +=
+                $production;
+            $monthly[$monthKey]['carryover_in'] +=
+                $carryoverIn;
+            $monthly[$monthKey]['loss'] += $loss;
+            $monthly[$monthKey]['waste'] += $waste;
+            $monthly[$monthKey]['carryover_out'] +=
+                $carryoverOut;
+            $monthly[$monthKey]['estimated_sales'] +=
+                $estimatedSales;
+
+            /*
+            * 요일별 비교는 특별한 행사일을 제외합니다.
+            */
+            if (!$specialDay) {
+                $weekdays[$weekday]['record_count']++;
+                $weekdays[$weekday]['sales_total'] +=
+                    $estimatedSales;
+            }
+
+            /*
+            * 전체 집계
+            */
+            $totals['valid_days']++;
+            $totals['production'] += $production;
+            $totals['carryover_in'] += $carryoverIn;
+            $totals['loss'] += $loss;
+            $totals['waste'] += $waste;
+            $totals['carryover_out'] += $carryoverOut;
+            $totals['estimated_sales'] +=
+                $estimatedSales;
+        }
+
+        /*
+        * 날짜순 정렬
+        */
+        usort(
+            $daily,
+            fn (array $a, array $b) =>
+                strcmp($a['date'], $b['date'])
+        );
+
+        ksort($monthly);
+
+        /*
+        * 월별 판매 추정 평균
+        *
+        * 해당 월의 실제 유효 기록일 수로 나눕니다.
+        * 달력상 전체 날짜 수로 나누지 않습니다.
+        */
+        $monthlyResults = [];
+
+        foreach ($monthly as $item) {
+            $count = $item['record_count'];
+
+            $item['average_sales'] = $count > 0
+                ? round(
+                    $item['estimated_sales'] / $count,
+                    2
+                )
+                : null;
+
+            $monthlyResults[] = $item;
+        }
+
+        /*
+        * 요일별 평균
+        */
+        $weekdayResults = [];
+
+        foreach ($weekdays as $item) {
+            $count = $item['record_count'];
+
+            $item['average_sales'] = $count > 0
+                ? round(
+                    $item['sales_total'] / $count,
+                    2
+                )
+                : null;
+
+            $weekdayResults[] = $item;
+        }
+
+        /*
+        * 전체 잔여 재고율
+        *
+        * 폐기와 이월을 동등한 잔여 수량으로 취급합니다.
+        */
+        $availableTotal =
+            $totals['production']
+            + $totals['carryover_in'];
+
+        $remainingTotal =
+            $totals['waste']
+            + $totals['carryover_out'];
+
+        $totals['remaining_rate'] =
+            $availableTotal > 0
+                ? round(
+                    $remainingTotal / $availableTotal,
+                    4
+                )
+                : null;
+
+        return [
+            'period' => [
+                'from' => $targetDate->copy()
+                    ->subYear()
+                    ->toDateString(),
+                'to' => $targetDate->copy()
+                    ->subDay()
+                    ->toDateString(),
+            ],
+
+            'monthly' => $monthlyResults,
+            'weekdays' => $weekdayResults,
+
+            // 최근 최대 28개 기록의 상세 흐름
+            'recent_daily' => array_slice(
+                $daily,
+                -28
+            ),
+
+            'totals' => $totals,
+        ];
+    }
+
+    /**
+     * 생산 분석 데이터를 조회합니다.
+     *
+     * product_id가 있으면 해당 제품의 12개월 추천 데이터를 조회합니다.
+     * product_id가 없으면 기존 전체 분석 방식을 유지합니다.
+     */
     public function analysis(Request $request): JsonResponse
     {
         $user = $this->user($request);
-        $this->accessService->requirePermission($user, 'production.view');
+
+        $this->accessService->requirePermission(
+            $user,
+            'production.view'
+        );
+
         $data = $request->validate([
-            'store_id' => ['required', 'integer', 'exists:stores,id'],
-            'date' => ['required', 'date_format:Y-m-d'],
-            'days' => ['nullable', 'integer', Rule::in([7, 30, 90, 365])],
+            'store_id' => [
+                'required',
+                'integer',
+                'exists:stores,id',
+            ],
+            'date' => [
+                'required',
+                'date_format:Y-m-d',
+            ],
+            'days' => [
+                'nullable',
+                'integer',
+                Rule::in([7, 30, 90, 365]),
+            ],
+            'product_id' => [
+                'nullable',
+                'integer',
+                'exists:products,id',
+            ],
         ]);
+
         $storeId = (int) $data['store_id'];
-        $this->assertStoreReadable($user, $storeId);
+
+        $this->assertStoreReadable(
+            $user,
+            $storeId
+        );
 
         $target = Carbon::parse($data['date']);
         $days = (int) ($data['days'] ?? 30);
-        $from = $target->copy()->subDays($days - 1)->toDateString();
+
+        $from = $target->copy()
+            ->subDays($days - 1)
+            ->toDateString();
+
         $to = $target->toDateString();
+
+        /*
+        * 실제 생산 입력창의 제품별 추천
+        *
+        * 제품 하나만 조회하므로 전체 매장 분석을 실행하지 않습니다.
+        */
+        if (isset($data['product_id'])) {
+            $productId = (int) $data['product_id'];
+
+            $product = Product::query()
+                ->where('store_id', $storeId)
+                ->where('is_active', true)
+                ->whereKey($productId)
+                ->firstOrFail(['id', 'name']);
+
+            $history = $this->recommendationHistoryForProduct(
+                $storeId,
+                $productId,
+                $target
+            );
+
+            $targetEvents = collect(
+                $this->eventsForDate(
+                    $storeId,
+                    $data['date']
+                )
+            );
+
+            $productEvents = $targetEvents
+                ->filter(
+                    fn (array $event) =>
+                        empty($event['products'])
+                        || collect($event['products'])
+                            ->contains('id', $productId)
+                )
+                ->values()
+                ->all();
+
+            $targetWeatherCode = StoreDailyWeather::query()
+                ->where('store_id', $storeId)
+                ->whereDate('work_date', $data['date'])
+                ->value('condition');
+
+            if (!empty($targetWeatherCode)) {
+                $productEvents[] = [
+                    'weather_code' => (string) $targetWeatherCode,
+                ];
+            }
+
+            /*
+            * 추천 대상 날짜에 이미 확보된 이월 재고 조회
+            *
+            * 기존 ProductStockMovement의 carryover_in 기록을
+            * 그대로 사용합니다.
+            */
+            $targetCarryoverIn = (int) ProductStockMovement::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereDate('work_date', $data['date'])
+                ->where('movement_type', 'carryover_in')
+                ->sum('quantity');
+
+            $productEvents[] = [
+                'condition_type' => 'target_inventory',
+                'carryover_in' => $targetCarryoverIn,
+            ];
+
+            $recommendation = $this->recommendationService
+                ->recommend(
+                    $history,
+                    $target,
+                    $productEvents
+                );
+
+            /*
+            * 추천 상세 다이얼로그용 분석 자료
+            *
+            * 이미 조회한 과거 기록을 재사용하므로
+            * 추가 데이터베이스 조회가 발생하지 않습니다.
+            */
+            $analysisDetails = $this->recommendationAnalysisDetails(
+                $history,
+                $target
+            );
+
+            $recent = $history->take(-5);
+            $recentCount = $recent->count();
+            $flags = [];
+
+            if ($recent->where('waste', '>', 0)->count() >= 3) {
+                $flags[] =
+                    "최근 생산 기록 {$recentCount}건 중 3건 이상에서 폐기가 발생했습니다. 생산량을 확인해 주세요.";
+            }
+
+            if (
+                $recent->where('carryover_out', '>', 0)->count() >= 3
+            ) {
+                $flags[] =
+                    "최근 생산 기록 {$recentCount}건 중 3건 이상에서 재고를 다음 날로 이월했습니다.";
+            }
+
+            if (!empty($recommendation['warning'])) {
+                $flags[] = $recommendation['warning'];
+            }
+
+            return response()->json([
+                'items' => [
+                    [
+                        'product_id' => $product->id,
+                        'product_name' => $product->name,
+                        'recommendation' => $recommendation,
+                        'analysis_details' => $analysisDetails,
+                        'flags' => $flags,
+                    ],
+                ],
+                'daily_flow' => [],
+                'product_totals' => [],
+                'range' => [
+                    'from' => $from,
+                    'to' => $to,
+                    'days' => $days,
+                ],
+            ]);
+        }
+
+        /*
+        * 기존 전체 분석 요청
+        *
+        * 개발 검토 중인 분석 탭의 기존 동작을 유지합니다.
+        */
         $products = Product::query()
             ->where('store_id', $storeId)
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
 
-        // 기간 흐름과 제품 합계는 집계 쿼리로 계산합니다. 1년 조회에서도 일일 화면을 365번
-        // 조립하지 않아 분석 탭의 응답 지연과 불필요한 DB 조회를 크게 줄입니다.
         $dateMetrics = [
-            'production' => $this->sumByDate(ProductionBatch::query(), $storeId, 'work_date', $from, $to),
-            'carryover' => $this->sumByDate(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $from, $to),
-            'loss' => $this->sumByDate(ProductionLoss::query(), $storeId, 'work_date', $from, $to),
-            'waste' => $this->sumByDate(ProductionWaste::query(), $storeId, 'work_date', $from, $to),
-            'attributed_waste' => $this->sumByDate(ProductionWaste::query(), $storeId, 'attribution_date', $from, $to),
+            'production' => $this->sumByDate(
+                ProductionBatch::query(),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'carryover' => $this->sumByDate(
+                ProductStockMovement::query()
+                    ->where('movement_type', 'carryover_in'),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'loss' => $this->sumByDate(
+                ProductionLoss::query(),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'waste' => $this->sumByDate(
+                ProductionWaste::query(),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'attributed_waste' => $this->sumByDate(
+                ProductionWaste::query(),
+                $storeId,
+                'attribution_date',
+                $from,
+                $to
+            ),
         ];
+
         $dailyFlow = collect();
-        for ($cursor = Carbon::parse($from); $cursor->lte($target); $cursor->addDay()) {
+
+        for (
+            $cursor = Carbon::parse($from);
+            $cursor->lte($target);
+            $cursor->addDay()
+        ) {
             $key = $cursor->toDateString();
-            $production = (int) ($dateMetrics['production'][$key] ?? 0);
-            $waste = (int) ($dateMetrics['waste'][$key] ?? 0);
-            $attributedWaste = (int) ($dateMetrics['attributed_waste'][$key] ?? 0);
+
+            $production = (int) (
+                $dateMetrics['production'][$key] ?? 0
+            );
+
+            $waste = (int) (
+                $dateMetrics['waste'][$key] ?? 0
+            );
+
+            $attributedWaste = (int) (
+                $dateMetrics['attributed_waste'][$key] ?? 0
+            );
+
             $dailyFlow->push([
                 'date' => $key,
                 'production' => $production,
-                'carryover' => (int) ($dateMetrics['carryover'][$key] ?? 0),
-                'loss' => (int) ($dateMetrics['loss'][$key] ?? 0),
+                'carryover' => (int) (
+                    $dateMetrics['carryover'][$key] ?? 0
+                ),
+                'loss' => (int) (
+                    $dateMetrics['loss'][$key] ?? 0
+                ),
                 'waste' => $waste,
-                'waste_rate' => $this->wasteRate($attributedWaste, $production),
+                'waste_rate' => $this->wasteRate(
+                    $attributedWaste,
+                    $production
+                ),
             ]);
         }
 
         $productMetrics = [
-            'production' => $this->sumByProduct(ProductionBatch::query(), $storeId, 'work_date', $from, $to),
-            'carryover' => $this->sumByProduct(ProductStockMovement::query()->where('movement_type', 'carryover_in'), $storeId, 'work_date', $from, $to),
-            'loss' => $this->sumByProduct(ProductionLoss::query(), $storeId, 'work_date', $from, $to),
-            'waste' => $this->sumByProduct(ProductionWaste::query(), $storeId, 'work_date', $from, $to),
+            'production' => $this->sumByProduct(
+                ProductionBatch::query(),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'carryover' => $this->sumByProduct(
+                ProductStockMovement::query()
+                    ->where('movement_type', 'carryover_in'),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'loss' => $this->sumByProduct(
+                ProductionLoss::query(),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
+            'waste' => $this->sumByProduct(
+                ProductionWaste::query(),
+                $storeId,
+                'work_date',
+                $from,
+                $to
+            ),
         ];
-        $productTotals = $products->map(fn (Product $product) => [
-            'product_id' => $product->id,
-            'product_name' => $product->name,
-            'production' => (int) ($productMetrics['production'][$product->id] ?? 0),
-            'carryover' => (int) ($productMetrics['carryover'][$product->id] ?? 0),
-            'loss' => (int) ($productMetrics['loss'][$product->id] ?? 0),
-            'waste' => (int) ($productMetrics['waste'][$product->id] ?? 0),
-        ])->values();
 
-        // 추천 계산용 최근 생산·판매·날씨 기록
+        $productTotals = $products
+            ->map(
+                fn (Product $product) => [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'production' => (int) (
+                        $productMetrics['production'][$product->id] ?? 0
+                    ),
+                    'carryover' => (int) (
+                        $productMetrics['carryover'][$product->id] ?? 0
+                    ),
+                    'loss' => (int) (
+                        $productMetrics['loss'][$product->id] ?? 0
+                    ),
+                    'waste' => (int) (
+                        $productMetrics['waste'][$product->id] ?? 0
+                    ),
+                ]
+            )
+            ->values();
+
+        /*
+        * 기존 전체 분석은 최근 28일 기록을 사용합니다.
+        */
         $historyByProduct = collect();
-        
-        // 화면 조회 기간과 관계없이 추천은 최근 28일을 분석합니다.
         $recommendationDays = 28;
 
         $historyFrom = $target->copy()
@@ -2923,7 +3624,6 @@ class ProductionManagementController extends Controller
             ->subDay()
             ->toDateString();
 
-        // 판매량·날씨 정보를 기간 단위로 조회
         $recommendationContext = $this->recommendationData(
             $storeId,
             $historyFrom,
@@ -2940,7 +3640,6 @@ class ProductionManagementController extends Controller
                 $date
             );
 
-            // 해당 날짜의 행사 정보
             $events = $this->eventsForDate(
                 $storeId,
                 $date
@@ -2951,7 +3650,6 @@ class ProductionManagementController extends Controller
                     continue;
                 }
 
-                // 생산 기록에 판매·날씨·행사 정보를 결합
                 $historyByProduct->push(
                     $this->recommendationHistoryRow(
                         $row,
@@ -2965,9 +3663,14 @@ class ProductionManagementController extends Controller
 
         $historyByProduct = $historyByProduct
             ->groupBy('product_id');
-        $targetEvents = collect($this->eventsForDate($storeId, $data['date']));
-        
-        // 추천 대상 날짜의 날씨를 분석 탭에도 반영합니다.
+
+        $targetEvents = collect(
+            $this->eventsForDate(
+                $storeId,
+                $data['date']
+            )
+        );
+
         $targetWeatherCode = StoreDailyWeather::query()
             ->where('store_id', $storeId)
             ->whereDate('work_date', $data['date'])
@@ -2979,45 +3682,425 @@ class ProductionManagementController extends Controller
             ]);
         }
 
-        $items = $products->map(function (Product $product) use ($historyByProduct, $targetEvents, $target) {
-            $history = collect($historyByProduct->get($product->id, []))->values();
-            $productEvents = $targetEvents
-                ->filter(fn (array $event) => empty($event['products']) || collect($event['products'])->contains('id', $product->id))
-                ->values()->all();
-            $recommendation = $this->recommendationService->recommend($history, $target, $productEvents);
-            $recent = $history->take(-5);
-            $recentCount = $recent->count();
+        $items = $products->map(
+            function (Product $product) use (
+                $historyByProduct,
+                $targetEvents,
+                $target
+            ) {
+                $history = collect(
+                    $historyByProduct->get($product->id, [])
+                )->values();
 
-            $flags = [];
+                $productEvents = $targetEvents
+                    ->filter(
+                        fn (array $event) =>
+                            empty($event['products'])
+                            || collect($event['products'])
+                                ->contains('id', $product->id)
+                    )
+                    ->values()
+                    ->all();
 
-            if ($recent->where('waste', '>', 0)->count() >= 3) {
-                $flags[] =
-                    "최근 생산 기록 {$recentCount}건 중 3건 이상에서 폐기가 발생했습니다. 생산량을 확인해 주세요.";
+                $recommendation = $this->recommendationService
+                    ->recommend(
+                        $history,
+                        $target,
+                        $productEvents
+                    );
+
+                $recent = $history->take(-5);
+                $recentCount = $recent->count();
+                $flags = [];
+
+                if (
+                    $recent->where('waste', '>', 0)->count() >= 3
+                ) {
+                    $flags[] =
+                        "최근 생산 기록 {$recentCount}건 중 3건 이상에서 폐기가 발생했습니다. 생산량을 확인해 주세요.";
+                }
+
+                if (
+                    $recent->where(
+                        'carryover_out',
+                        '>',
+                        0
+                    )->count() >= 3
+                ) {
+                    $flags[] =
+                        "최근 생산 기록 {$recentCount}건 중 3건 이상에서 재고를 다음 날로 이월했습니다.";
+                }
+
+                if (!empty($recommendation['warning'])) {
+                    $flags[] = $recommendation['warning'];
+                }
+
+                return [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'recommendation' => $recommendation,
+                    'flags' => $flags,
+                ];
             }
-
-            if ($recent->where('carryover_out', '>', 0)->count() >= 3) {
-                $flags[] =
-                    "최근 생산 기록 {$recentCount}건 중 3건 이상에서 재고를 다음 날로 이월했습니다.";
-            }
-
-            if ($recommendation['warning']) {
-                $flags[] = $recommendation['warning'];
-            }
-
-            return [
-                'product_id' => $product->id,
-                'product_name' => $product->name,
-                'recommendation' => $recommendation,
-                'flags' => $flags,
-            ];
-        })->values();
+        )->values();
 
         return response()->json([
             'items' => $items,
             'daily_flow' => $dailyFlow,
             'product_totals' => $productTotals,
-            'range' => ['from' => $from, 'to' => $to, 'days' => $days],
+            'range' => [
+                'from' => $from,
+                'to' => $to,
+                'days' => $days,
+            ],
         ]);
+    }
+
+    /**
+     * 제품별 최근 최대 12개월 추천 데이터를 조회합니다.
+     *
+     * 생산·이월·로스·폐기 기록을 기간별로 집계합니다.
+     * 날짜별 dailyService->build() 반복 호출은 사용하지 않습니다.
+     *
+     * 기존 최초 생산일 귀속 폐기율 정책을 유지합니다.
+     *
+     * 신규 생산이 없는 날이라도 정상 마감되었고
+     * 이월 재고의 실제 처리 기록이 있다면 분석에 포함합니다.
+     */
+    private function recommendationHistoryForProduct(
+        int $storeId,
+        int $productId,
+        Carbon $targetDate
+    ): Collection {
+        $target = $targetDate->copy()->startOfDay();
+
+        $from = $target->copy()
+            ->subYear()
+            ->toDateString();
+
+        $to = $target->copy()
+            ->subDay()
+            ->toDateString();
+
+        /*
+        * 날짜별 수량 집계
+        *
+        * 원본 기록 전체를 가져오지 않고
+        * DB에서 날짜별 합계를 계산합니다.
+        */
+        $sumByDate = static function (
+            $query,
+            string $dateColumn
+        ) use (
+            $storeId,
+            $productId,
+            $from,
+            $to
+        ): array {
+            return $query
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereBetween(
+                    $dateColumn,
+                    [$from, $to]
+                )
+                ->selectRaw(
+                    "{$dateColumn} AS history_date, " .
+                    "SUM(quantity) AS total_quantity"
+                )
+                ->groupBy($dateColumn)
+                ->pluck(
+                    'total_quantity',
+                    'history_date'
+                )
+                ->map(
+                    fn ($quantity) => (int) $quantity
+                )
+                ->all();
+        };
+
+        // 신규 생산량
+        $production = $sumByDate(
+            ProductionBatch::query(),
+            'work_date'
+        );
+
+        // 최초 생산일 귀속 로스
+        $attributedLoss = $sumByDate(
+            ProductionLoss::query(),
+            'attribution_date'
+        );
+
+        // 실제 업무일 로스
+        $operationalLoss = $sumByDate(
+            ProductionLoss::query(),
+            'work_date'
+        );
+
+        // 최초 생산일 귀속 폐기
+        $attributedWaste = $sumByDate(
+            ProductionWaste::query(),
+            'attribution_date'
+        );
+
+        // 실제 업무일 폐기
+        $operationalWaste = $sumByDate(
+            ProductionWaste::query(),
+            'work_date'
+        );
+
+        // 이월 입고
+        $carryoverIn = $sumByDate(
+            ProductStockMovement::query()
+                ->where(
+                    'movement_type',
+                    'carryover_in'
+                ),
+            'work_date'
+        );
+
+        // 이월 출고
+        $carryoverOut = $sumByDate(
+            ProductStockMovement::query()
+                ->where(
+                    'movement_type',
+                    'carryover_out'
+                ),
+            'work_date'
+        );
+
+        /*
+        * 생산 확인 기록
+        *
+        * 신규 생산 0개 확인도 유효한 기록입니다.
+        */
+        $confirmations = ProductionConfirmation::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereBetween(
+                'work_date',
+                [$from, $to]
+            )
+            ->where(
+                'production_confirmed',
+                true
+            )
+            ->pluck(
+                'production_confirmed',
+                'work_date'
+            )
+            ->all();
+
+        /*
+        * 날짜별 생산관리 마감 상태
+        */
+        $closures = ProductionDailyClosure::query()
+            ->where('store_id', $storeId)
+            ->whereBetween(
+                'work_date',
+                [$from, $to]
+            )
+            ->pluck(
+                'status',
+                'work_date'
+            )
+            ->all();
+
+        // 기존 날씨·행사·판매 관련 조회 구조 유지
+        $context = $this->recommendationData(
+            $storeId,
+            $from,
+            $to
+        );
+
+        /*
+        * 행사 정보는 기간별 1회 조회합니다.
+        */
+        $events = StoreCalendarEvent::query()
+            ->with('products:id,name')
+            ->where('store_id', $storeId)
+            ->whereDate(
+                'start_date',
+                '<=',
+                $to
+            )
+            ->whereDate(
+                'end_date',
+                '>=',
+                $from
+            )
+            ->orderBy('start_date')
+            ->get()
+            ->toArray();
+
+        /*
+        * 유효한 데이터가 존재하는 날짜 수집
+        *
+        * 생산 기록뿐 아니라 이월 재고를 실제로
+        * 처리한 날짜도 후보에 포함합니다.
+        *
+        * 단순 날짜 누락을 생산 0개로 만들지 않습니다.
+        */
+        $dates = collect([
+            ...array_keys($production),
+            ...array_keys($confirmations),
+            ...array_keys($carryoverIn),
+            ...array_keys($carryoverOut),
+            ...array_keys($operationalLoss),
+            ...array_keys($operationalWaste),
+        ])
+            ->unique()
+            ->sort()
+            ->values();
+
+        $history = collect();
+
+        foreach ($dates as $date) {
+            $date = (string) $date;
+
+            $productionQuantity =
+                (int) ($production[$date] ?? 0);
+
+            $hasProductionRecord =
+                array_key_exists(
+                    $date,
+                    $production
+                );
+
+            $productionConfirmed =
+                (bool) ($confirmations[$date] ?? false);
+
+            $closureStatus =
+                $closures[$date] ?? 'in_progress';
+
+            /*
+            * 해당 날짜에 실제 이월 재고 처리가 있었는지 확인합니다.
+            */
+            $hasInventoryActivity =
+                array_key_exists($date, $carryoverIn) ||
+                array_key_exists($date, $carryoverOut) ||
+                array_key_exists($date, $operationalLoss) ||
+                array_key_exists($date, $operationalWaste);
+
+            /*
+            * 기존 생산 기록 및 생산 0개 확인 정책 유지
+            */
+            $hasProductionHistory =
+                $hasProductionRecord ||
+                $productionConfirmed;
+
+            /*
+            * 신규 생산 기록이 없는 날짜라도
+            * 이월 재고 처리 기록이 있고 마감됐다면
+            * 유효한 분석 대상으로 포함합니다.
+            */
+            $hasClosedInventoryHistory =
+                !$hasProductionHistory &&
+                $hasInventoryActivity &&
+                $closureStatus === 'closed';
+
+            if (
+                !$hasProductionHistory &&
+                !$hasClosedInventoryHistory
+            ) {
+                continue;
+            }
+
+            /*
+            * 해당 날짜의 행사만 메모리에서 선택합니다.
+            * 날짜별 추가 DB 조회는 발생하지 않습니다.
+            */
+            $dayEvents = array_values(
+                array_filter(
+                    $events,
+                    static function (
+                        array $event
+                    ) use ($date): bool {
+                        $start = substr(
+                            (string) (
+                                $event['start_date'] ?? ''
+                            ),
+                            0,
+                            10
+                        );
+
+                        $end = substr(
+                            (string) (
+                                $event['end_date'] ?? ''
+                            ),
+                            0,
+                            10
+                        );
+
+                        return
+                            $start <= $date &&
+                            $end >= $date;
+                    }
+                )
+            );
+
+            /*
+            * 기존 추천 엔진과 호환되는 데이터 구조
+            *
+            * 원 생산일 귀속 로스·폐기와
+            * 실제 처리일 로스·폐기는 구분합니다.
+            */
+            $row = [
+                'id' => $productId,
+
+                'production' =>
+                    $productionQuantity,
+
+                'carryover_in' =>
+                    (int) ($carryoverIn[$date] ?? 0),
+
+                'carryover_out' =>
+                    (int) ($carryoverOut[$date] ?? 0),
+
+                'loss' =>
+                    (int) ($operationalLoss[$date] ?? 0),
+
+                'operational_loss' =>
+                    (int) ($operationalLoss[$date] ?? 0),
+
+                'attributed_loss' =>
+                    (int) ($attributedLoss[$date] ?? 0),
+
+                'waste' =>
+                    (int) ($operationalWaste[$date] ?? 0),
+
+                'operational_waste' =>
+                    (int) ($operationalWaste[$date] ?? 0),
+
+                'attributed_waste' =>
+                    (int) ($attributedWaste[$date] ?? 0),
+
+                'production_confirmed' =>
+                    $hasProductionHistory,
+
+                'closure_status' =>
+                    $closureStatus,
+            ];
+
+            /*
+            * 기존 추천 데이터 결합 함수를 재사용합니다.
+            *
+            * 자동 추정 판매량:
+            *
+            * 생산 + 이월 입고
+            * - 로스 - 폐기 - 이월 출고
+            */
+            $history->push(
+                $this->recommendationHistoryRow(
+                    $row,
+                    $date,
+                    $dayEvents,
+                    $context
+                )
+            );
+        }
+
+        return $history->values();
     }
 
     /**
