@@ -420,7 +420,10 @@
       :product="productDetail"
       :can-manage="false"
       :can-manage-recipe="false"
-      :loading="productDetailLoading"
+      :detail-state="productDetailState"
+      :detail-error="productDetailError"
+      @retry="retryProductDetail"
+      @closed="clearClosedProductDetail"
     >
       <template #extra-detail>
         <!-- 선택 날짜의 제품별 생산 및 재고 현황 -->
@@ -976,6 +979,10 @@
       :metrics="closeMetrics"
       :rows="closeRows"
       :work-date="workDate"
+      :view-state="closeViewState"
+      :view-error="closeViewError"
+      @retry="retryClosePreview"
+      @closed="clearClosedPreview"
       @production="openProduction"
       @flow="openFlow"
       @product="openProduct"
@@ -1098,6 +1105,7 @@
 import {
     computed,
     ref,
+    watch,
 } from 'vue';
 
 import ConfirmDialog from '../common/ConfirmDialog.vue';
@@ -1195,6 +1203,13 @@ const productDetail = ref(null);
 const productDetailOpen = ref(false);
 const productDetailLoading = ref(false);
 
+const productDetailState = ref('idle');
+const productDetailError = ref('');
+const productDetailTarget = ref(null);
+
+let productDetailRequestId = 0;
+let productDetailPending = null;
+
 // 제품 상세 다이얼로그에 표시할 최근 7일 생산 기록입니다.
 // quantity가 null이면 미확인, 0이면 생산 없음으로 확인된 날짜입니다.
 const productProductionHistory = ref([]);
@@ -1247,6 +1262,13 @@ const bulkZeroConfirmOpen = ref(false);
 const bulkZeroType = ref('loss');
 const bulkZeroLoading = ref(false);
 const closePreview = ref(null);
+
+const closeViewState = ref('idle');
+const closeViewError = ref('');
+
+let closePreviewRequestId = 0;
+let closePreviewPending = null;
+
 const closing = ref(false);
 const closePage = ref(1);
 const closePageSize = 10;
@@ -2131,41 +2153,158 @@ function openFlow(row, type) {
 }
 
 // 기존 제품 상세정보와 선택 날짜 기준 최근 7일 생산 기록을 함께 조회합니다.
-async function openProduct(row) {
-  selectedProduct.value = row;
-  productDetailLoading.value = true;
+async function loadProductDetail() {
+  const target = productDetailTarget.value;
 
-  // 이전 제품의 생산 기록이 다음 제품에 표시되지 않도록 초기화합니다.
+  if (!target) return;
+
+  const { productId, workDate } = target;
+  const requestKey = `${productId}:${workDate}`;
+
+  // 동일한 조회 요청이 진행 중이면 재사용
+  if (productDetailPending?.key === requestKey) {
+    return productDetailPending.promise;
+  }
+
+  const requestId = ++productDetailRequestId;
+
+  productDetailState.value = 'loading';
+  productDetailError.value = '';
+  productDetail.value = null;
   productProductionHistory.value = [];
 
-  try {
-    const { data } = await window.axios.get(
-      `/tillwhite/api/production-management/products/${row.id}`,
-      {
-        params: {
-          work_date: props.workDate,
-        },
+  const request = (async () => {
+    try {
+      const { data } = await window.axios.get(
+        `/tillwhite/api/production-management/products/${productId}`,
+        {
+          params: {
+            work_date: workDate,
+          },
+        }
+      );
+
+      // 닫힌 화면 및 이전 요청의 응답 무시
+      if (
+        requestId !== productDetailRequestId ||
+        !productDetailOpen.value ||
+        Number(productDetailTarget.value?.productId) !== Number(productId) ||
+        productDetailTarget.value?.workDate !== workDate
+      ) {
+        return;
       }
-    );
 
-    // 기존 제품 정보 및 레시피 데이터 처리 방식은 유지합니다.
-    productDetail.value = data.product || data;
+      const nextProduct = data?.product || data;
 
-    // 서버에서 반환한 최근 7일 생산 기록만 별도로 보관합니다.
-    productProductionHistory.value = Array.isArray(data.production_history)
-      ? data.production_history
-      : [];
+      if (!nextProduct || !nextProduct.id) {
+        productDetailState.value = 'empty';
+        return;
+      }
 
-    productDetailOpen.value = true;
-  } catch (error) {
-    emit(
-      'error',
-      getProductionErrorMessage(error, '제품 정보를 불러오지 못했습니다.')
-    );
-  } finally {
-    productDetailLoading.value = false;
-  }
+      productDetail.value = nextProduct;
+
+      productProductionHistory.value =
+        Array.isArray(data?.production_history)
+          ? data.production_history
+          : [];
+
+      productDetailState.value = 'ready';
+    } catch (error) {
+      if (
+        requestId !== productDetailRequestId ||
+        !productDetailOpen.value
+      ) {
+        return;
+      }
+
+      productDetail.value = null;
+      productProductionHistory.value = [];
+
+      productDetailError.value = getProductionErrorMessage(
+        error,
+        '제품 정보를 불러오지 못했습니다.'
+      );
+
+      productDetailState.value = 'error';
+    } finally {
+      if (productDetailPending?.requestId === requestId) {
+        productDetailPending = null;
+      }
+    }
+  })();
+
+  productDetailPending = {
+    key: requestKey,
+    requestId,
+    promise: request,
+  };
+
+  return request;
 }
+
+// 제품 상세를 먼저 열고 최신 데이터를 조회합니다.
+async function openProduct(row) {
+  if (!row?.id) return;
+
+  const workDate = props.workDate;
+  const requestKey = `${row.id}:${workDate}`;
+
+  if (
+    productDetailOpen.value &&
+    productDetailState.value === 'loading' &&
+    productDetailPending?.key === requestKey
+  ) {
+    return productDetailPending.promise;
+  }
+
+  selectedProduct.value = row;
+
+  productDetailTarget.value = {
+    productId: row.id,
+    workDate,
+  };
+
+  productDetail.value = null;
+  productProductionHistory.value = [];
+  productDetailError.value = '';
+  productDetailState.value = 'loading';
+
+  productDetailOpen.value = true;
+
+  return loadProductDetail();
+}
+
+// 조회 실패 시 현재 제품으로 재시도합니다.
+async function retryProductDetail() {
+  if (
+    !productDetailOpen.value ||
+    !productDetailTarget.value ||
+    productDetailState.value === 'loading'
+  ) {
+    return;
+  }
+
+  return loadProductDetail();
+}
+
+// 다이얼로그가 완전히 닫힌 뒤 초기화합니다.
+function clearClosedProductDetail() {
+  if (productDetailOpen.value) return;
+
+  productDetail.value = null;
+  productProductionHistory.value = [];
+  productDetailTarget.value = null;
+  productDetailError.value = '';
+  productDetailState.value = 'idle';
+}
+
+// 닫히는 즉시 이전 API 응답만 무효화합니다.
+watch(productDetailOpen, (isOpen) => {
+  if (isOpen) return;
+
+  productDetailRequestId += 1;
+  productDetailPending = null;
+});
 
 // 선택한 요약 지표의 제품별 상세 내역을 표시합니다.
 function openMetric(key) {
@@ -2406,71 +2545,156 @@ async function openCorrection() {
   }
 }
 
-// 마감창을 유지하면서 최신 마감 점검 데이터를 다시 불러옵니다.
-async function refreshClosePreview() {
-  try {
-    const { data } = await window.axios.get(
-      '/tillwhite/api/production-management/close-preview',
-      {
-        params: {
-          store_id: props.storeId,
-          work_date: props.workDate
-        }
-      }
-    );
+// 마감 미리보기 조회를 한 곳에서 관리합니다.
+async function loadClosePreview(resetPage = false) {
+  const storeId = props.storeId;
+  const workDate = props.workDate;
+  const requestKey = `${storeId}:${workDate}`;
 
-    // 최신 마감 점검 데이터를 반영합니다.
-    closePreview.value = data;
-
-    // 활성 제품 수를 기준으로 마지막 페이지를 계산합니다.
-    const activeCount = (data?.daily?.rows || []).filter(
-      (row) => row.is_active
-    ).length;
-
-    const lastPage = Math.max(
-      1,
-      Math.ceil(activeCount / closePageSize)
-    );
-
-    // 현재 페이지가 마지막 페이지를 초과한 경우에만 보정합니다.
-    if (closePage.value > lastPage) {
-      closePage.value = lastPage;
-    }
-  } catch (error) {
-    emit(
-      'error',
-      getProductionErrorMessage(error, '마감 내용을 다시 확인하지 못했습니다.')
-    );
+  // 동일 조건으로 진행 중인 요청은 재사용
+  if (
+    closePreviewPending?.key === requestKey
+  ) {
+    return closePreviewPending.promise;
   }
+
+  const requestId = ++closePreviewRequestId;
+
+  closeViewState.value = 'loading';
+  closeViewError.value = '';
+  closePreview.value = null;
+
+  if (resetPage) {
+    closePage.value = 1;
+  }
+
+  const request = (async () => {
+    try {
+      const { data } = await window.axios.get(
+        '/tillwhite/api/production-management/close-preview',
+        {
+          params: {
+            store_id: storeId,
+            work_date: workDate,
+          },
+        }
+      );
+
+      // 이전 요청이나 닫힌 다이얼로그의 응답 무시
+      if (
+        requestId !== closePreviewRequestId ||
+        !closeOpen.value ||
+        props.storeId !== storeId ||
+        props.workDate !== workDate
+      ) {
+        return;
+      }
+
+      if (!data?.daily) {
+        closeViewState.value = 'empty';
+        return;
+      }
+
+      closePreview.value = data;
+
+      const activeCount = (data.daily.rows || []).filter(
+        row => row.is_active
+      ).length;
+
+      const lastPage = Math.max(
+        1,
+        Math.ceil(activeCount / closePageSize)
+      );
+
+      if (closePage.value > lastPage) {
+        closePage.value = lastPage;
+      }
+
+      closeViewState.value = 'ready';
+    } catch (error) {
+      if (
+        requestId !== closePreviewRequestId ||
+        !closeOpen.value
+      ) {
+        return;
+      }
+
+      closePreview.value = null;
+      closeViewError.value = getProductionErrorMessage(
+        error,
+        '마감 내용을 확인하지 못했습니다.'
+      );
+      closeViewState.value = 'error';
+    } finally {
+      if (
+        closePreviewPending?.requestId === requestId
+      ) {
+        closePreviewPending = null;
+      }
+    }
+  })();
+
+  closePreviewPending = {
+    key: requestKey,
+    requestId,
+    promise: request,
+  };
+
+  return request;
 }
 
-// 서버에서 마감 가능 여부를 조회한 뒤 마감 최종확인창을 엽니다.
+// 마감창을 유지하면서 최신 점검 데이터를 다시 조회합니다.
+async function refreshClosePreview() {
+  if (!closeOpen.value) return;
+
+  return loadClosePreview(false);
+}
+
+// 마감 최종확인창을 먼저 열고 데이터를 조회합니다.
 async function previewClose() {
-  if (!ensureMutable()) {
+  if (!ensureMutable()) return;
+
+  if (closeOpen.value) return;
+
+  closePreview.value = null;
+  closeViewError.value = '';
+  closeViewState.value = 'loading';
+  closePage.value = 1;
+
+  closeOpen.value = true;
+
+  return loadClosePreview(true);
+}
+
+// 조회 실패 또는 데이터 없음 상태에서 재시도합니다.
+async function retryClosePreview() {
+  if (
+    !closeOpen.value ||
+    closeViewState.value === 'loading'
+  ) {
     return;
   }
 
-  try {
-    const { data } = await window.axios.get(
-      '/tillwhite/api/production-management/close-preview',
-      {
-        params: {
-          store_id: props.storeId,
-          work_date: props.workDate
-        }
-      }
-    );
-
-    closePreview.value = data;
-    closePage.value = 1;
-    closeOpen.value = true;
-  } catch (error) {
-    emit(
-      'error',
-      getProductionErrorMessage(error, '마감 내용을 확인하지 못했습니다.')
-    );
-  }
+  return loadClosePreview(false);
 }
+
+// 다이얼로그가 완전히 닫힌 뒤 상태를 초기화합니다.
+function clearClosedPreview() {
+  if (closeOpen.value) return;
+
+  closePreview.value = null;
+  closeViewError.value = '';
+  closeViewState.value = 'idle';
+  closePage.value = 1;
+}
+
+// 닫는 즉시 이전 조회 응답만 무효화합니다.
+watch(closeOpen, (isOpen) => {
+  if (isOpen) return;
+
+  closePreviewRequestId += 1;
+  closePreviewPending = null;
+});
 
 // 서버에 하루 업무 마감을 요청하고 성공한 경우에만 완료 상태를 반영합니다.
 async function closeDay() {

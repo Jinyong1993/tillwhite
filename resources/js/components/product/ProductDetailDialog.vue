@@ -12,8 +12,72 @@
     @update:model-value="handleDialogChange"
     @after-leave="emit('closed')"
   >
+    <!-- 조회 중 -->
     <div
-      v-if="product"
+      v-if="detailState === 'loading'"
+      class="d-flex flex-column align-center justify-center ga-3 py-8"
+      role="status"
+      aria-live="polite"
+    >
+      <v-progress-circular
+        indeterminate
+        color="primary"
+        size="32"
+      />
+
+      <span class="app-supporting-text">
+        불러오는 중...
+      </span>
+    </div>
+
+    <!-- 조회 실패 -->
+    <div
+      v-else-if="detailState === 'error'"
+      class="d-flex flex-column ga-3 py-4"
+    >
+      <v-alert
+        type="error"
+        variant="tonal"
+        density="compact"
+        class="app-supporting-alert"
+      >
+        {{ detailError }}
+      </v-alert>
+
+      <v-btn
+        variant="tonal"
+        color="primary"
+        min-height="44"
+        block
+        @click="emit('retry')"
+      >
+        다시 시도
+      </v-btn>
+    </div>
+
+    <!-- 데이터 없음 -->
+    <div
+      v-else-if="detailState === 'empty'"
+      class="d-flex flex-column align-center ga-3 py-6"
+    >
+      <span class="app-supporting-text">
+        조회된 제품 정보가 없습니다.
+      </span>
+
+      <v-btn
+        variant="tonal"
+        color="primary"
+        min-height="44"
+        block
+        @click="emit('retry')"
+      >
+        다시 시도
+      </v-btn>
+    </div>
+
+    <!-- 조회 완료 -->
+    <div
+      v-else-if="detailState === 'ready' && product"
       class="product-detail-content d-flex flex-column ga-3"
     >
       <!-- 제품명과 상태 -->
@@ -386,9 +450,18 @@
 
     <!-- 공통 푸터 -->
     <template #footer>
+      <!-- 조회 중 / 조회 실패 / 데이터 없음 -->
+      <AppDialogFooter
+        v-if="detailState !== 'ready'"
+        :button-count="1"
+        :show-confirm="false"
+        cancel-text="닫기"
+        @cancel="close"
+      />
+
       <!-- 삭제된 제품: 닫기 + 복구 -->
       <AppDialogFooter
-        v-if="product?.deleted_at && canManage"
+        v-else-if="product?.deleted_at && canManage"
         :button-count="2"
         :disabled="loading"
         cancel-text="닫기"
@@ -572,6 +645,16 @@ const props = defineProps({
     default: null,
   },
 
+  detailState: {
+    type: String,
+    default: 'ready',
+  },
+
+  detailError: {
+    type: String,
+    default: '',
+  },
+
   canManage: {
     type: Boolean,
     default: false,
@@ -601,6 +684,7 @@ const emit = defineEmits([
   'delete',
   'restore',
   'recipe',
+  'retry',
   'recipe-part',
   'recipe-copy',
   'recipe-delete',

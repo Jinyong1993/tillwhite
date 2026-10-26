@@ -4,6 +4,7 @@
     max-width="760"
     persistent
     @update:model-value="emit('update:modelValue', $event)"
+    @after-leave="emit('closed')"
   >
     <v-card
       rounded="lg"
@@ -31,258 +32,324 @@
         </div>
       </v-card-title>
 
-      <!-- 고정 요약 및 진행률 -->
-      <div class="close-dialog__fixed">
-        <p class="close-dialog__help">
-          생산·이월·로스·폐기 기록을 확인한 후 마감해 주세요.
-        </p>
+      <!-- 조회 중 -->
+      <div
+        v-if="viewState === 'loading'"
+        class="close-dialog__scroll d-flex flex-column align-center justify-center ga-3"
+        role="status"
+        aria-live="polite"
+      >
+        <v-progress-circular
+          indeterminate
+          color="primary"
+          size="32"
+        />
 
-        <!-- 전체 생산 제품 6개 지표 -->
-        <div class="close-dialog__summary">
-          <div
-            v-for="metric in totalMetrics"
-            :key="metric.key"
-            class="close-dialog__summary-item d-flex flex-column align-center justify-center"
+        <span class="app-supporting-text">
+          불러오는 중...
+        </span>
+      </div>
+
+      <!-- 조회 실패 -->
+      <div
+        v-else-if="viewState === 'error'"
+        class="close-dialog__scroll d-flex flex-column justify-center ga-3"
+      >
+        <v-alert
+          type="error"
+          variant="tonal"
+          density="compact"
+          class="app-supporting-alert"
+        >
+          {{ viewError }}
+        </v-alert>
+
+        <v-btn
+          variant="tonal"
+          color="primary"
+          min-height="44"
+          block
+          @click="emit('retry')"
+        >
+          다시 시도
+        </v-btn>
+      </div>
+
+      <!-- 데이터 없음 -->
+      <div
+        v-else-if="viewState === 'empty'"
+        class="close-dialog__scroll d-flex flex-column align-center justify-center ga-3"
+      >
+        <span class="app-supporting-text">
+          조회된 마감 정보가 없습니다.
+        </span>
+
+        <v-btn
+          variant="tonal"
+          color="primary"
+          min-height="44"
+          block
+          @click="emit('retry')"
+        >
+          다시 시도
+        </v-btn>
+      </div>
+
+      <!-- 조회 완료 -->
+      <template v-else-if="viewState === 'ready'">
+        <!-- 고정 요약 및 진행률 -->
+        <div class="close-dialog__fixed">
+          <p class="close-dialog__help">
+            생산·이월·로스·폐기 기록을 확인한 후 마감해 주세요.
+          </p>
+
+          <!-- 전체 생산 제품 6개 지표 -->
+          <div class="close-dialog__summary">
+            <div
+              v-for="metric in totalMetrics"
+              :key="metric.key"
+              class="close-dialog__summary-item d-flex flex-column align-center justify-center"
+            >
+              <span>{{ metric.title }}</span>
+              <strong>{{ metric.value }}</strong>
+            </div>
+          </div>
+
+          <!-- 마감 불가 사유 -->
+          <v-alert
+            v-if="preview && !preview.can_close"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            class="close-dialog__notice"
           >
-            <span>{{ metric.title }}</span>
-            <strong>{{ metric.value }}</strong>
+            <template v-if="preview.stock_issues?.length">
+              <strong>재고 흐름을 확인해 주세요.</strong>
+
+              <div
+                v-for="(issue, index) in preview.stock_issues"
+                :key="index"
+                class="close-dialog__issue"
+              >
+                {{ issue }}
+              </div>
+            </template>
+
+            <template v-else>
+              미확인 제품 {{ incompleteCount }}개가 있습니다.
+              아래에서 확인해 주세요.
+            </template>
+          </v-alert>
+
+          <!-- 제품별 확인 진행률 -->
+          <div
+            class="close-dialog__section-heading d-flex align-center justify-space-between flex-wrap ga-2"
+          >
+            <strong>제품별 확인</strong>
+
+            <span>
+              {{ completeCount }} / {{ rows.length }}개 완료
+            </span>
+          </div>
+
+          <div
+            class="close-dialog__progress"
+            role="progressbar"
+            :aria-valuenow="completeCount"
+            :aria-valuemin="0"
+            :aria-valuemax="rows.length"
+            aria-label="제품별 확인 진행률"
+          >
+            <span
+              :style="{ width: `${progressPercent}%` }"
+            />
           </div>
         </div>
 
-        <!-- 마감 불가 사유 -->
-        <v-alert
-          v-if="preview && !preview.can_close"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="close-dialog__notice"
-        >
-          <template v-if="preview.stock_issues?.length">
-            <strong>재고 흐름을 확인해 주세요.</strong>
-
-            <div
-              v-for="(issue, index) in preview.stock_issues"
-              :key="index"
-              class="close-dialog__issue"
-            >
-              {{ issue }}
-            </div>
-          </template>
-
-          <template v-else>
-            미확인 제품 {{ incompleteCount }}개가 있습니다.
-            아래에서 확인해 주세요.
-          </template>
-        </v-alert>
-
-        <!-- 제품별 확인 진행률 -->
+        <!-- 제품 목록만 스크롤 -->
         <div
-          class="close-dialog__section-heading d-flex align-center justify-space-between flex-wrap ga-2"
+          class="close-dialog__scroll"
+          tabindex="0"
+          aria-label="제품별 마감 확인 목록"
         >
-          <strong>제품별 확인</strong>
-
-          <span>
-            {{ completeCount }} / {{ rows.length }}개 완료
-          </span>
-        </div>
-
-        <div
-          class="close-dialog__progress"
-          role="progressbar"
-          :aria-valuenow="completeCount"
-          :aria-valuemin="0"
-          :aria-valuemax="rows.length"
-          aria-label="제품별 확인 진행률"
-        >
-          <span
-            :style="{ width: `${progressPercent}%` }"
-          />
-        </div>
-      </div>
-
-      <!-- 제품 목록만 스크롤 -->
-      <div
-        class="close-dialog__scroll"
-        tabindex="0"
-        aria-label="제품별 마감 확인 목록"
-      >
-        <div
-          class="close-dialog__records d-flex flex-column ga-2"
-        >
-          <article
-            v-for="row in pagedRows"
-            :key="row.id"
-            class="close-dialog__record d-flex flex-column ga-3"
+          <div
+            class="close-dialog__records d-flex flex-column ga-2"
           >
-            <!-- 제품명 및 확인 상태 -->
-            <div
-              class="close-dialog__record-heading d-flex align-start justify-space-between ga-2"
+            <article
+              v-for="row in pagedRows"
+              :key="row.id"
+              class="close-dialog__record d-flex flex-column ga-3"
             >
+              <!-- 제품명 및 확인 상태 -->
               <div
-                class="close-dialog__record-info d-flex flex-column ga-1"
+                class="close-dialog__record-heading d-flex align-start justify-space-between ga-2"
               >
-                <strong>{{ row.name }}</strong>
+                <div
+                  class="close-dialog__record-info d-flex flex-column ga-1"
+                >
+                  <strong>{{ row.name }}</strong>
 
-                <span v-if="!row.complete">
-                  {{ missingText(row) }}
+                  <span v-if="!row.complete">
+                    {{ missingText(row) }}
+                  </span>
+                </div>
+
+                <span
+                  class="close-dialog__status"
+                  :class="{
+                    'close-dialog__status--pending': !row.complete
+                  }"
+                >
+                  {{ row.complete ? "확인 완료" : "확인 필요" }}
                 </span>
               </div>
 
-              <span
-                class="close-dialog__status"
-                :class="{
-                  'close-dialog__status--pending': !row.complete
-                }"
-              >
-                {{ row.complete ? "확인 완료" : "확인 필요" }}
-              </span>
-            </div>
+              <!-- 제품별 6개 지표 -->
+              <div class="close-dialog__quantities">
+                <!-- 생산 -->
+                <button
+                  type="button"
+                  @click="emit('production', row)"
+                >
+                  <span>생산</span>
 
-            <!-- 제품별 6개 지표 -->
-            <div class="close-dialog__quantities">
-              <!-- 생산 -->
+                  <strong>
+                    {{
+                      row.production_confirmed
+                        ? Number(row.production || 0)
+                        : "-"
+                    }}
+                  </strong>
+                </button>
+
+                <!-- 이월 재고 -->
+                <button
+                  type="button"
+                  @click="emit('flow', row, 'carryover')"
+                >
+                  <span>이월 재고</span>
+
+                  <strong>
+                    {{
+                      row.disposition_confirmed ||
+                      Number(row.carryover_in || 0) > 0
+                        ? Number(row.carryover_in || 0)
+                        : "-"
+                    }}
+                  </strong>
+                </button>
+
+                <!-- 이월 예정 -->
+                <button
+                  type="button"
+                  @click="emit('flow', row, 'carryover')"
+                >
+                  <span>이월 예정</span>
+
+                  <strong>
+                    {{
+                      row.disposition_confirmed ||
+                      Number(row.carryover_out || 0) > 0
+                        ? Number(row.carryover_out || 0)
+                        : "-"
+                    }}
+                  </strong>
+                </button>
+
+                <!-- 로스 -->
+                <button
+                  type="button"
+                  @click="emit('flow', row, 'loss')"
+                >
+                  <span>로스</span>
+
+                  <strong>
+                    {{
+                      row.loss_confirmed
+                        ? Number(row.operational_loss || 0)
+                        : "-"
+                    }}
+                  </strong>
+                </button>
+
+                <!-- 폐기 -->
+                <button
+                  type="button"
+                  @click="emit('flow', row, 'waste')"
+                >
+                  <span>폐기</span>
+
+                  <strong>
+                    {{
+                      row.waste_confirmed ||
+                      Number(row.attributed_waste || 0) > 0
+                        ? Number(row.attributed_waste || 0)
+                        : "-"
+                    }}
+                  </strong>
+                </button>
+
+                <!-- 폐기율: 서버 계산값 유지 -->
+                <button
+                  type="button"
+                  @click="emit('product', row)"
+                >
+                  <span>폐기율</span>
+
+                  <strong>
+                    {{
+                      row.waste_rate == null
+                        ? "-"
+                        : `${row.waste_rate}%`
+                    }}
+                  </strong>
+                </button>
+              </div>
+
+              <!-- 제품 상세 이동 -->
               <button
                 type="button"
-                @click="emit('production', row)"
-              >
-                <span>생산</span>
-
-                <strong>
-                  {{
-                    row.production_confirmed
-                      ? Number(row.production || 0)
-                      : "-"
-                  }}
-                </strong>
-              </button>
-
-              <!-- 이월 재고 -->
-              <button
-                type="button"
-                @click="emit('flow', row, 'carryover')"
-              >
-                <span>이월 재고</span>
-
-                <strong>
-                  {{
-                    row.disposition_confirmed ||
-                    Number(row.carryover_in || 0) > 0
-                      ? Number(row.carryover_in || 0)
-                      : "-"
-                  }}
-                </strong>
-              </button>
-
-              <!-- 이월 예정 -->
-              <button
-                type="button"
-                @click="emit('flow', row, 'carryover')"
-              >
-                <span>이월 예정</span>
-
-                <strong>
-                  {{
-                    row.disposition_confirmed ||
-                    Number(row.carryover_out || 0) > 0
-                      ? Number(row.carryover_out || 0)
-                      : "-"
-                  }}
-                </strong>
-              </button>
-
-              <!-- 로스 -->
-              <button
-                type="button"
-                @click="emit('flow', row, 'loss')"
-              >
-                <span>로스</span>
-
-                <strong>
-                  {{
-                    row.loss_confirmed
-                      ? Number(row.operational_loss || 0)
-                      : "-"
-                  }}
-                </strong>
-              </button>
-
-              <!-- 폐기 -->
-              <button
-                type="button"
-                @click="emit('flow', row, 'waste')"
-              >
-                <span>폐기</span>
-
-                <strong>
-                  {{
-                    row.waste_confirmed ||
-                    Number(row.attributed_waste || 0) > 0
-                      ? Number(row.attributed_waste || 0)
-                      : "-"
-                  }}
-                </strong>
-              </button>
-
-              <!-- 폐기율: 서버 계산값 유지 -->
-              <button
-                type="button"
+                class="close-dialog__product-link d-inline-flex align-center"
                 @click="emit('product', row)"
               >
-                <span>폐기율</span>
+                제품 정보
 
-                <strong>
-                  {{
-                    row.waste_rate == null
-                      ? "-"
-                      : `${row.waste_rate}%`
-                  }}
-                </strong>
+                <v-icon
+                  icon="mdi-chevron-right"
+                  size="15"
+                />
               </button>
-            </div>
+            </article>
 
-            <!-- 제품 상세 이동 -->
-            <button
-              type="button"
-              class="close-dialog__product-link d-inline-flex align-center"
-              @click="emit('product', row)"
+            <!-- 제품 없음 -->
+            <div
+              v-if="!rows.length"
+              class="close-dialog__empty"
             >
-              제품 정보
+              확인할 제품이 없습니다.
+            </div>
+          </div>
 
-              <v-icon
-                icon="mdi-chevron-right"
-                size="15"
-              />
-            </button>
-          </article>
+          <!-- 페이지당 10개, 현재 스크롤 위치 유지 -->
+          <v-pagination
+            v-if="pageCount > 1"
+            :model-value="page"
+            :length="pageCount"
+            :total-visible="5"
+            density="compact"
+            class="close-dialog__pagination"
+            @update:model-value="changePage"
+          />
 
-          <!-- 제품 없음 -->
+          <!-- 마감 가능 안내 -->
           <div
-            v-if="!rows.length"
-            class="close-dialog__empty"
+            v-if="preview?.can_close"
+            class="close-dialog__ready d-flex align-center ga-2"
           >
-            확인할 제품이 없습니다.
+            <span>모든 제품 확인이 완료되었습니다.</span>
           </div>
         </div>
-
-        <!-- 페이지당 10개, 현재 스크롤 위치 유지 -->
-        <v-pagination
-          v-if="pageCount > 1"
-          :model-value="page"
-          :length="pageCount"
-          :total-visible="5"
-          density="compact"
-          class="close-dialog__pagination"
-          @update:model-value="changePage"
-        />
-
-        <!-- 마감 가능 안내 -->
-        <div
-          v-if="preview?.can_close"
-          class="close-dialog__ready d-flex align-center ga-2"
-        >
-          <span>모든 제품 확인이 완료되었습니다.</span>
-        </div>
-      </div>
+      </template>
 
       <!--
         하단 버튼:
@@ -307,7 +374,10 @@
           :color="preview?.can_close ? 'primary' : undefined"
           block
           class="close-dialog__footer-button flex-grow-1"
-          :disabled="!preview?.can_close"
+          :disabled="
+            viewState !== 'ready' ||
+            !preview?.can_close
+          "
           @click="emit('confirm')"
         >
           마감
@@ -345,6 +415,16 @@ const props = defineProps({
     type: String,
     default: "",
   },
+
+  viewState: {
+    type: String,
+    default: 'ready',
+  },
+
+  viewError: {
+    type: String,
+    default: '',
+  },
 });
 
 const emit = defineEmits([
@@ -354,6 +434,8 @@ const emit = defineEmits([
   "flow",
   "product",
   "confirm",
+  'retry',
+  'closed',
 ]);
 
 // 페이지당 제품 수

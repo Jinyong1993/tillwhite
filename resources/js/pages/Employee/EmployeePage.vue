@@ -149,6 +149,9 @@
         v-if="!editDialog"
         v-model="detailDialog"
         :employee="selectedEmployee"
+        :detail-state="employeeDetailState"
+        :detail-error="employeeDetailError"
+        @retry="retryEmployeeDetail"
         :can-manage="
           can('employee.manage')
           && selectedEmployee?.role?.code !== 'super_admin'
@@ -330,6 +333,15 @@ const detailDialog = ref(false);
  * 다시 조회한 최신 직원 정보를 저장합니다.
  */
 const selectedEmployee = ref(null);
+
+// 직원 상세 조회 상태
+const employeeDetailState = ref('idle');
+const employeeDetailError = ref('');
+const employeeDetailId = ref(null);
+
+// 이전 요청 응답 차단 및 중복 조회 방지
+let employeeDetailRequestId = 0;
+let employeeDetailPending = null;
 
 // 직원 정보 수정 / 비밀번호 초기화 / 삭제 / 복구 UI 상태입니다.
 const editDialog = ref(false);
@@ -1299,35 +1311,111 @@ async function deleteDraft(
  * 직원 조회 권한(employee.view)과
  * 직원 조회 가능 범위는 Laravel 서버에서 최종 확인합니다.
  */
-async function openDetailDialog(employee, setError) {
-  selectedEmployee.value = null;
-  detailDialog.value = false;
-
-  try {
-    const response = await window.axios.get(
-      `/tillwhite/api/employees/${employee.id}`,
-    );
-
-    const latestEmployee = response.data.employee;
-
-    selectedEmployee.value = latestEmployee;
-
-    /**
-     * Laravel 서버의 직원 상세조회가 성공한 경우에만
-     * 직원 상세보기 컴포넌트를 엽니다.
-     */
-    detailDialog.value = true;
-  } catch (error) {
-    selectedEmployee.value = null;
-    detailDialog.value = false;
-
-    setError(
-      errorMessage(
-        error,
-        '직원 정보를 열람할 권한이 없습니다.',
-      ),
-    );
+async function loadEmployeeDetail(employeeId) {
+  // 동일 직원 조회가 진행 중이면 기존 요청 재사용
+  if (
+    employeeDetailPending &&
+    Number(employeeDetailPending.employeeId) === Number(employeeId)
+  ) {
+    return employeeDetailPending.promise;
   }
+
+  const requestId = ++employeeDetailRequestId;
+
+  employeeDetailState.value = 'loading';
+  employeeDetailError.value = '';
+  selectedEmployee.value = null;
+
+  const request = (async () => {
+    try {
+      const response = await window.axios.get(
+        `/tillwhite/api/employees/${employeeId}`
+      );
+
+      // 닫힌 화면 또는 이전 직원의 응답 무시
+      if (
+        requestId !== employeeDetailRequestId ||
+        !detailDialog.value ||
+        Number(employeeDetailId.value) !== Number(employeeId)
+      ) {
+        return;
+      }
+
+      const employee = response.data?.employee;
+
+      if (!employee) {
+        employeeDetailState.value = 'empty';
+        return;
+      }
+
+      selectedEmployee.value = employee;
+      employeeDetailState.value = 'ready';
+    } catch (error) {
+      if (
+        requestId !== employeeDetailRequestId ||
+        !detailDialog.value
+      ) {
+        return;
+      }
+
+      selectedEmployee.value = null;
+      employeeDetailError.value = errorMessage(
+        error,
+        '직원 정보를 불러오지 못했습니다.'
+      );
+      employeeDetailState.value = 'error';
+    } finally {
+      if (
+        employeeDetailPending?.requestId === requestId
+      ) {
+        employeeDetailPending = null;
+      }
+    }
+  })();
+
+  employeeDetailPending = {
+    employeeId,
+    requestId,
+    promise: request,
+  };
+
+  return request;
+}
+
+async function openDetailDialog(employee, setError) {
+  if (!employee?.id) return;
+
+  const employeeId = employee.id;
+
+  if (
+    detailDialog.value &&
+    employeeDetailState.value === 'loading' &&
+    Number(employeeDetailId.value) === Number(employeeId)
+  ) {
+    return employeeDetailPending?.promise;
+  }
+
+  employeeDetailId.value = employeeId;
+  selectedEmployee.value = null;
+  employeeDetailError.value = '';
+  employeeDetailState.value = 'loading';
+
+  // 다이얼로그 먼저 열기
+  detailDialog.value = true;
+
+  return loadEmployeeDetail(employeeId);
+}
+
+async function retryEmployeeDetail() {
+  if (
+    !detailDialog.value ||
+    !employeeDetailId.value ||
+    employeeDetailState.value === 'loading'
+  ) {
+    return;
+  }
+
+  return loadEmployeeDetail(employeeDetailId.value);
 }
 
 /**
@@ -1335,15 +1423,27 @@ async function openDetailDialog(employee, setError) {
  * 선택된 직원 정보를 초기화합니다.
  */
 function closeDetailDialog() {
-  detailDialog.value = false;
+  // 상세창이 다시 열렸다면 이전 닫힘 이벤트 무시
+  if (detailDialog.value) return;
 
-  // 수정창에서 사용 중인 직원 정보는 초기화하지 않습니다.
+  // 수정·비밀번호 초기화 작업 중에는 직원 정보 유지
   if (editDialog.value || passwordResetDialog.value) {
     return;
   }
 
   selectedEmployee.value = null;
+  employeeDetailId.value = null;
+  employeeDetailError.value = '';
+  employeeDetailState.value = 'idle';
 }
+
+// 다이얼로그가 닫히는 즉시 이전 조회 응답만 무효화
+watch(detailDialog, (isOpen) => {
+  if (isOpen) return;
+
+  employeeDetailRequestId += 1;
+  employeeDetailPending = null;
+});
 
 // 직원 상세에서 수정 다이얼로그를 엽니다.
 async function openEditDialog() {

@@ -1,4 +1,3 @@
-
 <template>
   <!-- 직원 상세보기 -->
   <AppDialogLayout
@@ -12,8 +11,72 @@
     @update:model-value="handleDialogChange"
     @after-leave="handleAfterLeave"
   >
+    <!-- 조회 중 -->
     <div
-      v-if="displayedEmployee"
+      v-if="detailState === 'loading'"
+      class="d-flex flex-column align-center justify-center ga-3 py-8"
+      role="status"
+      aria-live="polite"
+    >
+      <v-progress-circular
+        indeterminate
+        color="primary"
+        size="32"
+      />
+
+      <span class="app-supporting-text">
+        불러오는 중...
+      </span>
+    </div>
+
+    <!-- 조회 실패 -->
+    <div
+      v-else-if="detailState === 'error'"
+      class="d-flex flex-column ga-3 py-4"
+    >
+      <v-alert
+        type="error"
+        variant="tonal"
+        density="compact"
+        class="app-supporting-alert"
+      >
+        {{ detailError }}
+      </v-alert>
+
+      <v-btn
+        variant="tonal"
+        color="primary"
+        min-height="44"
+        block
+        @click="emit('retry')"
+      >
+        다시 시도
+      </v-btn>
+    </div>
+
+    <!-- 데이터 없음 -->
+    <div
+      v-else-if="detailState === 'empty'"
+      class="d-flex flex-column align-center ga-3 py-6"
+    >
+      <span class="app-supporting-text">
+        조회된 직원 정보가 없습니다.
+      </span>
+
+      <v-btn
+        variant="tonal"
+        color="primary"
+        min-height="44"
+        block
+        @click="emit('retry')"
+      >
+        다시 시도
+      </v-btn>
+    </div>
+
+    <!-- 조회 완료 -->
+    <div
+      v-else-if="detailState === 'ready' && displayedEmployee"
       class="d-flex flex-column ga-3 w-100"
     >
       <!-- 직원 요약 -->
@@ -317,9 +380,18 @@
 
     <!-- 공통 푸터 -->
     <template #footer>
+      <!-- 조회 중 / 조회 실패 / 데이터 없음 -->
+      <AppDialogFooter
+        v-if="detailState !== 'ready'"
+        :button-count="1"
+        :show-confirm="false"
+        cancel-text="닫기"
+        @cancel="close"
+      />
+
       <!-- 삭제된 직원 -->
       <AppDialogFooter
-        v-if="displayedEmployee?.deleted_at"
+        v-else-if="displayedEmployee?.deleted_at"
         :button-count="2"
         cancel-text="닫기"
         confirm-text="복구"
@@ -483,6 +555,16 @@ const props = defineProps({
     default: null,
   },
 
+  detailState: {
+    type: String,
+    default: 'ready',
+  },
+
+  detailError: {
+    type: String,
+    default: '',
+  },
+
   canManage: {
     type: Boolean,
     default: false,
@@ -497,6 +579,7 @@ const emit = defineEmits([
   'password-reset',
   'status-change',
   'close',
+  'retry',
   'permission-denied',
 ]);
 
@@ -518,8 +601,9 @@ watch(
     () => props.employee,
   ],
   ([isOpen, employee]) => {
-    if (isOpen && employee) {
-      displayedEmployee.value = employee;
+    if (isOpen) {
+      // 새 직원 조회 시작 시 이전 직원 정보 제거
+      displayedEmployee.value = employee ?? null;
     }
   },
   {

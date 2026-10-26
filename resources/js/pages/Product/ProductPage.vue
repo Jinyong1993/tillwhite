@@ -144,9 +144,12 @@
       <ProductDetailDialog
         v-model="detailDialog"
         :product="selectedProduct"
+        :detail-state="detailState"
+        :detail-error="detailError"
         :can-manage="canManageSelectedProduct(can)"
         :can-manage-recipe="canManageSelectedRecipe(can)"
         :loading="Boolean(productActionLoading)"
+        @retry="retryDetailDialog"
         @close="closeDetailDialog"
         @closed="clearClosedDetailState"
         @edit="openEditDialog"
@@ -340,6 +343,15 @@ const visibleStores = ref([]);
 const currentUser = ref(null);
 const selectedProduct = ref(null);
 const productDraft = ref(null);
+
+// 제품 상세 조회 상태
+const detailState = ref('idle');
+const detailError = ref('');
+const detailProductId = ref(null);
+
+// 이전 요청 응답 무효화 및 중복 조회 방지
+let detailRequestId = 0;
+let detailPendingRequest = null;
 
 const registerDialog = ref(false);
 const detailDialog = ref(false);
@@ -911,32 +923,125 @@ async function saveProduct(payload, setError, setSuccess) {
   }
 }
 
-async function openDetailDialog(product, user, setError) {
-  currentUser.value = user;
-  selectedProduct.value = null;
-  detailDialog.value = false;
-
-  try {
-    const response = await window.axios.get(
-      `/tillwhite/api/products/${product.id}`
-    );
-
-    selectedProduct.value = response.data.product;
-    detailDialog.value = true;
-
-    await rememberRecentViewed(product.id);
-  } catch (error) {
-    setError(
-      errorMessage(
-        error,
-        '제품 정보를 열람할 수 없습니다.'
-      )
-    );
+async function loadDetailProduct(productId, setError) {
+  if (
+    detailPendingRequest &&
+    Number(detailPendingRequest.productId) === Number(productId)
+  ) {
+    return detailPendingRequest.promise;
   }
+
+  const requestId = ++detailRequestId;
+
+  detailState.value = 'loading';
+  detailError.value = '';
+  selectedProduct.value = null;
+
+  const request = (async () => {
+    try {
+      const response = await window.axios.get(
+        `/tillwhite/api/products/${productId}`
+      );
+
+      // 이전 요청 또는 닫힌 다이얼로그의 응답 무시
+      if (
+        requestId !== detailRequestId ||
+        !detailDialog.value ||
+        Number(detailProductId.value) !== Number(productId)
+      ) {
+        return;
+      }
+
+      const product = response.data?.product;
+
+      if (!product) {
+        detailState.value = 'empty';
+        return;
+      }
+
+      selectedProduct.value = product;
+      detailState.value = 'ready';
+
+      await rememberRecentViewed(productId);
+    } catch (error) {
+      if (
+        requestId !== detailRequestId ||
+        !detailDialog.value
+      ) {
+        return;
+      }
+
+      selectedProduct.value = null;
+      detailError.value = errorMessage(
+        error,
+        '제품 정보를 불러오지 못했습니다.'
+      );
+      detailState.value = 'error';
+    } finally {
+      if (
+        detailPendingRequest?.requestId === requestId
+      ) {
+        detailPendingRequest = null;
+      }
+    }
+  })();
+
+  detailPendingRequest = {
+    productId,
+    requestId,
+    promise: request,
+  };
+
+  return request;
+}
+
+async function openDetailDialog(product, user, setError) {
+  if (!product?.id) return;
+
+  const productId = product.id;
+
+  // 동일 제품 조회가 이미 진행 중이면 중복 요청 방지
+  if (
+    detailDialog.value &&
+    detailState.value === 'loading' &&
+    Number(detailProductId.value) === Number(productId)
+  ) {
+    return detailPendingRequest?.promise;
+  }
+
+  currentUser.value = user;
+  detailProductId.value = productId;
+  selectedProduct.value = null;
+  detailError.value = '';
+  detailState.value = 'loading';
+
+  // 데이터를 기다리지 않고 다이얼로그 먼저 열기
+  detailDialog.value = true;
+
+  return loadDetailProduct(productId, setError);
+}
+
+async function retryDetailDialog() {
+  if (!detailDialog.value || !detailProductId.value) {
+    return;
+  }
+
+  if (detailState.value === 'loading') {
+    return;
+  }
+
+  return loadDetailProduct(
+    detailProductId.value,
+    appShellRef.value?.setError
+  );
 }
 
 function closeDetailDialog() {
   if (productActionLoading.value) return;
+
+  // 닫힌 후 이전 API 응답이 반영되지 않도록 차단
+  detailRequestId += 1;
+  detailPendingRequest = null;
 
   detailDialog.value = false;
   editDialog.value = false;
@@ -945,6 +1050,9 @@ function closeDetailDialog() {
 function clearClosedDetailState() {
   if (!detailDialog.value) {
     selectedProduct.value = null;
+    detailProductId.value = null;
+    detailError.value = '';
+    detailState.value = 'idle';
   }
 }
 
@@ -1556,6 +1664,10 @@ function clearConfirmDialog(force = false) {
 }
 
 function closeDetailDialogAfterAction() {
+  // 닫힌 후 이전 API 응답이 반영되지 않도록 차단
+  detailRequestId += 1;
+  detailPendingRequest = null;
+
   detailDialog.value = false;
   editDialog.value = false;
 }
