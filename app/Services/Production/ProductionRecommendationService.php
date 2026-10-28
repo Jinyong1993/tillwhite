@@ -2371,10 +2371,690 @@ class ProductionRecommendationService
     }
 
     /**
+     * 특정 생산량 후보를 과거 판매 기록과 비교합니다.
+     *
+     * 목표:
+     * 1. 판매할 수량이 부족할 위험 확인
+     * 2. 지나치게 많이 생산할 위험 확인
+     *
+     * 실제로 해당 수량을 생산한 결과가 아니므로
+     * 판매 기회 손실과 예상 잔여 수량을
+     * 확정된 결과로 취급하지 않습니다.
+     *
+     * 실제 생산 기록이나 추천량을 변경하지 않습니다.
+     */
+    public function evaluateProductionCandidate(
+        array $record,
+        int $candidateQuantity
+    ): array {
+        $candidateQuantity = max(
+            0,
+            $candidateQuantity
+        );
+
+        $actualProduction = max(
+            0,
+            (int) (
+                $record['actual_production'] ?? 0
+            )
+        );
+
+        $carryoverIn = max(
+            0,
+            (int) (
+                $record['carryover_in'] ?? 0
+            )
+        );
+
+        $estimatedSales = max(
+            0,
+            (int) (
+                $record['estimated_sales'] ?? 0
+            )
+        );
+
+        $actualWaste = max(
+            0,
+            (int) (
+                $record['waste'] ?? 0
+            )
+        );
+
+        $actualCarryoverOut = max(
+            0,
+            (int) (
+                $record['carryover_out'] ?? 0
+            )
+        );
+
+        $actualLoss = max(
+            0,
+            (int) (
+                $record['loss'] ?? 0
+            )
+        );
+
+        /*
+        * 실제 확보한 수량
+        */
+        $actualAvailable =
+            $actualProduction + $carryoverIn;
+
+        /*
+        * 추천 후보대로 생산했다고 가정했을 때
+        * 확보할 수 있는 수량
+        */
+        $candidateAvailable =
+            $candidateQuantity + $carryoverIn;
+
+        /*
+        * 실제 관측된 판매량보다
+        * 후보 수량이 부족한 경우
+        *
+        * 해당 날짜에 실제로 팔린 수량을
+        * 충족하지 못하는 후보입니다.
+        */
+        $confirmedShortfall = max(
+            0,
+            $estimatedSales - $candidateAvailable
+        );
+
+        /*
+        * 후보 수량이 관측 판매량보다
+        * 많은 경우의 차이
+        *
+        * 실제 폐기 예상량이 아니라
+        * 남을 가능성이 있는 수량입니다.
+        */
+        $possibleExcess = max(
+            0,
+            $candidateAvailable - $estimatedSales
+        );
+
+        /*
+        * 당일 폐기와 다음 날 이월이
+        * 모두 없었던 날짜는
+        * 추가 판매 기회가 있었을 수 있습니다.
+        *
+        * 단, 실제 품절을 확정하지 않습니다.
+        */
+        $possibleSellout =
+            $actualAvailable > 0
+            && $estimatedSales > 0
+            && $actualWaste === 0
+            && $actualCarryoverOut === 0;
+
+        /*
+        * 실제 기록에서 남은 수량 비율
+        *
+        * 기존 생산량 대비 폐기·이월 비율을
+        * 판단하는 데 사용하는 참고 자료입니다.
+        */
+        $actualRemaining =
+            $actualWaste + $actualCarryoverOut;
+
+        $actualRemainingRate =
+            $actualAvailable > 0
+                ? round(
+                    $actualRemaining / $actualAvailable,
+                    4
+                )
+                : null;
+
+        /*
+        * 판매 기회 부족 위험
+        *
+        * 실제 기록된 판매량조차 충족하지 못하면
+        * 명확한 부족 신호로 분류합니다.
+        */
+        $shortageRisk =
+            $confirmedShortfall > 0
+                ? 'confirmed_shortfall'
+                : (
+                    $possibleSellout
+                        ? 'unknown_demand'
+                        : 'not_detected'
+                );
+
+        return [
+            'date' => $record['date'] ?? null,
+
+            'candidate_quantity' =>
+                $candidateQuantity,
+
+            'candidate_available' =>
+                $candidateAvailable,
+
+            'actual_production' =>
+                $actualProduction,
+
+            'actual_available' =>
+                $actualAvailable,
+
+            'estimated_sales' =>
+                $estimatedSales,
+
+            /*
+            * 실제 마감 결과
+            */
+            'actual_waste' =>
+                $actualWaste,
+
+            'actual_carryover_out' =>
+                $actualCarryoverOut,
+
+            'actual_loss' =>
+                $actualLoss,
+
+            'actual_remaining_rate' =>
+                $actualRemainingRate,
+
+            /*
+            * 후보 생산량과 과거 판매 결과 비교
+            */
+            'confirmed_shortfall' =>
+                $confirmedShortfall,
+
+            'possible_excess' =>
+                $possibleExcess,
+
+            'shortage_risk' =>
+                $shortageRisk,
+
+            'possible_sellout' =>
+                $possibleSellout,
+
+            /*
+            * 실제 추천량을 적용한 결과는
+            * 아직 확인되지 않았습니다.
+            */
+            'actual_outcome_verified' => false,
+        ];
+    }
+
+    /**
+     * 과거 추천량과 실제 판매 결과를 이용해
+     * 생산량 조정 후보를 계산합니다.
+     *
+     * 추천 정확도 검증 기록은 전체 기간을 보존하지만,
+     * 실제 추천량 조정은 기존 정책에 따라
+     * 최근 12개월의 동일 요일을 우선 사용합니다.
+     *
+     * 최근 3개월 70%, 이전 9개월 30%를 적용합니다.
+     *
+     * 기존 추천량은 변경하지 않고
+     * 조정 후보와 계산 근거만 반환합니다.
+     */
+    public function calculateAdaptiveAdjustment(
+        array $records,
+        int $currentQuantity,
+        Carbon $targetDate
+    ): array {
+        $result = [
+            'original_quantity' => $currentQuantity,
+            'suggested_quantity' => $currentQuantity,
+            'adjustment_quantity' => 0,
+            'adjustment_rate' => 0,
+            'record_count' => 0,
+            'recent_count' => 0,
+            'previous_count' => 0,
+            'reason' => null,
+        ];
+
+        if ($currentQuantity <= 0) {
+            return $result;
+        }
+
+        $target = $targetDate->copy()->startOfDay();
+
+        $recentFrom = $target->copy()
+            ->subMonths(3);
+
+        $historyFrom = $target->copy()
+            ->subYear();
+
+        $weekday = $target->dayOfWeek;
+
+        $recentRatios = [];
+        $previousRatios = [];
+
+        foreach ($records as $record) {
+            if (
+                !is_array($record)
+                || empty($record['date'])
+            ) {
+                continue;
+            }
+
+            $date = Carbon::parse(
+                $record['date']
+            );
+
+            if (
+                $date->lt($historyFrom)
+                || !$date->lt($target)
+                || $date->dayOfWeek !== $weekday
+            ) {
+                continue;
+            }
+
+            /*
+            * 대표 추천량이 불명확한 날짜는 제외합니다.
+            */
+            if (
+                $record['has_multiple_recommendations']
+                    ?? false
+            ) {
+                continue;
+            }
+
+            /*
+            * 추천 결과를 비교할 수 있는
+            * 모든 정상 기록을 활용합니다.
+            *
+            * 부족했던 날짜만 선택하면
+            * 실제보다 부족 비율이 높게 계산될 수 있습니다.
+            */
+            $status = $record['status'] ?? 'uncertain';
+
+            if (
+                !in_array(
+                    $status,
+                    [
+                        'exact',
+                        'near',
+                        'below_observed_sales',
+                        'possible_excess',
+                    ],
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            $recommended = max(
+                0,
+                (int) (
+                    $record['recommended_quantity'] ?? 0
+                )
+            );
+
+            $carryoverIn = max(
+                0,
+                (int) (
+                    $record['carryover_in'] ?? 0
+                )
+            );
+
+            $sales = max(
+                0,
+                (int) (
+                    $record['estimated_sales'] ?? 0
+                )
+            );
+
+            $available = $recommended + $carryoverIn;
+
+            if ($available <= 0) {
+                continue;
+            }
+
+            /*
+            * 추천량보다 판매량이 많았던 경우에만
+            * 부족 수량을 계산합니다.
+            *
+            * 부족하지 않았던 날짜는
+            * 부족 비율 0으로 반영합니다.
+            */
+            $shortage = max(
+                0,
+                $sales - $available
+            );
+
+            $shortageRate = $shortage / $available;
+
+            /*
+            * 비정상적으로 큰 차이가
+            * 전체 결과를 지배하지 않도록
+            * 개별 기록의 영향은 제한합니다.
+            *
+            * 상한은 초기 검토 기준입니다.
+            */
+            $shortageRate = min(
+                1.0,
+                max(0.0, $shortageRate)
+            );
+
+            if ($date->gte($recentFrom)) {
+                $recentRatios[] = $shortageRate;
+            } else {
+                $previousRatios[] = $shortageRate;
+            }
+        }
+
+        $recentCount = count($recentRatios);
+
+        $previousCount = count($previousRatios);
+
+        $recordCount = $recentCount + $previousCount;
+
+        $result['record_count'] = $recordCount;
+        $result['recent_count'] = $recentCount;
+        $result['previous_count'] = $previousCount;
+
+        if ($recordCount === 0) {
+            return $result;
+        }
+
+        /*
+        * 기간별 평균 부족 비율
+        */
+        $recentAverage = $recentCount > 0
+            ? array_sum($recentRatios) / $recentCount
+            : null;
+
+        $previousAverage = $previousCount > 0
+            ? array_sum($previousRatios) / $previousCount
+            : null;
+
+        /*
+        * 기존 추천 정책과 동일한
+        * 최근 3개월 70%, 이전 9개월 30%.
+        *
+        * 한 기간에 기록이 없다면
+        * 존재하는 기간만 사용합니다.
+        */
+        if (
+            $recentAverage !== null
+            && $previousAverage !== null
+        ) {
+            $averageShortageRate =
+                $recentAverage * 0.70
+                + $previousAverage * 0.30;
+        } elseif ($recentAverage !== null) {
+            $averageShortageRate = $recentAverage;
+        } else {
+            $averageShortageRate = $previousAverage;
+        }
+
+        /*
+        * 기록이 적을수록 조정 강도를 낮춥니다.
+        *
+        * 고정된 증량 수량이 아니라
+        * 기록 수에 따라 조정 폭이 변합니다.
+        *
+        * 분모의 4는 초기 안정화 기준으로,
+        * 향후 과거 검증을 통해 조정합니다.
+        */
+        $evidenceStrength =
+            $recordCount / ($recordCount + 4);
+
+        $effectiveRate =
+            $averageShortageRate * $evidenceStrength;
+
+        /*
+        * 현재 추천량을 기준으로
+        * 부족 비율만큼 조정 후보를 계산합니다.
+        */
+        $adjustmentQuantity = (int) round(
+            $currentQuantity * $effectiveRate
+        );
+
+        $suggestedQuantity =
+            $currentQuantity + $adjustmentQuantity;
+
+        $result['suggested_quantity'] =
+            $suggestedQuantity;
+
+        $result['adjustment_quantity'] =
+            $adjustmentQuantity;
+
+        $result['adjustment_rate'] = round(
+            $effectiveRate,
+            4
+        );
+
+        $result['reason'] =
+            '과거 동일 요일의 추천량 부족 기록을 분석해 조정 후보를 계산했습니다.';
+
+        return $result;
+    }
+
+    /**
+     * 과거 추천 검증 결과를 이용해
+     * 기존 추천 생산량을 조정합니다.
+     *
+     * 기존 추천 알고리즘의 결과를 유지하면서
+     * 충분한 검증 근거가 있는 경우에만
+     * 데이터로 계산한 조정 후보를 적용합니다.
+     *
+     * 호출자가 전달한 검증 결과를 사용하므로
+     * 이 함수에서는 DB를 조회하지 않습니다.
+     */
+    public function applyHistoricalValidation(
+        array $recommendation,
+        array $evidence,
+        array $backtest,
+        array $candidate
+    ): array {
+        $originalCenter = $recommendation['center'] ?? null;
+
+        $recommendation['metrics'] ??= [];
+
+        /*
+        * 기본적으로 기존 추천량을 유지합니다.
+        */
+        $recommendation['metrics']['historical_adjustment'] = [
+            'applied' => false,
+            'original_quantity' => $originalCenter,
+            'adjusted_quantity' => $originalCenter,
+            'adjustment_quantity' => 0,
+            'reason' => null,
+        ];
+
+        /*
+        * 추천량이 없거나 0개인 경우
+        */
+        if (
+            $originalCenter === null
+            || !is_numeric($originalCenter)
+            || (int) $originalCenter <= 0
+        ) {
+            return $recommendation;
+        }
+
+        $originalCenter = (int) $originalCenter;
+
+        /*
+        * 조정 후보가 현재 추천량을 기준으로
+        * 계산된 값인지 확인합니다.
+        */
+        $candidateOriginal = $candidate['original_quantity']
+            ?? null;
+
+        if (
+            !is_numeric($candidateOriginal)
+            || (int) $candidateOriginal !== $originalCenter
+        ) {
+            return $recommendation;
+        }
+
+        /*
+        * 기존 추천 신뢰도가 충분하지 않다면
+        * 조정하지 않습니다.
+        */
+        if (
+            ($recommendation['confidence'] ?? null)
+                !== 'normal'
+        ) {
+            return $recommendation;
+        }
+
+        /*
+        * 같은 요일에서 반복된 부족이
+        * 확인되어야 합니다.
+        */
+        if (
+            ($evidence['eligible'] ?? false) !== true
+            || ($evidence['direction'] ?? null)
+                !== 'increase'
+        ) {
+            return $recommendation;
+        }
+
+        /*
+        * 실제 과거 추천 결과 검증에서
+        * 개선 후보로 판단된 경우만 허용합니다.
+        */
+        if (
+            ($backtest['result'] ?? null)
+                !== 'promising'
+        ) {
+            return $recommendation;
+        }
+
+        /*
+        * 새 추천 후보에서
+        * 판매 부족 위험이 증가하지 않아야 합니다.
+        */
+        $originalShortfall = (int) (
+            $backtest['original_shortfall_total'] ?? 0
+        );
+
+        $candidateShortfall = (int) (
+            $backtest['candidate_shortfall_total'] ?? 0
+        );
+
+        if ($candidateShortfall >= $originalShortfall) {
+            return $recommendation;
+        }
+
+        /*
+        * 실제 데이터로 계산한 조정 후보입니다.
+        *
+        * 고정 +1개 또는 고정 5%가 아닙니다.
+        */
+        $adjustedCenter = $candidate['suggested_quantity']
+            ?? null;
+
+        if (
+            !is_numeric($adjustedCenter)
+            || (int) $adjustedCenter <= $originalCenter
+        ) {
+            return $recommendation;
+        }
+
+        $adjustedCenter = (int) $adjustedCenter;
+
+        /*
+        * 기존 생산 수량 검증 범위를 초과하지 않습니다.
+        */
+        if ($adjustedCenter > 100000) {
+            return $recommendation;
+        }
+
+        $adjustmentQuantity =
+            $adjustedCenter - $originalCenter;
+
+        /*
+        * 기존 추천 범위의 폭을 유지하면서
+        * 새로운 추천량에 맞춰 이동합니다.
+        */
+        $originalMin = $recommendation['min'] ?? null;
+
+        $originalMax = $recommendation['max'] ?? null;
+
+        $recommendation['center'] = $adjustedCenter;
+
+        if (
+            $originalMin !== null
+            && is_numeric($originalMin)
+        ) {
+            $recommendation['min'] = max(
+                0,
+                (int) $originalMin + $adjustmentQuantity
+            );
+        }
+
+        if (
+            $originalMax !== null
+            && is_numeric($originalMax)
+        ) {
+            $recommendation['max'] = min(
+                100000,
+                (int) $originalMax + $adjustmentQuantity
+            );
+        }
+
+        /*
+        * 기존 상세 계산 결과도
+        * 최종 추천량과 일치하도록 갱신합니다.
+        */
+        if (isset(
+            $recommendation['explanation']['calculation']
+        )) {
+            $calculation = &$recommendation[
+                'explanation'
+            ]['calculation'];
+
+            $calculation['recommended_production'] =
+                $adjustedCenter;
+
+            $calculation['minimum_recommendation'] =
+                $recommendation['min'];
+
+            $calculation['maximum_recommendation'] =
+                $recommendation['max'];
+
+            unset($calculation);
+        }
+
+        /*
+        * 실제 적용된 조정 결과를 기록합니다.
+        */
+        $recommendation['metrics']['historical_adjustment'] = [
+            'applied' => true,
+
+            'original_quantity' => $originalCenter,
+
+            'adjusted_quantity' => $adjustedCenter,
+
+            'adjustment_quantity' =>
+                $adjustmentQuantity,
+
+            'adjustment_rate' =>
+                $candidate['adjustment_rate'] ?? null,
+
+            'tested_days' =>
+                $backtest['tested_days'] ?? 0,
+
+            'shortfall_reduction' =>
+                $backtest['shortfall_reduction'] ?? 0,
+
+            'supported_rate' =>
+                $backtest['supported_rate'] ?? null,
+
+            'reason' =>
+                '과거 동일 요일의 추천 결과를 검증한 후 생산량을 조정했습니다.',
+        ];
+
+        /*
+        * 기존 추천 이유는 유지하고
+        * 새로운 조정 근거를 추가합니다.
+        */
+        $recommendation['reasons'] ??= [];
+
+        $recommendation['reasons'][] =
+            "과거 동일 요일의 추천 결과를 분석한 결과 생산량 부족이 반복되어 추천량을 {$adjustmentQuantity}개 증량했습니다.";
+
+        return $recommendation;
+    }
+
+    /**
      * 생산 기록에서 참고한 추천 결과를 저장합니다.
      *
-     * 기존 추천 스냅샷 데이터 구조를 유지하면서
-     * 분석 기간을 최근 최대 12개월로 통일합니다.
+     * 기존 추천 결과를 보존하면서
+     * 과거 기록을 통한 추천량 조정 과정도 함께 저장합니다.
      */
     public function snapshot(
         int $storeId,
@@ -2387,20 +3067,91 @@ class ProductionRecommendationService
     ): ProductionRecommendationSnapshot {
         $targetDate = Carbon::parse($date);
 
+        /*
+        * 사용자에게 실제 표시한 최종 추천량입니다.
+        */
+        $finalQuantity = (int) (
+            $recommendation['center'] ?? 0
+        );
+
+        /*
+        * 과거 기록을 통한 추천량 조정 결과입니다.
+        */
+        $adjustment = $recommendation['metrics']
+            ['historical_adjustment'] ?? [];
+
+        /*
+        * 조정 전 추천량입니다.
+        *
+        * 조정 정보가 없다면
+        * 현재 최종 추천량을 기준으로 저장합니다.
+        */
+        $originalQuantity = $adjustment[
+            'original_quantity'
+        ] ?? $finalQuantity;
+
+        if (
+            !is_numeric($originalQuantity)
+            || (int) $originalQuantity < 0
+        ) {
+            $originalQuantity = $finalQuantity;
+        }
+
+        $originalQuantity = (int) $originalQuantity;
+
+        /*
+        * 실제 조정 여부는 저장할 수량의 차이로 판단합니다.
+        */
+        $adjustmentApplied =
+            $originalQuantity !== $finalQuantity;
+
+        $adjustmentQuantity =
+            $finalQuantity - $originalQuantity;
+
+        /*
+        * 추천량 조정 과정의 기록입니다.
+        *
+        * 추후 기존 추천 방식과
+        * 개선된 추천 방식의 결과를 비교하는 데 활용합니다.
+        */
+        $adjustmentMeta = [
+            'version' => 1,
+
+            'applied' => $adjustmentApplied,
+
+            'original_quantity' =>
+                $originalQuantity,
+
+            'adjusted_quantity' =>
+                $finalQuantity,
+
+            'adjustment_quantity' =>
+                $adjustmentQuantity,
+
+            'reason' => $adjustmentApplied
+                ? ($adjustment['reason'] ?? null)
+                : null,
+        ];
+
+        /*
+        * 기존 추천 결과와 조정 내역을 저장합니다.
+        */
         return ProductionRecommendationSnapshot::create([
             'store_id' => $storeId,
+
             'product_id' => $productId,
+
             'production_batch_id' => $batchId,
+
             'target_date' => $date,
 
-            'center_quantity' =>
-                $recommendation['center'],
+            'center_quantity' => $finalQuantity,
 
             'range_min' =>
-                $recommendation['min'],
+                (int) ($recommendation['min'] ?? $finalQuantity),
 
             'range_max' =>
-                $recommendation['max'],
+                (int) ($recommendation['max'] ?? $finalQuantity),
 
             'confidence' =>
                 $recommendation['confidence'],
@@ -2409,21 +3160,19 @@ class ProductionRecommendationService
                 'v3-adaptive-demand',
 
             'reasons' =>
-                $recommendation['reasons'],
+                $recommendation['reasons'] ?? [],
 
             'excluded_conditions' => [],
 
-            /*
-            * 추천 대상일 이전 최대 12개월
-            *
-            * 컨트롤러의 추천 데이터 수집 기간과
-            * 동일한 날짜 계산을 사용합니다.
-            */
-            'data_from' => $targetDate->copy()
+            'adjustment_meta' => $adjustmentMeta,
+
+            'data_from' => $targetDate
+                ->copy()
                 ->subYear()
                 ->toDateString(),
 
-            'data_to' => $targetDate->copy()
+            'data_to' => $targetDate
+                ->copy()
                 ->subDay()
                 ->toDateString(),
 

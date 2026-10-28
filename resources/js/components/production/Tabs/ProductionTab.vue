@@ -1785,6 +1785,37 @@ async function saveProduction() {
         }
       );
     } else {
+      // 사용자가 실제로 확인할 수 있었던 추천 결과
+      const currentRecommendation =
+        recommendationData.value?.recommendation ?? null;
+
+      const hasRecommendation =
+        !recommendationLoading.value &&
+        !recommendationError.value &&
+        currentRecommendation !== null &&
+        Number.isFinite(
+          Number(currentRecommendation.center)
+        ) &&
+        currentRecommendation.center !== null;
+
+      const displayedRecommendation = hasRecommendation
+        ? {
+            center: Number(currentRecommendation.center),
+            min:
+              currentRecommendation.min !== null &&
+              currentRecommendation.min !== undefined
+                ? Number(currentRecommendation.min)
+                : null,
+            max:
+              currentRecommendation.max !== null &&
+              currentRecommendation.max !== undefined
+                ? Number(currentRecommendation.max)
+                : null,
+            confidence:
+              currentRecommendation.confidence ?? null,
+          }
+        : null;
+
       await window.axios.post(
         "/tillwhite/api/production-management/batches",
         {
@@ -1799,6 +1830,10 @@ async function saveProduction() {
             productionForm.recommendationReferenced,
           recommendation_deviation_reason:
             productionForm.recommendationDeviationReason || null,
+
+          // 화면에 표시된 추천 결과
+          displayed_recommendation: displayedRecommendation,
+
           note: productionForm.note || null,
           workers: productionForm.workerIds.map((userId) => ({
             user_id: userId,
@@ -1815,7 +1850,6 @@ async function saveProduction() {
     saveConfirmOpen.value = false;
     resetProductionEditor();
 
-    // 통합 다이얼로그에 닫기 및 새로고침 요청
     emit("update:modelValue", false);
     emit("saved", message);
   } catch (error) {

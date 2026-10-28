@@ -4,7 +4,7 @@
     :title="`${productName || '제품'} - 분석과 추천 이유`"
     :max-width="620"
     :loading="loading"
-    loading-text="불러오는중.."
+    loading-text="불러오는 중..."
     :error="error"
     :retryable="Boolean(error)"
     :empty="!recommendation"
@@ -657,6 +657,157 @@
 
         <v-divider />
 
+        <!-- 기존 추천과 개선된 추천 비교 -->
+        <div class="d-flex flex-column ga-2">
+          <span class="app-form-section-title">
+            기존 추천과 개선된 추천 비교
+          </span>
+
+          <p class="recommendation-analysis__note">
+            과거에 저장한 추천량과 실제 마감 결과를 비교했습니다.
+            개선된 추천이 판매 추정량에 더 가까웠는지 확인할 수 있습니다.
+          </p>
+        </div>
+
+        <!-- 비교 기록이 없는 경우 -->
+        <v-alert
+          v-if="!comparisonRecords.length"
+          type="info"
+          variant="tonal"
+          density="comfortable"
+          class="app-supporting-alert"
+        >
+          아직 비교할 추천 기록이 없습니다.
+          새로운 추천 생산량과 실제 마감 기록이 쌓이면
+          기존 추천 방식과 개선된 추천 방식을 비교할 수 있습니다.
+        </v-alert>
+
+        <!-- 비교 기록이 있는 경우 -->
+        <template v-else>
+          <div class="recommendation-analysis__rows">
+            <div
+              v-for="row in comparisonSummaryRows"
+              :key="row.label"
+              class="recommendation-analysis__row"
+            >
+              <span class="recommendation-analysis__label">
+                {{ row.label }}
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ row.value }}
+              </span>
+            </div>
+          </div>
+
+          <v-divider />
+
+          <!-- 날짜 이동 -->
+          <div class="d-flex align-center justify-space-between ga-2">
+            <v-btn
+              variant="outlined"
+              color="primary"
+              size="small"
+              min-height="44"
+              :disabled="selectedComparisonIndex <= 0"
+              @click="moveComparisonDate(-1)"
+            >
+              이전
+            </v-btn>
+
+            <span class="text-body-2 text-center">
+              {{ selectedComparisonRecord?.date ?? '-' }}
+            </span>
+
+            <v-btn
+              variant="outlined"
+              color="primary"
+              size="small"
+              min-height="44"
+              :disabled="
+                selectedComparisonIndex >= comparisonRecords.length - 1
+              "
+              @click="moveComparisonDate(1)"
+            >
+              다음
+            </v-btn>
+          </div>
+
+          <p class="recommendation-analysis__note text-center">
+            {{ selectedComparisonIndex + 1 }}
+            /
+            {{ comparisonRecords.length }}
+            번째 기록
+          </p>
+
+          <!-- 선택한 날짜의 추천 결과 -->
+          <div
+            v-if="selectedComparisonRecord"
+            class="d-flex flex-column ga-3"
+          >
+            <div
+              v-for="item in comparisonChartRows"
+              :key="item.label"
+              class="d-flex flex-column ga-1"
+            >
+              <div class="recommendation-analysis__row">
+                <span class="recommendation-analysis__label">
+                  {{ item.label }}
+                </span>
+
+                <span class="recommendation-analysis__value">
+                  {{ formatQuantity(item.value) }}
+                </span>
+              </div>
+
+              <v-progress-linear
+                :model-value="item.percent"
+                :color="item.color"
+                bg-color="surface-variant"
+                rounded
+                height="9"
+              />
+            </div>
+
+            <v-divider />
+
+            <!-- 상세 비교 수량 -->
+            <div class="recommendation-analysis__rows">
+              <div
+                v-for="row in comparisonDetailRows"
+                :key="row.label"
+                class="recommendation-analysis__row"
+              >
+                <span class="recommendation-analysis__label">
+                  {{ row.label }}
+                </span>
+
+                <span class="recommendation-analysis__value">
+                  {{ row.value }}
+                </span>
+              </div>
+            </div>
+
+            <p class="recommendation-analysis__note">
+              {{ comparisonResultText }}
+            </p>
+          </div>
+
+          <v-alert
+            type="info"
+            variant="tonal"
+            density="comfortable"
+            class="app-supporting-alert"
+          >
+            판매량은 생산·이월·로스·폐기 기록으로 계산한
+            추정값입니다. 추천량대로 생산했을 때 발생했을
+            폐기량이나 추가 판매량을 확정한 결과는 아닙니다.
+          </v-alert>
+        </template>
+
+        <v-divider />
+
+        <!-- 기존 생산량 조정 방식 비교 -->
         <span class="app-form-section-title">
           생산량 조정 방식 비교
         </span>
@@ -693,10 +844,12 @@
           density="comfortable"
           class="app-supporting-alert"
         >
-          이 결과는 과거 기록으로 계산한 비교 결과입니다.
-          실제로 생산량을 변경하여 실험한 결과는 아니며,
-          현재 추천 생산량에도 자동 적용되지 않습니다.
-          예상 부족 수량은 실제 결품 수량과 다를 수 있습니다.
+          이 결과는 과거 기록을 이용해 생산량을 줄였을 때의
+          차이를 계산한 참고 자료입니다.
+          실제 생산 결과를 확인한 실험은 아닙니다.
+          과거 추천 검증을 통한 자동 조정 기능과는 별도로
+          계산되며, 예상 부족 수량은 실제 결품 수량과
+          다를 수 있습니다.
         </v-alert>
       </section>
 
@@ -1250,6 +1403,185 @@ const inventoryRows = computed(() => [
     value: `${formatCount(inventory.value?.one_remaining_days)}일`,
   },
 ]);
+
+/* 기존 추천과 개선된 추천 비교 */
+
+const recommendationOutcomes = computed(
+  () => props.data?.recommendation_outcomes ?? null
+);
+
+const adjustmentComparison = computed(
+  () => recommendationOutcomes.value?.adjustment_comparison ?? null
+);
+
+const comparisonRecords = computed(() => {
+  const records = adjustmentComparison.value?.records;
+
+  if (!Array.isArray(records)) {
+    return [];
+  }
+
+  return [...records]
+    .filter((record) => {
+      return (
+        record
+        && typeof record.date === "string"
+        && Number.isFinite(Number(record.original_quantity))
+        && Number.isFinite(Number(record.adjusted_quantity))
+        && Number.isFinite(Number(record.estimated_sales))
+      );
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+});
+
+const selectedComparisonIndex = ref(0);
+
+watch(
+  () => props.data,
+  () => {
+    selectedComparisonIndex.value = 0;
+  }
+);
+
+const selectedComparisonRecord = computed(() => {
+  return comparisonRecords.value[
+    selectedComparisonIndex.value
+  ] ?? null;
+});
+
+function moveComparisonDate(direction) {
+  const next = selectedComparisonIndex.value + direction;
+
+  if (
+    next < 0
+    || next >= comparisonRecords.value.length
+  ) {
+    return;
+  }
+
+  selectedComparisonIndex.value = next;
+}
+
+const comparisonSummaryRows = computed(() => {
+  const data = adjustmentComparison.value;
+
+  return [
+    {
+      label: "비교한 날짜",
+      value: `${formatCount(data?.evaluated_days)}일`,
+    },
+    {
+      label: "추천량을 조정한 날짜",
+      value: `${formatCount(data?.adjusted_days)}일`,
+    },
+    {
+      label: "개선된 추천이 더 가까웠던 날",
+      value: `${formatCount(data?.improved_days)}일`,
+    },
+    {
+      label: "기존 추천이 더 가까웠던 날",
+      value: `${formatCount(data?.worsened_days)}일`,
+    },
+    {
+      label: "차이가 없었던 날",
+      value: `${formatCount(data?.unchanged_days)}일`,
+    },
+  ];
+});
+
+const comparisonChartRows = computed(() => {
+  const record = selectedComparisonRecord.value;
+
+  if (!record) {
+    return [];
+  }
+
+  const rows = [
+    {
+      label: "기존 추천 생산량",
+      value: Number(record.original_quantity) || 0,
+      color: "secondary",
+    },
+    {
+      label: "개선된 추천 생산량",
+      value: Number(record.adjusted_quantity) || 0,
+      color: "primary",
+    },
+    {
+      label: "실제 생산량",
+      value: Number(record.actual_production) || 0,
+      color: "success",
+    },
+    {
+      label: "판매 추정량",
+      value: Number(record.estimated_sales) || 0,
+      color: "info",
+    },
+    {
+      label: "실제 폐기량",
+      value: Number(record.actual_waste) || 0,
+      color: "error",
+    },
+  ];
+
+  const maxValue = Math.max(
+    1,
+    ...rows.map((row) => row.value)
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    percent: Math.max(
+      0,
+      Math.min(100, (row.value / maxValue) * 100)
+    ),
+  }));
+});
+
+const comparisonDetailRows = computed(() => {
+  const record = selectedComparisonRecord.value;
+
+  if (!record) {
+    return [];
+  }
+
+  return [
+    {
+      label: "기존 추천의 예상 부족 수량",
+      value: formatQuantity(record.original_shortfall),
+    },
+    {
+      label: "개선된 추천의 예상 부족 수량",
+      value: formatQuantity(record.adjusted_shortfall),
+    },
+    {
+      label: "기존 추천의 남을 가능성이 있는 수량",
+      value: formatQuantity(record.original_possible_excess),
+    },
+    {
+      label: "개선된 추천의 남을 가능성이 있는 수량",
+      value: formatQuantity(record.adjusted_possible_excess),
+    },
+    {
+      label: "실제 다음 날 이월",
+      value: formatQuantity(record.actual_carryover),
+    },
+  ];
+});
+
+const comparisonResultText = computed(() => {
+  const result = selectedComparisonRecord.value?.comparison;
+
+  if (result === "improved") {
+    return "이 날짜에는 개선된 추천량이 실제 판매 추정량에 더 가까웠습니다.";
+  }
+
+  if (result === "worsened") {
+    return "이 날짜에는 기존 추천량이 실제 판매 추정량에 더 가까웠습니다. 조정 효과를 추가로 확인할 필요가 있습니다.";
+  }
+
+  return "이 날짜에는 기존 추천량과 개선된 추천량의 비교 결과에 차이가 없었습니다.";
+});
 
 /* 과거 추천 정확도 */
 const accuracyRows = computed(() => [

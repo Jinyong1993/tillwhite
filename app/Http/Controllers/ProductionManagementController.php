@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductStockLot;
 use App\Models\ProductStockMovement;
 use App\Models\ProductionBatch;
+use App\Models\ProductionRecommendationSnapshot;
 use App\Models\ProductionConfirmation;
 use App\Models\ProductionCorrection;
 use App\Models\ProductionDailyClosure;
@@ -511,16 +512,22 @@ class ProductionManagementController extends Controller
     }
 
     /**
-     * 한 번의 생산 기록과 작업자, 재고 및 추천 참고 이력을 저장합니다.
+     * 생산 기록을 생성합니다.
      *
-     * 최신 레시피만 조회하고, 작업자는 일괄 저장하여
-     * 불필요한 DB 접근을 줄입니다.
+     * 기존 생산·재고·작업자 저장 정책을 유지합니다.
+     *
+     * 추천 데이터가 없는 경우에도 생산 등록을 허용합니다.
+     *
+     * 과거 추천 검증은 신뢰도가 충분한 경우에만 실행하며,
+     * 생산 입력 화면과 동일한 최종 추천량을 사용합니다.
      */
     public function storeBatch(Request $request): JsonResponse
     {
-        // 사용자 권한과 입력값을 검증합니다.
         $user = $this->user($request);
 
+        /*
+        * 기존 권한 및 입력값 검증
+        */
         $this->accessService->requirePermission(
             $user,
             'production.create'
@@ -533,6 +540,9 @@ class ProductionManagementController extends Controller
             (int) $data['store_id']
         );
 
+        /*
+        * 기존 마감 상태 및 작업자 검증
+        */
         $this->assertDateUnlocked(
             (int) $data['store_id'],
             $data['work_date']
@@ -544,67 +554,91 @@ class ProductionManagementController extends Controller
             $data['workers'] ?? []
         );
 
-        /**
-         * 생산 기록과 연결 데이터를 하나의 트랜잭션으로 저장합니다.
-         * 저장 중 오류가 발생하면 변경 사항을 롤백합니다.
-         */
+        /*
+        * 모든 생산·재고 변경을
+        * 하나의 트랜잭션으로 처리합니다.
+        */
         $batch = DB::transaction(function () use ($data, $user) {
-            // 같은 제품의 생산 수정 및 재고 처리와 저장 순서를 맞춥니다.
+            /*
+            * 동일 제품의 동시 변경 방지
+            */
             $product = Product::query()
-                ->whereKey((int) $data['product_id'])
+                ->whereKey(
+                    (int) $data['product_id']
+                )
                 ->lockForUpdate()
                 ->firstOrFail();
 
             abort_unless(
-                $product->store_id === (int) $data['store_id'],
+                $product->store_id ===
+                    (int) $data['store_id'],
                 422,
                 '선택한 점포의 제품이 아닙니다.'
             );
 
-            /**
-             * 삭제되지 않은 최신 레시피 한 개만 조회합니다.
-             * 생산 당시 스냅샷에 필요한 재료와 제조 단계도 함께 가져옵니다.
-             */
+            /*
+            * 최신 레시피 조회
+            */
             $recipe = $product->recipes()
                 ->whereNull('deleted_at')
-                ->with(['ingredients', 'steps'])
+                ->with([
+                    'ingredients',
+                    'steps',
+                ])
                 ->latest('id')
                 ->first();
 
-            // 조회한 레시피를 그대로 사용하여 생산 당시 내용을 보존합니다.
             $recipeSnapshot = $recipe?->toArray();
 
-            // 생산 기록을 생성합니다.
+            /*
+            * 생산 기록 생성
+            */
             $batch = ProductionBatch::create([
                 'store_id' => $data['store_id'],
+
                 'product_id' => $data['product_id'],
+
                 'work_date' => $data['work_date'],
+
                 'quantity' => $data['quantity'],
+
                 'recipe_id' => $recipe?->id,
-                'recipe_snapshot' => $recipeSnapshot,
+
+                'recipe_snapshot' =>
+                    $recipeSnapshot,
+
                 'recipe_deviated' => (bool) (
                     $data['recipe_deviated'] ?? false
                 ),
+
                 'recipe_deviation_note' =>
                     $data['recipe_deviation_note'] ?? null,
+
                 'note' => $data['note'] ?? null,
+
                 'created_by' => $user->id,
             ]);
 
-            /**
-             * 작업자 정보를 한 번의 INSERT로 저장합니다.
-             * 기존 담당 공정과 기본값을 유지합니다.
-             */
+            /*
+            * 작업자 일괄 저장
+            */
             $workers = [];
+
             $now = now();
 
             foreach ($data['workers'] ?? [] as $worker) {
                 $workers[] = [
-                    'production_batch_id' => $batch->id,
-                    'user_id' => $worker['user_id'],
+                    'production_batch_id' =>
+                        $batch->id,
+
+                    'user_id' =>
+                        $worker['user_id'],
+
                     'process_type' =>
                         $worker['process_type'] ?? 'all',
+
                     'created_at' => $now,
+
                     'updated_at' => $now,
                 ];
             }
@@ -614,64 +648,92 @@ class ProductionManagementController extends Controller
                     ->insert($workers);
             }
 
-            // 생산량에 해당하는 최초 재고 기록을 생성합니다.
+            /*
+            * 생산 재고 생성
+            */
             ProductStockLot::create([
                 'store_id' => $data['store_id'],
+
                 'product_id' => $data['product_id'],
+
                 'production_batch_id' => $batch->id,
-                'origin_production_date' => $data['work_date'],
-                'initial_quantity' => $data['quantity'],
-                'remaining_quantity' => $data['quantity'],
+
+                'origin_production_date' =>
+                    $data['work_date'],
+
+                'initial_quantity' =>
+                    $data['quantity'],
+
+                'remaining_quantity' =>
+                    $data['quantity'],
+
                 'status' => 'active',
             ]);
 
-            // 생산 확인 상태와 확인자를 갱신합니다.
+            /*
+            * 생산 확인 상태 갱신
+            */
             $this->updateConfirmationForDate(
                 (int) $data['store_id'],
                 (int) $data['product_id'],
                 $data['work_date'],
                 [
                     'production_confirmed' => true,
+
                     'zero_production_reason' => null,
+
                     'confirmed_by' => $user->id,
-                ],
+                ]
             );
 
-            /**
-             * 추천을 참고한 경우에만 추천 스냅샷을 저장합니다.
-             *
-             * 생산 입력창과 동일하게 최근 최대 12개월의
-             * 제품별 데이터를 사용합니다.
-             *
-             * 기존 추천 참고 여부, 편차 사유 및
-             * 추천 결과 저장 정책은 유지합니다.
-             */
+            /*
+            * 기존 추천 참고 여부
+            */
             $recommendationReferenced = (bool) (
                 $data['recommendation_referenced'] ?? false
             );
 
+            /*
+            * 추천량 차이 사유
+            */
             $recommendationDeviationReason = trim(
                 (string) (
                     $data['recommendation_deviation_reason'] ?? ''
                 )
             );
 
+            /*
+            * 생산 입력 화면에 표시된 추천 결과
+            */
+            $displayedRecommendation =
+                $data['displayed_recommendation'] ?? null;
+
+            $hasDisplayedRecommendation =
+                is_array($displayedRecommendation);
+
+            /*
+            * 추천량을 표시했거나
+            * 추천 관련 입력이 있는 경우에만
+            * 추천 기록을 계산합니다.
+            */
             if (
-                $recommendationReferenced ||
-                $recommendationDeviationReason !== ''
+                $hasDisplayedRecommendation
+                || $recommendationReferenced
+                || $recommendationDeviationReason !== ''
             ) {
                 $target = Carbon::parse(
                     $data['work_date']
                 );
 
                 $storeId = (int) $data['store_id'];
+
                 $productId = (int) $data['product_id'];
 
                 /*
-                * 생산 입력창과 동일한 12개월 조회 함수 사용
+                * 기존 최근 12개월 기록 조회
                 *
-                * 날짜별 dailyService->build() 반복 호출을
-                * 기간별 집계 방식으로 변경합니다.
+                * 생산·폐기·이월·로스 여러 건은
+                * 기존 날짜별 합산 정책을 사용합니다.
                 */
                 $history =
                     $this->recommendationHistoryForProduct(
@@ -681,9 +743,7 @@ class ProductionManagementController extends Controller
                     );
 
                 /*
-                * 추천 대상 날짜의 행사 조회
-                *
-                * 현재 제품에 적용되는 행사만 선택합니다.
+                * 추천 대상 날짜의 행사
                 */
                 $targetEvents = collect(
                     $this->eventsForDate(
@@ -706,8 +766,6 @@ class ProductionManagementController extends Controller
 
                 /*
                 * 추천 대상 날짜의 날씨
-                *
-                * 기존 날씨 보정 정책을 유지합니다.
                 */
                 $targetWeatherCode =
                     StoreDailyWeather::query()
@@ -726,21 +784,37 @@ class ProductionManagementController extends Controller
                 }
 
                 /*
-                * 생산 기록 저장 시에도 이월 재고를 반영해
-                * 화면에서 조회한 추천량과 계산 기준을 맞춥니다.
+                * 당일 이월 입고 수량
+                *
+                * 여러 건이 있어도 모두 합산합니다.
                 */
-                $targetCarryoverIn = (int) ProductStockMovement::query()
-                    ->where('store_id', $storeId)
-                    ->where('product_id', $productId)
-                    ->whereDate('work_date', $data['work_date'])
-                    ->where('movement_type', 'carryover_in')
-                    ->sum('quantity');
+                $targetCarryoverIn =
+                    (int) ProductStockMovement::query()
+                        ->where('store_id', $storeId)
+                        ->where('product_id', $productId)
+                        ->whereDate(
+                            'work_date',
+                            $data['work_date']
+                        )
+                        ->where(
+                            'movement_type',
+                            'carryover_in'
+                        )
+                        ->sum('quantity');
 
                 $targetEvents[] = [
-                    'condition_type' => 'target_inventory',
-                    'carryover_in' => $targetCarryoverIn,
+                    'condition_type' =>
+                        'target_inventory',
+
+                    'carryover_in' =>
+                        $targetCarryoverIn,
                 ];
 
+                /*
+                * 1. 기존 추천 생산량 계산
+                *
+                * 기존 12개월 분석 및 가중치 정책 유지
+                */
                 $recommendation =
                     $this->recommendationService->recommend(
                         $history,
@@ -749,28 +823,130 @@ class ProductionManagementController extends Controller
                     );
 
                 /*
-                * 기존 추천 스냅샷 저장
+                * 2. 과거 추천 검증
                 *
-                * 생산 기록 ID, 편차 사유,
-                * 추천 참고 여부를 그대로 유지합니다.
+                * 기존 추천량이 존재하고
+                * 신뢰도가 충분한 경우에만
+                * 추가 분석을 실행합니다.
+                *
+                * 신뢰도가 낮거나 기록이 부족하면
+                * 기존 추천량을 그대로 사용합니다.
                 */
-                $this->recommendationService->snapshot(
-                    $storeId,
-                    $productId,
-                    $data['work_date'],
-                    $recommendation,
-                    $batch->id,
-                    $recommendationDeviationReason !== ''
-                        ? $recommendationDeviationReason
-                        : null,
-                    $recommendationReferenced
-                );
+                if (
+                    $recommendation['center'] !== null
+                    && ($recommendation['confidence'] ?? null)
+                        === 'normal'
+                ) {
+                    /*
+                    * 전체 누적 추천 결과 조회
+                    */
+                    $recommendationOutcomes =
+                        $this->recommendationOutcomesForProduct(
+                            $storeId,
+                            $productId,
+                            $target,
+                            $history
+                        );
+
+                    /*
+                    * 검증된 추천량 조정 적용
+                    *
+                    * 조정 조건을 충족하지 않으면
+                    * 기존 추천량이 유지됩니다.
+                    */
+                    $recommendation =
+                        $this->applyHistoricalRecommendation(
+                            $recommendation,
+                            $recommendationOutcomes,
+                            $target
+                        );
+                }
+
+                /*
+                * 3. 화면 추천량과 서버 추천량 비교
+                *
+                * 서버에서 계산한 최종 추천량과
+                * 화면에 표시된 추천량을 비교합니다.
+                */
+                if ($hasDisplayedRecommendation) {
+                    $displayedCenter = (int) (
+                        $displayedRecommendation['center']
+                    );
+
+                    $displayedMin = (int) (
+                        $displayedRecommendation['min']
+                    );
+
+                    $displayedMax = (int) (
+                        $displayedRecommendation['max']
+                    );
+
+                    $displayedConfidence = (string) (
+                        $displayedRecommendation['confidence']
+                    );
+
+                    /*
+                    * 잘못된 추천 범위 차단
+                    */
+                    abort_if(
+                        $displayedMin > $displayedCenter
+                        || $displayedCenter > $displayedMax,
+                        422,
+                        '추천 생산량 범위가 올바르지 않습니다.'
+                    );
+
+                    /*
+                    * 추천 계산에 사용된 기록이 변경되거나
+                    * 화면과 서버 결과가 다르면 저장 차단
+                    */
+                    $recommendationMatches =
+                        $recommendation['center'] !== null
+                        && $displayedCenter ===
+                            (int) $recommendation['center']
+                        && $displayedMin ===
+                            (int) $recommendation['min']
+                        && $displayedMax ===
+                            (int) $recommendation['max']
+                        && $displayedConfidence ===
+                            (string) $recommendation['confidence'];
+
+                    abort_unless(
+                        $recommendationMatches,
+                        409,
+                        '추천 생산량이 변경되었습니다. 최신 추천량을 확인한 후 다시 저장해주세요.'
+                    );
+                }
+
+                /*
+                * 4. 추천 결과 저장
+                *
+                * 기존 스냅샷 테이블을 사용합니다.
+                *
+                * 사용자가 추천량을 적용하지 않았더라도
+                * 화면에 표시된 추천 결과를
+                * 생산 기록과 연결합니다.
+                */
+                if ($recommendation['center'] !== null) {
+                    $this->recommendationService->snapshot(
+                        $storeId,
+                        $productId,
+                        $data['work_date'],
+                        $recommendation,
+                        $batch->id,
+                        $recommendationDeviationReason !== ''
+                            ? $recommendationDeviationReason
+                            : null,
+                        $recommendationReferenced
+                    );
+                }
             }
 
             return $batch;
         });
 
-        // 생산 기록 등록 이력을 기존 방식으로 저장합니다.
+        /*
+        * 기존 생산 등록 감사 로그
+        */
         $this->auditService->log(
             $user,
             'production',
@@ -784,6 +960,7 @@ class ProductionManagementController extends Controller
 
         return response()->json([
             'message' => '생산 기록을 저장했습니다.',
+
             'batch' => $batch,
         ], 201);
     }
@@ -2713,23 +2890,35 @@ class ProductionManagementController extends Controller
             ->all();
     }
 
-    
     /**
-     * 추천 생산량 계산에 필요한 판매량과 날씨를 조회합니다.
+     * 추천 분석에 필요한 판매·날씨 자료를 조회합니다.
      *
-     * 확정된 판매 기록만 사용합니다.
-     * 판매 기록이 없는 날짜와 판매량 0개를 구분합니다.
+     * 기존 판매 자료 조회 구조는 유지합니다.
+     *
+     * productId가 전달되면 해당 제품의 자료만 조회합니다.
+     * 전달되지 않으면 기존처럼 점포 전체를 조회합니다.
+     *
+     * 생산·이월·로스·폐기 기반 판매량 추정 정책은
+     * recommendationHistoryRow()에서 그대로 유지합니다.
      */
     private function recommendationData(
         int $storeId,
         string $from,
-        string $to
+        string $to,
+        ?int $productId = null
     ): array {
-        // 확정된 판매 기록이 있는 날짜
+        /*
+        * 기존 확정 판매 날짜 조회
+        *
+        * 점포별 확정 날짜 정보는 유지합니다.
+        */
         $confirmedDates = DB::table('sales')
             ->where('store_id', $storeId)
             ->where('status', 'confirmed')
-            ->whereBetween('sales_date', [$from, $to])
+            ->whereBetween(
+                'sales_date',
+                [$from, $to]
+            )
             ->pluck('sales_date')
             ->map(
                 fn ($date) =>
@@ -2738,22 +2927,59 @@ class ProductionManagementController extends Controller
             ->flip()
             ->all();
 
-        // 날짜별, 제품별 판매 수량
-        $sales = DB::table('sale_items as si')
-            ->join('sales as s', 's.id', '=', 'si.sale_id')
+        /*
+        * 기존 판매 자료 조회
+        *
+        * 제품 하나를 분석하는 경우
+        * 해당 제품만 조회하도록 범위를 제한합니다.
+        */
+        $salesQuery = DB::table('sale_items as si')
+            ->join(
+                'sales as s',
+                's.id',
+                '=',
+                'si.sale_id'
+            )
             ->where('s.store_id', $storeId)
             ->where('s.status', 'confirmed')
-            ->whereBetween('s.sales_date', [$from, $to])
-            ->whereIn('si.sale_type', [
-                'regular',
-                'promotion',
-            ])
-            ->selectRaw(
-                's.sales_date AS sales_day, si.product_id, SUM(si.quantity) AS sold_quantity'
+            ->whereBetween(
+                's.sales_date',
+                [$from, $to]
             )
-            ->groupBy('s.sales_date', 'si.product_id')
+            ->whereIn(
+                'si.sale_type',
+                [
+                    'regular',
+                    'promotion',
+                ]
+            );
+
+        /*
+        * 제품별 추천에서는
+        * 다른 제품의 판매 자료를 가져오지 않습니다.
+        */
+        if ($productId !== null) {
+            $salesQuery->where(
+                'si.product_id',
+                $productId
+            );
+        }
+
+        $sales = $salesQuery
+            ->selectRaw(
+                's.sales_date AS sales_day, ' .
+                'si.product_id, ' .
+                'SUM(si.quantity) AS sold_quantity'
+            )
+            ->groupBy(
+                's.sales_date',
+                'si.product_id'
+            )
             ->get();
 
+        /*
+        * 날짜별 판매 자료 정리
+        */
         $salesByDay = [];
 
         foreach ($sales as $sale) {
@@ -2766,15 +2992,21 @@ class ProductionManagementController extends Controller
             ] = (int) $sale->sold_quantity;
         }
 
-        // 저장된 날짜별 날씨
+        /*
+        * 기존 날짜별 날씨 조회
+        *
+        * 날짜 범위를 한 번에 조회합니다.
+        */
         $weather = StoreDailyWeather::query()
             ->where('store_id', $storeId)
-            ->whereDate('work_date', '>=', $from)
-            ->whereDate('work_date', '<=', $to)
+            ->whereBetween(
+                'work_date',
+                [$from, $to]
+            )
             ->whereNotNull('condition')
             ->get([
                 'work_date',
-                'condition'
+                'condition',
             ]);
 
         $weatherByDay = [];
@@ -2789,9 +3021,14 @@ class ProductionManagementController extends Controller
         }
 
         return [
-            'confirmed_dates' => $confirmedDates,
-            'sales' => $salesByDay,
-            'weather' => $weatherByDay,
+            'confirmed_dates' =>
+                $confirmedDates,
+
+            'sales' =>
+                $salesByDay,
+
+            'weather' =>
+                $weatherByDay,
         ];
     }
 
@@ -3003,6 +3240,2611 @@ class ProductionManagementController extends Controller
         }
 
         return $result;
+    }
+
+    /**
+     * 과거 추천량 조정 방법을 검증합니다.
+     *
+     * 과거 날짜를 오래된 순서대로 확인하며
+     * 각 날짜보다 이전에 쌓인 기록만 사용합니다.
+     *
+     * 이미 자동 조정된 추천 결과는
+     * 조정 전 최초 추천량으로 복원하여 비교합니다.
+     *
+     * 실제 생산량을 정답으로 삼지 않고,
+     * 마감 기록으로 계산한 판매 추정량을 사용합니다.
+     */
+    private function recommendationAdjustmentBacktest(
+        array $outcomes
+    ): array {
+        $records = $outcomes['records'] ?? [];
+
+        usort(
+            $records,
+            fn (array $a, array $b) =>
+                strcmp(
+                    $a['date'] ?? '',
+                    $b['date'] ?? ''
+                )
+        );
+
+        $result = [
+            'tested_days' => 0,
+
+            'original_total_difference' => 0,
+            'candidate_total_difference' => 0,
+
+            'original_shortage_days' => 0,
+            'candidate_shortage_days' => 0,
+
+            'improvement_rate' => null,
+
+            'result' => 'insufficient',
+
+            'details' => [],
+
+            'original_shortfall_total' => 0,
+            'candidate_shortfall_total' => 0,
+
+            'original_possible_excess_total' => 0,
+            'candidate_possible_excess_total' => 0,
+
+            'candidate_supported_days' => 0,
+
+            'shortfall_reduction' => 0,
+            'additional_possible_excess' => 0,
+
+            'supported_rate' => null,
+        ];
+
+        /*
+        * 요일별 과거 기록입니다.
+        */
+        $previousByWeekday = array_fill(
+            0,
+            7,
+            []
+        );
+
+        foreach ($records as $record) {
+            if (
+                !is_array($record)
+                || empty($record['date'])
+            ) {
+                continue;
+            }
+
+            /*
+            * 추천 기록이 여러 개이고
+            * 대표 추천량이 불명확한 날짜는 제외합니다.
+            */
+            if (
+                $record['has_multiple_recommendations']
+                    ?? false
+            ) {
+                continue;
+            }
+
+            $date = Carbon::parse(
+                $record['date']
+            )->startOfDay();
+
+            $dateString = $date->toDateString();
+
+            $weekday = $date->dayOfWeek;
+
+            /*
+            * 조정 전 최초 추천량을 사용합니다.
+            *
+            * 조정 정보가 없는 과거 기록은
+            * 기존 최종 추천량을 그대로 사용합니다.
+            */
+            $originalQuantity = max(
+                0,
+                (int) (
+                    $record['original_recommended_quantity']
+                    ?? $record['recommended_quantity']
+                    ?? 0
+                )
+            );
+
+            $carryoverIn = max(
+                0,
+                (int) (
+                    $record['carryover_in'] ?? 0
+                )
+            );
+
+            $estimatedSales = max(
+                0,
+                (int) (
+                    $record['estimated_sales'] ?? 0
+                )
+            );
+
+            $actualRemaining =
+                max(
+                    0,
+                    (int) ($record['waste'] ?? 0)
+                )
+                +
+                max(
+                    0,
+                    (int) ($record['carryover_out'] ?? 0)
+                );
+
+            /*
+            * 과거에 이미 조정된 추천량으로
+            * 계산된 상태를 그대로 사용하지 않습니다.
+            *
+            * 최초 추천량을 기준으로
+            * 부족 여부를 다시 판단합니다.
+            */
+            $originalAvailable =
+                $originalQuantity + $carryoverIn;
+
+            $originalDifference =
+                $originalAvailable - $estimatedSales;
+
+            $tolerance = max(
+                2,
+                (int) round($estimatedSales * 0.10)
+            );
+
+            $baselineStatus = 'uncertain';
+
+            if ($originalDifference < 0) {
+                $baselineStatus = 'below_observed_sales';
+            } elseif (
+                $originalDifference > $tolerance
+                && $actualRemaining > 0
+            ) {
+                $baselineStatus = 'possible_excess';
+            } elseif (
+                abs($originalDifference) <= $tolerance
+                && $actualRemaining > 0
+            ) {
+                $baselineStatus =
+                    $originalDifference === 0
+                        ? 'exact'
+                        : 'near';
+            }
+
+            /*
+            * 비교 가능한 정상 마감 기록만 사용합니다.
+            *
+            * 완판 등으로 추가 수요를 확인할 수 없는
+            * 날짜는 확정적인 검증 근거에서 제외합니다.
+            */
+            if (
+                !in_array(
+                    $baselineStatus,
+                    [
+                        'exact',
+                        'near',
+                        'below_observed_sales',
+                        'possible_excess',
+                    ],
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            /*
+            * 추천량 조정 계산에 전달할 기록입니다.
+            *
+            * 조정 전 추천량과 그 기준으로 계산한 상태를
+            * 함께 사용해야 중복 증량 위험을 줄일 수 있습니다.
+            */
+            $baselineRecord = $record;
+
+            $baselineRecord['recommended_quantity'] =
+                $originalQuantity;
+
+            $baselineRecord['status'] =
+                $baselineStatus;
+
+            /*
+            * 각 검증 날짜에서 최근 12개월 기록을 참고합니다.
+            *
+            * 전체 검증 기간은 제한하지 않습니다.
+            */
+            $historyFrom = $date->copy()
+                ->subYear()
+                ->toDateString();
+
+            while (
+                !empty($previousByWeekday[$weekday])
+                && (
+                    $previousByWeekday[$weekday][0]['date']
+                        ?? ''
+                ) < $historyFrom
+            ) {
+                array_shift(
+                    $previousByWeekday[$weekday]
+                );
+            }
+
+            /*
+            * 현재 날짜보다 이전의
+            * 같은 요일 기록만 사용합니다.
+            */
+            $previousRecords =
+                $previousByWeekday[$weekday];
+
+            /*
+            * 과거 기록을 이용해
+            * 해당 날짜의 조정 후보를 계산합니다.
+            */
+            $adjustment = $originalQuantity > 0
+                ? $this->recommendationService
+                    ->calculateAdaptiveAdjustment(
+                        $previousRecords,
+                        $originalQuantity,
+                        $date
+                    )
+                : [
+                    'suggested_quantity' =>
+                        $originalQuantity,
+
+                    'record_count' => 0,
+                ];
+
+            $candidateQuantity = max(
+                0,
+                (int) (
+                    $adjustment['suggested_quantity']
+                        ?? $originalQuantity
+                )
+            );
+
+            /*
+            * 현재 날짜의 결과는
+            * 조정 후보 계산이 끝난 뒤에 추가합니다.
+            *
+            * 따라서 미래 정보를 참고하지 않습니다.
+            */
+            $previousByWeekday[$weekday][] =
+                $baselineRecord;
+
+            /*
+            * 추천량이 바뀌지 않았다면
+            * 개선 효과를 비교할 수 없습니다.
+            */
+            if (
+                $originalQuantity <= 0
+                || $candidateQuantity === $originalQuantity
+            ) {
+                continue;
+            }
+
+            /*
+            * 기존 추천과 새로운 후보를
+            * 동일한 실제 마감 기록으로 비교합니다.
+            */
+            $originalEvaluation =
+                $this->recommendationService
+                    ->evaluateProductionCandidate(
+                        $record,
+                        $originalQuantity
+                    );
+
+            $candidateEvaluation =
+                $this->recommendationService
+                    ->evaluateProductionCandidate(
+                        $record,
+                        $candidateQuantity
+                    );
+
+            $originalAvailable = (int) (
+                $originalEvaluation['candidate_available']
+                    ?? 0
+            );
+
+            $candidateAvailable = (int) (
+                $candidateEvaluation['candidate_available']
+                    ?? 0
+            );
+
+            $originalDifference = abs(
+                $originalAvailable - $estimatedSales
+            );
+
+            $candidateDifference = abs(
+                $candidateAvailable - $estimatedSales
+            );
+
+            /*
+            * 실제 판매 추정량보다
+            * 부족했던 수량입니다.
+            */
+            $originalShortfall = max(
+                0,
+                (int) (
+                    $originalEvaluation['confirmed_shortfall']
+                        ?? 0
+                )
+            );
+
+            $candidateShortfall = max(
+                0,
+                (int) (
+                    $candidateEvaluation['confirmed_shortfall']
+                        ?? 0
+                )
+            );
+
+            /*
+            * 판매 추정량보다 많은 수량입니다.
+            *
+            * 실제 폐기량으로 확정하지 않습니다.
+            */
+            $originalPossibleExcess = max(
+                0,
+                (int) (
+                    $originalEvaluation['possible_excess']
+                        ?? 0
+                )
+            );
+
+            $candidatePossibleExcess = max(
+                0,
+                (int) (
+                    $candidateEvaluation['possible_excess']
+                        ?? 0
+                )
+            );
+
+            $originalShortage =
+                $originalShortfall > 0;
+
+            $candidateShortage =
+                $candidateShortfall > 0;
+
+            /*
+            * 증량 후보가 실제 확인된 판매 부족을 줄이고
+            * 남을 가능성이 있는 수량이
+            * 실제 잔여 수량 이하인지 확인합니다.
+            *
+            * 참고 근거이지 실제 성과의 증명은 아닙니다.
+            */
+            $candidateSupported =
+                $candidateShortfall < $originalShortfall
+                && $candidatePossibleExcess <= $actualRemaining;
+
+            /*
+            * 전체 비교 결과 누적
+            */
+            $result['tested_days']++;
+
+            $result['original_total_difference'] +=
+                $originalDifference;
+
+            $result['candidate_total_difference'] +=
+                $candidateDifference;
+
+            $result['original_shortfall_total'] +=
+                $originalShortfall;
+
+            $result['candidate_shortfall_total'] +=
+                $candidateShortfall;
+
+            $result['original_possible_excess_total'] +=
+                $originalPossibleExcess;
+
+            $result['candidate_possible_excess_total'] +=
+                $candidatePossibleExcess;
+
+            if ($originalShortage) {
+                $result['original_shortage_days']++;
+            }
+
+            if ($candidateShortage) {
+                $result['candidate_shortage_days']++;
+            }
+
+            if ($candidateSupported) {
+                $result['candidate_supported_days']++;
+            }
+
+            /*
+            * 날짜별 상세 비교 기록
+            */
+            $result['details'][] = [
+                'date' => $dateString,
+
+                'weekday' => $weekday,
+
+                'original_quantity' =>
+                    $originalQuantity,
+
+                'candidate_quantity' =>
+                    $candidateQuantity,
+
+                'adjustment_quantity' =>
+                    $candidateQuantity - $originalQuantity,
+
+                'estimated_sales' =>
+                    $estimatedSales,
+
+                'carryover_in' =>
+                    $carryoverIn,
+
+                'original_difference' =>
+                    $originalDifference,
+
+                'candidate_difference' =>
+                    $candidateDifference,
+
+                'original_shortage' =>
+                    $originalShortage,
+
+                'candidate_shortage' =>
+                    $candidateShortage,
+
+                'previous_record_count' =>
+                    (int) (
+                        $adjustment['record_count'] ?? 0
+                    ),
+
+                'original_shortfall' =>
+                    $originalShortfall,
+
+                'candidate_shortfall' =>
+                    $candidateShortfall,
+
+                'original_possible_excess' =>
+                    $originalPossibleExcess,
+
+                'candidate_possible_excess' =>
+                    $candidatePossibleExcess,
+
+                'actual_remaining' =>
+                    $actualRemaining,
+
+                'candidate_supported' =>
+                    $candidateSupported,
+            ];
+        }
+
+        /*
+        * 기록이 부족하면
+        * 자동 조정 적용을 보류합니다.
+        */
+        if ($result['tested_days'] < 5) {
+            return $result;
+        }
+
+        $originalTotal =
+            $result['original_total_difference'];
+
+        $candidateTotal =
+            $result['candidate_total_difference'];
+
+        $originalShortfall =
+            $result['original_shortfall_total'];
+
+        $candidateShortfall =
+            $result['candidate_shortfall_total'];
+
+        $originalExcess =
+            $result['original_possible_excess_total'];
+
+        $candidateExcess =
+            $result['candidate_possible_excess_total'];
+
+        $supportedDays =
+            $result['candidate_supported_days'];
+
+        $testedDays =
+            $result['tested_days'];
+
+        /*
+        * 기존 방식 대비 평균 수량 차이 개선
+        */
+        if ($originalTotal > 0) {
+            $result['improvement_rate'] = round(
+                ($originalTotal - $candidateTotal)
+                    / $originalTotal,
+                4
+            );
+        }
+
+        /*
+        * 새 후보가 줄인 판매 부족 수량
+        */
+        $shortfallReduction = max(
+            0,
+            $originalShortfall - $candidateShortfall
+        );
+
+        /*
+        * 새 후보가 추가로 남길 수 있는 수량
+        */
+        $additionalExcess = max(
+            0,
+            $candidateExcess - $originalExcess
+        );
+
+        $result['shortfall_reduction'] =
+            $shortfallReduction;
+
+        $result['additional_possible_excess'] =
+            $additionalExcess;
+
+        $result['supported_rate'] =
+            $testedDays > 0
+                ? round(
+                    $supportedDays / $testedDays,
+                    4
+                )
+                : null;
+
+        /*
+        * 판매 부족이 줄지 않았다면
+        * 개선된 추천으로 판단하지 않습니다.
+        */
+        if ($shortfallReduction <= 0) {
+            $result['result'] = 'not_better';
+
+            return $result;
+        }
+
+        /*
+        * 판매 부족 날짜가 증가하면
+        * 자동 조정을 보류합니다.
+        */
+        if (
+            $result['candidate_shortage_days']
+                > $result['original_shortage_days']
+        ) {
+            $result['result'] = 'shortage_risk';
+
+            return $result;
+        }
+
+        /*
+        * 판매 부족 감소보다
+        * 남는 수량의 증가가 크다면 보류합니다.
+        */
+        if ($additionalExcess > $shortfallReduction) {
+            $result['result'] = 'excess_risk';
+
+            return $result;
+        }
+
+        /*
+        * 실제 기록과 비교해
+        * 후보를 뒷받침하는 날짜의 비율입니다.
+        *
+        * 50%는 초기 검증 기준이며
+        * 확정된 최적값이 아닙니다.
+        */
+        $hasEnoughSupportedDays =
+            $testedDays > 0
+            && $supportedDays / $testedDays >= 0.50;
+
+        if (!$hasEnoughSupportedDays) {
+            $result['result'] = 'needs_review';
+
+            return $result;
+        }
+
+        /*
+        * 과거 검증에서 조정 후보가
+        * 개선 가능성을 보였다고 판단합니다.
+        */
+        $result['result'] = 'promising';
+
+        return $result;
+    }
+
+    /**
+     * 추천량 조정에 필요한 과거 추천 결과를 조회합니다.
+     *
+     * 기존 추천량은 최근 12개월 기록으로 계산하고,
+     * 과거 추천 검증은 전체 누적 기록을 사용합니다.
+     *
+     * 기존 날짜별 생산·폐기·이월·로스
+     * 집계 함수를 그대로 활용합니다.
+     *
+     * 생산 입력 화면과 저장 과정에서
+     * 동일하게 사용하는 공통 함수입니다.
+     */
+    private function recommendationOutcomesForProduct(
+        int $storeId,
+        int $productId,
+        Carbon $targetDate,
+        Collection $recentHistory
+    ): array {
+        /*
+        * 해당 날짜 이전의 가장 오래된 추천 기록을 확인합니다.
+        */
+        $firstSnapshotDate =
+            ProductionRecommendationSnapshot::query()
+                ->where('store_id', $storeId)
+                ->where('product_id', $productId)
+                ->whereNotNull('production_batch_id')
+                ->whereNotNull('center_quantity')
+                ->where(
+                    'target_date',
+                    '<',
+                    $targetDate->toDateString()
+                )
+                ->min('target_date');
+
+        /*
+        * 과거 추천 기록이 없다면
+        * 분석 결과를 비워서 반환합니다.
+        */
+        if (!$firstSnapshotDate) {
+            return [
+                'records' => [],
+                'summary' => [],
+                'adjustment_evidence' => [],
+                'adjustment_backtest' => [],
+                'adjustment_comparison' => [
+                    'evaluated_days' => 0,
+                    'adjusted_days' => 0,
+                    'original_shortfall_total' => 0,
+                    'adjusted_shortfall_total' => 0,
+                    'original_possible_excess_total' => 0,
+                    'adjusted_possible_excess_total' => 0,
+                    'improved_days' => 0,
+                    'worsened_days' => 0,
+                    'unchanged_days' => 0,
+                    'records' => [],
+                ],
+            ];
+        }
+
+        /*
+        * 기본 추천 계산 기간은 최근 12개월입니다.
+        */
+        $recommendationFrom = $targetDate->copy()
+            ->subYear()
+            ->startOfDay();
+
+        $outcomeHistory = $recentHistory;
+
+        $outcomeStartDate = $recommendationFrom;
+
+        $firstDate = Carbon::parse(
+            $firstSnapshotDate
+        )->startOfDay();
+
+        /*
+        * 12개월 이전에도 추천 기록이 있다면
+        * 과거 검증에 필요한 기록을 추가 조회합니다.
+        */
+        if ($firstDate->lt($recommendationFrom)) {
+            $outcomeStartDate = $firstDate;
+
+            $outcomeHistory =
+                $this->recommendationHistoryForProduct(
+                    $storeId,
+                    $productId,
+                    $targetDate,
+                    $outcomeStartDate
+                );
+        }
+
+        /*
+        * 날짜별 추천량과 실제 마감 결과를 분석합니다.
+        *
+        * 생산·폐기·이월·로스가 여러 건인 경우에도
+        * 기존 날짜별 합산 결과를 사용합니다.
+        */
+        $outcomes =
+            $this->recommendationOutcomeAnalysis(
+                $storeId,
+                $productId,
+                $outcomeHistory,
+                $targetDate,
+                $outcomeStartDate
+            );
+
+        /*
+        * 기존 반복 부족 분석을 유지합니다.
+        */
+        $outcomes['adjustment_evidence'] =
+            $this->recommendationAdjustmentEvidence(
+                $outcomes,
+                $targetDate
+            );
+
+        /*
+        * 기존 과거 추천 검증을 유지합니다.
+        */
+        $outcomes['adjustment_backtest'] =
+            $this->recommendationAdjustmentBacktest(
+                $outcomes
+            );
+
+        /*
+        * 새로 추가한 추천량 조정 비교입니다.
+        *
+        * 조정 전 추천량과 최종 추천량을
+        * 실제 마감 결과를 기준으로 비교합니다.
+        */
+        $outcomes['adjustment_comparison'] =
+            $this->recommendationAdjustmentComparison(
+                $storeId,
+                $productId,
+                $outcomes['records'] ?? []
+            );
+
+        return $outcomes;
+    }
+    
+    /**
+     * 과거 추천 결과를 검증하여 현재 추천량을 조정합니다.
+     *
+     * 기존 추천 계산 결과는 유지합니다.
+     * 과거에 이미 조정된 추천량은 최초 추천량으로
+     * 되돌려 분석한 뒤 새로운 조정 후보를 계산합니다.
+     *
+     * 추천 조건이 충족되지 않으면
+     * 기존 추천량을 그대로 반환합니다.
+     */
+    private function applyHistoricalRecommendation(
+        array $recommendation,
+        array $outcomes,
+        Carbon $targetDate
+    ): array {
+        $center = $recommendation['center'] ?? null;
+
+        $recommendation['metrics'] ??= [];
+
+        $recommendation['metrics']['historical_validation'] ??= [];
+
+        $recommendation['metrics']
+            ['historical_validation']
+            ['applied'] = false;
+
+        /*
+        * 추천량이 없다면 조정하지 않습니다.
+        */
+        if (
+            $center === null
+            || !is_numeric($center)
+            || (int) $center <= 0
+        ) {
+            return $recommendation;
+        }
+
+        $records = $outcomes['records'] ?? [];
+
+        if (empty($records)) {
+            return $recommendation;
+        }
+
+        /*
+        * 기존 추천 신뢰도가 충분할 때만
+        * 자동 조정을 검토합니다.
+        */
+        if (
+            ($recommendation['confidence'] ?? null)
+                !== 'normal'
+        ) {
+            return $recommendation;
+        }
+
+        /*
+        * 기존 반복 부족 분석 결과입니다.
+        */
+        $evidence =
+            $outcomes['adjustment_evidence']
+            ?? $this->recommendationAdjustmentEvidence(
+                $outcomes,
+                $targetDate
+            );
+
+        /*
+        * 조정 전 추천량을 기준으로
+        * 검증한 과거 결과입니다.
+        */
+        $backtest =
+            $outcomes['adjustment_backtest']
+            ?? $this->recommendationAdjustmentBacktest(
+                $outcomes
+            );
+
+        /*
+        * 현재 추천량 계산에 사용할
+        * 과거 기록을 준비합니다.
+        */
+        $baselineRecords = [];
+
+        foreach ($records as $record) {
+            if (
+                !is_array($record)
+                || empty($record['date'])
+            ) {
+                continue;
+            }
+
+            /*
+            * 같은 날 서로 다른 추천이 있었다면
+            * 정확한 비교가 어려우므로 제외합니다.
+            */
+            if (
+                $record['has_multiple_recommendations']
+                    ?? false
+            ) {
+                continue;
+            }
+
+            /*
+            * 과거에 이미 조정된 추천량 대신
+            * 최초 추천량을 사용합니다.
+            */
+            $originalQuantity = max(
+                0,
+                (int) (
+                    $record['original_recommended_quantity']
+                    ?? $record['recommended_quantity']
+                    ?? 0
+                )
+            );
+
+            $carryoverIn = max(
+                0,
+                (int) ($record['carryover_in'] ?? 0)
+            );
+
+            $estimatedSales = max(
+                0,
+                (int) ($record['estimated_sales'] ?? 0)
+            );
+
+            $actualRemaining =
+                max(
+                    0,
+                    (int) ($record['waste'] ?? 0)
+                )
+                +
+                max(
+                    0,
+                    (int) ($record['carryover_out'] ?? 0)
+                );
+
+            $available =
+                $originalQuantity + $carryoverIn;
+
+            $difference =
+                $available - $estimatedSales;
+
+            $tolerance = max(
+                2,
+                (int) round($estimatedSales * 0.10)
+            );
+
+            /*
+            * 최초 추천량을 기준으로
+            * 당시 추천이 부족했는지 다시 판단합니다.
+            */
+            $status = 'uncertain';
+
+            if ($difference < 0) {
+                $status = 'below_observed_sales';
+            } elseif (
+                $difference > $tolerance
+                && $actualRemaining > 0
+            ) {
+                $status = 'possible_excess';
+            } elseif (
+                abs($difference) <= $tolerance
+                && $actualRemaining > 0
+            ) {
+                $status =
+                    $difference === 0
+                        ? 'exact'
+                        : 'near';
+            }
+
+            /*
+            * 판매 결과를 비교할 수 없는 날은
+            * 조정 계산에서 제외합니다.
+            */
+            if (
+                !in_array(
+                    $status,
+                    [
+                        'exact',
+                        'near',
+                        'below_observed_sales',
+                        'possible_excess',
+                    ],
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            /*
+            * 기존 기록의 다른 정보는 그대로 유지하고
+            * 최초 추천량과 판단 결과만 교체합니다.
+            */
+            $baselineRecord = $record;
+
+            $baselineRecord['recommended_quantity'] =
+                $originalQuantity;
+
+            $baselineRecord['status'] =
+                $status;
+
+            $baselineRecords[] = $baselineRecord;
+        }
+
+        /*
+        * 유효한 비교 기록이 없다면
+        * 기존 추천량을 유지합니다.
+        */
+        if (empty($baselineRecords)) {
+            return $recommendation;
+        }
+
+        /*
+        * 과거 조정이 중복 반영되지 않은 기록으로
+        * 현재 추천량의 조정 후보를 계산합니다.
+        */
+        $candidate =
+            $this->recommendationService
+                ->calculateAdaptiveAdjustment(
+                    $baselineRecords,
+                    (int) $center,
+                    $targetDate
+                );
+
+        /*
+        * 기존 검증 조건을 적용합니다.
+        *
+        * 조건을 통과하지 못하면
+        * 추천량은 변경되지 않습니다.
+        */
+        $recommendation =
+            $this->recommendationService
+                ->applyHistoricalValidation(
+                    $recommendation,
+                    $evidence,
+                    $backtest,
+                    $candidate
+                );
+
+        /*
+        * 실제 추천량 조정 여부
+        */
+        $adjustmentApplied = (bool) (
+            $recommendation['metrics']
+                ['historical_adjustment']
+                ['applied']
+            ?? false
+        );
+
+        /*
+        * 기존 과거 검증 결과와
+        * 실제 적용 여부를 일치시킵니다.
+        */
+        $recommendation['metrics']
+            ['historical_validation']
+            ['applied'] = $adjustmentApplied;
+
+        /*
+        * 최종 추천 생산량
+        */
+        $recommendation['metrics']
+            ['historical_validation']
+            ['final_quantity'] =
+                $recommendation['center'];
+
+        return $recommendation;
+    }
+
+    /**
+     * 과거 추천 결과를 바탕으로
+     * 추천 생산량 조정이 필요한지 검토합니다.
+     *
+     * 이미 자동 조정된 추천량이 아니라
+     * 최초 추천량을 기준으로 부족 여부를 판단합니다.
+     *
+     * 기존 추천량 자체는 변경하지 않습니다.
+     */
+    private function recommendationAdjustmentEvidence(
+        array $outcomes,
+        Carbon $targetDate
+    ): array {
+        $records = $outcomes['records'] ?? [];
+
+        $sameWeekday = [];
+
+        $targetWeekday = $targetDate->dayOfWeek;
+
+        $recentFrom = $targetDate->copy()
+            ->subMonths(3)
+            ->toDateString();
+
+        $targetDateString =
+            $targetDate->toDateString();
+
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+
+            $date = $record['date'] ?? null;
+
+            /*
+            * 최근 3개월의 과거 기록만 사용합니다.
+            *
+            * 전체 과거 검증은 별도 함수에서
+            * 모든 누적 기록을 대상으로 진행합니다.
+            */
+            if (
+                !$date
+                || $date < $recentFrom
+                || $date >= $targetDateString
+            ) {
+                continue;
+            }
+
+            /*
+            * 추천 대상일과 같은 요일의
+            * 과거 기록을 우선 사용합니다.
+            */
+            if (
+                (int) ($record['weekday'] ?? -1)
+                    !== $targetWeekday
+            ) {
+                continue;
+            }
+
+            /*
+            * 서로 다른 추천이 여러 번 저장된 날짜는
+            * 정확한 기준을 정하기 어려우므로 제외합니다.
+            */
+            if (
+                $record['has_multiple_recommendations']
+                    ?? false
+            ) {
+                continue;
+            }
+
+            /*
+            * 최초 추천량을 사용합니다.
+            *
+            * 조정 기록이 없는 과거 데이터는
+            * 기존 추천량을 그대로 사용합니다.
+            */
+            $originalQuantity = max(
+                0,
+                (int) (
+                    $record['original_recommended_quantity']
+                    ?? $record['recommended_quantity']
+                    ?? 0
+                )
+            );
+
+            $carryoverIn = max(
+                0,
+                (int) ($record['carryover_in'] ?? 0)
+            );
+
+            $estimatedSales = max(
+                0,
+                (int) ($record['estimated_sales'] ?? 0)
+            );
+
+            $waste = max(
+                0,
+                (int) ($record['waste'] ?? 0)
+            );
+
+            $carryoverOut = max(
+                0,
+                (int) ($record['carryover_out'] ?? 0)
+            );
+
+            /*
+            * 추천량과 이월 입고량을 합산합니다.
+            *
+            * 이월 입고량은 이미 있는 재고이므로
+            * 신규 생산 추천량과 구분합니다.
+            */
+            $originalAvailable =
+                $originalQuantity + $carryoverIn;
+
+            /*
+            * 최초 추천량으로 확보 가능한 수량과
+            * 실제 판매 추정량의 차이입니다.
+            */
+            $difference =
+                $originalAvailable - $estimatedSales;
+
+            $tolerance = max(
+                2,
+                (int) round($estimatedSales * 0.10)
+            );
+
+            /*
+            * 최초 추천량 기준으로
+            * 해당 날짜의 결과를 다시 판단합니다.
+            */
+            $status = 'uncertain';
+
+            if ($difference < 0) {
+                $status = 'below_observed_sales';
+            } elseif (
+                $difference > $tolerance
+                && ($waste + $carryoverOut) > 0
+            ) {
+                $status = 'possible_excess';
+            } elseif (
+                abs($difference) <= $tolerance
+                && ($waste + $carryoverOut) > 0
+            ) {
+                $status =
+                    $difference === 0
+                        ? 'exact'
+                        : 'near';
+            }
+
+            /*
+            * 비교 결과가 불확실한 날짜는
+            * 자동 조정의 근거에서 제외합니다.
+            */
+            if (
+                !in_array(
+                    $status,
+                    [
+                        'exact',
+                        'near',
+                        'below_observed_sales',
+                        'possible_excess',
+                    ],
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            /*
+            * 기존 기록을 유지하면서
+            * 최초 추천량 기준 판단 결과를 추가합니다.
+            */
+            $record['baseline_status'] = $status;
+
+            $record['baseline_recommendation'] =
+                $originalQuantity;
+
+            $record['baseline_difference'] =
+                $difference;
+
+            $sameWeekday[] = $record;
+        }
+
+        usort(
+            $sameWeekday,
+            fn (array $a, array $b) =>
+                strcmp(
+                    $a['date'],
+                    $b['date']
+                )
+        );
+
+        $count = count($sameWeekday);
+
+        /*
+        * 기존 반환 구조를 유지합니다.
+        */
+        $result = [
+            'eligible' => false,
+
+            'direction' => 'none',
+
+            'reason' =>
+                '조정에 필요한 기록이 부족합니다.',
+
+            'same_weekday_count' => $count,
+
+            'shortage_days' => 0,
+
+            'possible_excess_days' => 0,
+
+            'near_days' => 0,
+
+            'suggested_adjustment_rate' => 0,
+
+            'evidence_dates' => [],
+        ];
+
+        /*
+        * 기존 최소 기록 기준을 유지합니다.
+        *
+        * 이 기준은 추후 과거 데이터 검증을 통해
+        * 조정할 수 있습니다.
+        */
+        if ($count < 4) {
+            return $result;
+        }
+
+        $shortageRecords = [];
+        $excessRecords = [];
+
+        $nearCount = 0;
+
+        foreach ($sameWeekday as $record) {
+            $status =
+                $record['baseline_status'];
+
+            if ($status === 'below_observed_sales') {
+                $shortageRecords[] = $record;
+            } elseif ($status === 'possible_excess') {
+                $excessRecords[] = $record;
+            } elseif (
+                $status === 'exact'
+                || $status === 'near'
+            ) {
+                $nearCount++;
+            }
+        }
+
+        $shortageCount =
+            count($shortageRecords);
+
+        $excessCount =
+            count($excessRecords);
+
+        $result['shortage_days'] =
+            $shortageCount;
+
+        $result['possible_excess_days'] =
+            $excessCount;
+
+        $result['near_days'] =
+            $nearCount;
+
+        /*
+        * 동일 요일에서 최초 추천량이
+        * 반복적으로 부족했던 경우입니다.
+        *
+        * 실제 증량 수량은 다른 함수에서
+        * 과거 데이터에 따라 계산합니다.
+        */
+        if (
+            $shortageCount >= 3
+            && $shortageCount / $count >= 0.60
+            && $excessCount <= 1
+        ) {
+            $result['eligible'] = true;
+
+            $result['direction'] = 'increase';
+
+            /*
+            * 고정 증량률을 사용하지 않습니다.
+            *
+            * 실제 조정률은
+            * calculateAdaptiveAdjustment()에서
+            * 별도로 계산합니다.
+            */
+            $result['suggested_adjustment_rate'] = 0;
+
+            $result['evidence_dates'] =
+                array_values(
+                    array_map(
+                        fn (array $record) =>
+                            $record['date'],
+                        array_slice(
+                            $shortageRecords,
+                            -3
+                        )
+                    )
+                );
+
+            $result['reason'] =
+                "최근 같은 요일 {$count}일 중 {$shortageCount}일에서 기존 추천 생산량이 판매 추정량보다 부족했습니다. 과거 기록을 추가 검증하여 증량 여부를 판단합니다.";
+
+            return $result;
+        }
+
+        /*
+        * 기존 추천량이 과도했을 가능성이
+        * 반복해서 나타난 경우입니다.
+        *
+        * 기존 추천 엔진에서도 폐기와 이월을
+        * 분석하므로 즉시 추가 감량하지 않습니다.
+        */
+        if (
+            $excessCount >= 3
+            && $excessCount / $count >= 0.60
+        ) {
+            $result['direction'] =
+                'review_decrease';
+
+            $result['evidence_dates'] =
+                array_values(
+                    array_map(
+                        fn (array $record) =>
+                            $record['date'],
+                        array_slice(
+                            $excessRecords,
+                            -3
+                        )
+                    )
+                );
+
+            $result['reason'] =
+                "최근 같은 요일 {$count}일 중 {$excessCount}일에서 기존 추천량이 많았을 가능성이 확인됐습니다. 폐기와 이월 기록을 함께 확인해야 합니다.";
+
+            return $result;
+        }
+
+        $result['reason'] =
+            '최근 같은 요일의 기록에서 추천 생산량을 변경할 만큼 반복적인 차이가 확인되지 않았습니다.';
+
+        return $result;
+    }
+
+    /**
+     * 과거 추천 결과를 실제 날짜와 수량으로 설명합니다.
+     *
+     * 기존 날짜별 추천 검증 결과를 사용하므로
+     * 데이터베이스 추가 조회는 발생하지 않습니다.
+     *
+     * 사실로 확인된 내용만 설명하며,
+     * 추천을 적용했을 때 발생했을 가상의
+     * 폐기량이나 판매량을 확정하지 않습니다.
+     */
+    private function recommendationOutcomeMessages(
+        array $outcomes
+    ): array {
+        $records = $outcomes['records'] ?? [];
+
+        $summary = $outcomes['summary'] ?? [];
+
+        $messages = [];
+
+        $evaluatedDays = (int) (
+            $summary['evaluated_days'] ?? 0
+        );
+
+        $multipleDays = (int) (
+            $summary['multiple_recommendation_days'] ?? 0
+        );
+
+        /*
+        * 비교 가능한 기록이 없는 경우
+        */
+        if ($evaluatedDays === 0) {
+            $messages[] =
+                '아직 추천 결과를 비교할 수 있는 마감 기록이 충분하지 않습니다. 생산과 마감 기록이 쌓이면 추천 결과를 분석할 수 있습니다.';
+
+            if ($multipleDays > 0) {
+                $messages[] =
+                    "추천이 여러 번 생성된 날짜 {$multipleDays}일은 대표 추천량을 확정하기 어려워 정확도 비교에서 제외했습니다.";
+            }
+
+            return $messages;
+        }
+
+        /*
+        * 전체 분석 결과
+        */
+        $nearDays =
+            (int) ($summary['exact_days'] ?? 0)
+            + (int) ($summary['near_days'] ?? 0);
+
+        $belowDays = (int) (
+            $summary['below_observed_sales_days'] ?? 0
+        );
+
+        $possibleExcessDays = (int) (
+            $summary['possible_excess_days'] ?? 0
+        );
+
+        $uncertainDays = (int) (
+            $summary['uncertain_days'] ?? 0
+        );
+
+        $messages[] =
+            "과거 추천과 마감 결과를 비교한 {$evaluatedDays}일 중 {$nearDays}일은 추천량이 관측 판매량에 근접했습니다.";
+
+        if ($belowDays > 0) {
+            $messages[] =
+                "{$belowDays}일은 추천량과 이월 입고를 합친 수량이 실제 관측 판매량보다 적었습니다. 해당 날짜의 생산량을 다시 검토할 필요가 있습니다.";
+        }
+
+        if ($possibleExcessDays > 0) {
+            $messages[] =
+                "{$possibleExcessDays}일은 추천량이 관측 판매량보다 많고 실제 폐기 또는 이월도 발생했습니다. 다만 추천대로 생산했을 때의 폐기량까지 확정할 수는 없습니다.";
+        }
+
+        if ($uncertainDays > 0) {
+            $messages[] =
+                "{$uncertainDays}일은 완판 가능성 등의 이유로 실제 수요를 확정하기 어려워 추천 정확도를 판단하지 않았습니다.";
+        }
+
+        /*
+        * 최근 날짜의 실제 기록을 구체적으로 설명합니다.
+        *
+        * 가장 최근 기록부터 확인하고,
+        * 최대 3일의 사례만 문장으로 제공합니다.
+        */
+        $recentRecords = array_reverse($records);
+
+        $exampleCount = 0;
+
+        foreach ($recentRecords as $record) {
+            if ($exampleCount >= 3) {
+                break;
+            }
+
+            if (
+                !is_array($record)
+                || empty($record['date'])
+            ) {
+                continue;
+            }
+
+            /*
+            * 추천이 여러 번 생성된 날짜는
+            * 대표 추천량이 불명확하므로
+            * 구체적인 성공·실패 사례에서 제외합니다.
+            */
+            if (
+                $record['has_multiple_recommendations'] ?? false
+            ) {
+                continue;
+            }
+
+            $date = Carbon::parse(
+                $record['date']
+            )->format('n월 j일');
+
+            $recommended = (int) (
+                $record['recommended_quantity'] ?? 0
+            );
+
+            $production = (int) (
+                $record['actual_production'] ?? 0
+            );
+
+            $carryoverIn = (int) (
+                $record['carryover_in'] ?? 0
+            );
+
+            $estimatedSales = (int) (
+                $record['estimated_sales'] ?? 0
+            );
+
+            $waste = (int) (
+                $record['waste'] ?? 0
+            );
+
+            $loss = (int) (
+                $record['loss'] ?? 0
+            );
+
+            $carryoverOut = (int) (
+                $record['carryover_out'] ?? 0
+            );
+
+            $status = (string) (
+                $record['status'] ?? 'uncertain'
+            );
+
+            /*
+            * 실제 기록된 수량만 사용합니다.
+            */
+            $message =
+                "{$date}에는 {$recommended}개 생산을 추천했고 실제로는 {$production}개를 생산했습니다. ";
+
+            if ($carryoverIn > 0) {
+                $message .=
+                    "당일 이월 입고는 {$carryoverIn}개였습니다. ";
+            }
+
+            $message .=
+                "추정 판매량은 {$estimatedSales}개, 폐기는 {$waste}개, 로스는 {$loss}개, 다음 날 이월은 {$carryoverOut}개였습니다.";
+
+            /*
+            * 확인 가능한 비교 결과만 추가합니다.
+            */
+            if ($status === 'below_observed_sales') {
+                $message .=
+                    ' 추천량과 이월 입고를 합친 수량이 실제 관측 판매량보다 적었습니다.';
+            } elseif ($status === 'possible_excess') {
+                $message .=
+                    ' 추천량이 관측 판매량보다 높아 과잉 가능성을 검토할 필요가 있습니다.';
+            } elseif ($status === 'exact') {
+                $message .=
+                    ' 추천량과 이월 입고를 합친 수량이 관측 판매량과 일치했습니다.';
+            } elseif ($status === 'near') {
+                $message .=
+                    ' 추천량이 관측 판매량에 비교적 근접했습니다.';
+            } else {
+                $message .=
+                    ' 실제 수요를 확정하기 어려워 추천 결과를 단정하지 않았습니다.';
+            }
+
+            $messages[] = $message;
+
+            $exampleCount++;
+        }
+
+        if ($multipleDays > 0) {
+            $messages[] =
+                "같은 날짜에 추천이 여러 번 생성된 {$multipleDays}일은 중복 계산을 방지하기 위해 정확도 비교에서 제외했습니다.";
+        }
+
+        /*
+        * 분석의 한계를 명확히 안내합니다.
+        */
+        $messages[] =
+            '이 분석은 실제 생산·이월·로스·폐기 기록으로 계산한 추정 판매량을 기준으로 합니다. 추천량대로 생산했을 때의 실제 판매량이나 폐기량을 확정하는 결과는 아닙니다.';
+
+        return $messages;
+    }
+
+    /**
+     * 과거 추천 검증 결과를 월별·요일별로 집계합니다.
+     *
+     * 기존 날짜별 분석 결과를 재사용하므로
+     * 데이터베이스를 추가 조회하지 않습니다.
+     *
+     * 동일 날짜에 추천이 여러 번 생성된 경우
+     * 정확도 비교에서 제외하고 별도로 표시합니다.
+     */
+    private function summarizeRecommendationOutcomes(
+        array $outcomes
+    ): array {
+        $weekdayNames = [
+            '일요일',
+            '월요일',
+            '화요일',
+            '수요일',
+            '목요일',
+            '금요일',
+            '토요일',
+        ];
+
+        $monthly = [];
+        $weekdays = [];
+
+        /*
+        * 기존 날짜별 결과를 집계할 기본 구조입니다.
+        */
+        $createGroup = static function (
+            string $label
+        ): array {
+            return [
+                'label' => $label,
+
+                'record_days' => 0,
+
+                'evaluated_days' => 0,
+
+                'multiple_recommendation_days' => 0,
+
+                'exact_days' => 0,
+
+                'near_days' => 0,
+
+                'below_observed_sales_days' => 0,
+
+                'possible_excess_days' => 0,
+
+                'uncertain_days' => 0,
+
+                'recommended_total' => 0,
+
+                'estimated_sales_total' => 0,
+
+                'absolute_difference_total' => 0,
+
+                'average_absolute_difference' => null,
+            ];
+        };
+
+        /*
+        * 요일은 기록이 없어도 7개를 반환합니다.
+        */
+        foreach ($weekdayNames as $index => $name) {
+            $weekdays[$index] = $createGroup($name);
+
+            $weekdays[$index]['weekday'] = $index;
+        }
+
+        $multipleRecommendationDays = 0;
+
+        foreach ($outcomes['records'] ?? [] as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+
+            $date = $record['date'] ?? null;
+
+            if (!$date) {
+                continue;
+            }
+
+            $month = Carbon::parse($date)->format('Y-m');
+
+            $weekday = Carbon::parse($date)->dayOfWeek;
+
+            if (!isset($monthly[$month])) {
+                $monthly[$month] = $createGroup($month);
+
+                $monthly[$month]['month'] = $month;
+            }
+
+            $multiple = (bool) (
+                $record['has_multiple_recommendations'] ?? false
+            );
+
+            $status = (string) (
+                $record['status'] ?? 'uncertain'
+            );
+
+            /*
+            * 중복 추천 날짜도 기록 수에는 포함하지만
+            * 정확도 계산에는 넣지 않습니다.
+            */
+            foreach ([
+                &$monthly[$month],
+                &$weekdays[$weekday],
+            ] as &$group) {
+                $group['record_days']++;
+
+                if ($multiple) {
+                    $group['multiple_recommendation_days']++;
+
+                    continue;
+                }
+
+                $group['evaluated_days']++;
+
+                $group['recommended_total'] += (int) (
+                    $record['recommended_available'] ?? 0
+                );
+
+                $group['estimated_sales_total'] += (int) (
+                    $record['estimated_sales'] ?? 0
+                );
+
+                $group['absolute_difference_total'] += (int) (
+                    $record['absolute_difference'] ?? 0
+                );
+
+                if ($status === 'exact') {
+                    $group['exact_days']++;
+                } elseif ($status === 'near') {
+                    $group['near_days']++;
+                } elseif ($status === 'below_observed_sales') {
+                    $group['below_observed_sales_days']++;
+                } elseif ($status === 'possible_excess') {
+                    $group['possible_excess_days']++;
+                } else {
+                    $group['uncertain_days']++;
+                }
+            }
+
+            unset($group);
+
+            if ($multiple) {
+                $multipleRecommendationDays++;
+            }
+        }
+
+        /*
+        * 평균 차이는 기록이 있는 날짜만 사용합니다.
+        * 기록이 없으면 0개가 아닌 null을 반환합니다.
+        */
+        $finalizeGroup = static function (
+            array $group
+        ): array {
+            $count = $group['evaluated_days'];
+
+            $group['average_absolute_difference'] =
+                $count > 0
+                    ? round(
+                        $group['absolute_difference_total'] / $count,
+                        2
+                    )
+                    : null;
+
+            return $group;
+        };
+
+        ksort($monthly);
+        ksort($weekdays);
+
+        $monthlyResults = [];
+
+        foreach ($monthly as $group) {
+            $monthlyResults[] = $finalizeGroup($group);
+        }
+
+        $weekdayResults = [];
+
+        foreach ($weekdays as $group) {
+            $weekdayResults[] = $finalizeGroup($group);
+        }
+
+        return [
+            'monthly' => $monthlyResults,
+
+            'weekdays' => $weekdayResults,
+
+            'multiple_recommendation_days' =>
+                $multipleRecommendationDays,
+
+            'notice' =>
+                '월별·요일별 비교는 마감 기록과 추천 기록이 확인되는 날짜를 기준으로 계산했습니다. 하루에 추천이 여러 번 생성된 날짜는 별도로 구분하며, 평균 차이는 실제 판매량이 아닌 추정 판매량을 기준으로 합니다.',
+        ];
+    }
+
+    /**
+     * 기존 추천량과 개선된 추천량을 비교합니다.
+     *
+     * 실제 판매량은 별도로 입력받지 않습니다.
+     * 기존 생산·이월·로스·폐기 기록으로 계산한
+     * 판매 추정량을 활용합니다.
+     *
+     * 동일 날짜에 생산이 여러 건이어도
+     * 이미 합산된 날짜별 기록을 사용합니다.
+     */
+    private function recommendationAdjustmentComparison(
+        int $storeId,
+        int $productId,
+        array $records
+    ): array {
+        $result = [
+            'evaluated_days' => 0,
+            'adjusted_days' => 0,
+
+            'original_shortfall_total' => 0,
+            'adjusted_shortfall_total' => 0,
+
+            'original_possible_excess_total' => 0,
+            'adjusted_possible_excess_total' => 0,
+
+            'improved_days' => 0,
+            'worsened_days' => 0,
+            'unchanged_days' => 0,
+
+            'records' => [],
+        ];
+
+        if (empty($records)) {
+            return $result;
+        }
+
+        /*
+        * 분석 대상 날짜만 수집합니다.
+        */
+        $dates = collect($records)
+            ->pluck('date')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($dates->isEmpty()) {
+            return $result;
+        }
+
+        /*
+        * 추천 기록을 한 번에 조회합니다.
+        * 날짜마다 별도 조회하지 않습니다.
+        */
+        $snapshots = ProductionRecommendationSnapshot::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereIn('target_date', $dates->all())
+            ->whereNotNull('production_batch_id')
+            ->orderBy('id')
+            ->get([
+                'id',
+                'target_date',
+                'center_quantity',
+                'adjustment_meta',
+            ])
+            ->groupBy(
+                fn ($snapshot) =>
+                    $snapshot->target_date->toDateString()
+            );
+
+        foreach ($records as $record) {
+            if (!is_array($record)) {
+                continue;
+            }
+
+            $date = $record['date'] ?? null;
+
+            if (!$date || !isset($snapshots[$date])) {
+                continue;
+            }
+
+            $dailySnapshots = $snapshots[$date];
+
+            /*
+            * 같은 날 여러 생산 건이 있더라도
+            * 추천량이 동일하면 한 번만 평가합니다.
+            *
+            * 서로 다른 추천량이 저장되어 있다면
+            * 어느 추천을 기준으로 생산했는지
+            * 불명확하므로 제외합니다.
+            */
+            $recommendationValues = $dailySnapshots
+                ->map(function ($snapshot) {
+                    $meta = $snapshot->adjustment_meta;
+
+                    if (!is_array($meta)) {
+                        return null;
+                    }
+
+                    return json_encode([
+                        'original' =>
+                            $meta['original_quantity'] ?? null,
+
+                        'adjusted' =>
+                            $meta['adjusted_quantity'] ?? null,
+
+                        'final' =>
+                            $snapshot->center_quantity,
+                    ]);
+                })
+                ->unique()
+                ->values();
+
+            if ($recommendationValues->count() !== 1) {
+                continue;
+            }
+
+            $snapshot = $dailySnapshots->first();
+
+            $meta = $snapshot->adjustment_meta;
+
+            /*
+            * 개선 전후 기록이 없는 과거 데이터는
+            * 비교 대상에서 제외합니다.
+            */
+            if (
+                !is_array($meta)
+                || !isset(
+                    $meta['original_quantity'],
+                    $meta['adjusted_quantity']
+                )
+            ) {
+                continue;
+            }
+
+            $original = $meta['original_quantity'];
+            $adjusted = $meta['adjusted_quantity'];
+
+            if (
+                !is_numeric($original)
+                || !is_numeric($adjusted)
+                || (int) $original < 0
+                || (int) $adjusted < 0
+            ) {
+                continue;
+            }
+
+            $original = (int) $original;
+            $adjusted = (int) $adjusted;
+
+            /*
+            * 저장된 최종 추천량과 일치하는지 확인합니다.
+            */
+            if (
+                $adjusted !==
+                (int) $snapshot->center_quantity
+            ) {
+                continue;
+            }
+
+            /*
+            * 실제 마감 기록으로 계산된
+            * 판매 추정량을 사용합니다.
+            */
+            $sales = $record['estimated_sales'] ?? null;
+
+            if (
+                !is_numeric($sales)
+                || (int) $sales < 0
+            ) {
+                continue;
+            }
+
+            $sales = (int) $sales;
+
+            $carryoverIn = max(
+                0,
+                (int) ($record['carryover_in'] ?? 0)
+            );
+
+            /*
+            * 조정 전후 추천량을 사용했을 때
+            * 확보할 수 있었던 수량입니다.
+            */
+            $originalAvailable =
+                $original + $carryoverIn;
+
+            $adjustedAvailable =
+                $adjusted + $carryoverIn;
+
+            /*
+            * 실제 판매 추정량보다 부족한 수량입니다.
+            *
+            * 추가로 판매할 수 있었던 수량 전체를
+            * 확정하는 값은 아닙니다.
+            */
+            $originalShortfall = max(
+                0,
+                $sales - $originalAvailable
+            );
+
+            $adjustedShortfall = max(
+                0,
+                $sales - $adjustedAvailable
+            );
+
+            /*
+            * 실제 판매 추정량을 초과하는 수량입니다.
+            *
+            * 폐기 확정량이 아닌
+            * 남을 가능성이 있는 수량입니다.
+            */
+            $originalExcess = max(
+                0,
+                $originalAvailable - $sales
+            );
+
+            $adjustedExcess = max(
+                0,
+                $adjustedAvailable - $sales
+            );
+
+            /*
+            * 부족량과 남을 가능성이 있는 수량을
+            * 함께 비교합니다.
+            *
+            * 임시 비교 지표이며
+            * 최종 추천 방식의 우열을 확정하지 않습니다.
+            */
+            $originalDifference =
+                $originalShortfall + $originalExcess;
+
+            $adjustedDifference =
+                $adjustedShortfall + $adjustedExcess;
+
+            if ($adjustedDifference < $originalDifference) {
+                $comparison = 'improved';
+                $result['improved_days']++;
+            } elseif (
+                $adjustedDifference > $originalDifference
+            ) {
+                $comparison = 'worsened';
+                $result['worsened_days']++;
+            } else {
+                $comparison = 'unchanged';
+                $result['unchanged_days']++;
+            }
+
+            $result['evaluated_days']++;
+
+            if ($original !== $adjusted) {
+                $result['adjusted_days']++;
+            }
+
+            $result['original_shortfall_total'] +=
+                $originalShortfall;
+
+            $result['adjusted_shortfall_total'] +=
+                $adjustedShortfall;
+
+            $result['original_possible_excess_total'] +=
+                $originalExcess;
+
+            $result['adjusted_possible_excess_total'] +=
+                $adjustedExcess;
+
+            $result['records'][] = [
+                'date' => $date,
+
+                'original_quantity' => $original,
+
+                'adjusted_quantity' => $adjusted,
+
+                'actual_production' =>
+                    (int) ($record['actual_production'] ?? 0),
+
+                'estimated_sales' => $sales,
+
+                'actual_waste' =>
+                    (int) ($record['waste'] ?? 0),
+
+                'actual_carryover' =>
+                    (int) ($record['carryover_out'] ?? 0),
+
+                'original_shortfall' =>
+                    $originalShortfall,
+
+                'adjusted_shortfall' =>
+                    $adjustedShortfall,
+
+                'original_possible_excess' =>
+                    $originalExcess,
+
+                'adjusted_possible_excess' =>
+                    $adjustedExcess,
+
+                'comparison' => $comparison,
+            ];
+        }
+
+        usort(
+            $result['records'],
+            fn (array $a, array $b) =>
+                strcmp($a['date'], $b['date'])
+        );
+
+        return $result;
+    }
+
+    /**
+     * 과거 추천 생산량과 실제 마감 결과를 비교합니다.
+     *
+     * 기존 추천 분석 기능을 유지하면서
+     * 자동 조정 전 추천량과 최종 추천량을 구분합니다.
+     *
+     * 같은 날짜에 생산 기록이 여러 건 있어도
+     * 날짜별 합산 수량을 사용합니다.
+     *
+     * 같은 날짜에 서로 다른 추천 결과가 존재하면
+     * 해당 날짜의 정확도 판단을 보류합니다.
+     */
+    private function recommendationOutcomeAnalysis(
+        int $storeId,
+        int $productId,
+        Collection $history,
+        Carbon $targetDate,
+        ?Carbon $startDate = null
+    ): array {
+        $from = $startDate !== null
+            ? $startDate->copy()->toDateString()
+            : $targetDate->copy()
+                ->subYear()
+                ->toDateString();
+
+        $to = $targetDate->copy()
+            ->subDay()
+            ->toDateString();
+
+        /*
+        * 추천 기록을 기간 전체에 대해 한 번 조회합니다.
+        */
+        $snapshots = ProductionRecommendationSnapshot::query()
+            ->where('store_id', $storeId)
+            ->where('product_id', $productId)
+            ->whereBetween(
+                'target_date',
+                [$from, $to]
+            )
+            ->whereNotNull('production_batch_id')
+            ->whereNotNull('center_quantity')
+            ->orderBy('target_date')
+            ->orderBy('id')
+            ->get([
+                'id',
+                'production_batch_id',
+                'target_date',
+                'center_quantity',
+                'range_min',
+                'range_max',
+                'confidence',
+                'referenced',
+                'adjustment_meta',
+            ])
+            ->groupBy(
+                fn ($item) =>
+                    $item->target_date->toDateString()
+            );
+
+        $records = [];
+
+        $summary = [
+            'evaluated_days' => 0,
+
+            'exact_days' => 0,
+
+            'near_days' => 0,
+
+            'below_observed_sales_days' => 0,
+
+            'possible_excess_days' => 0,
+
+            'uncertain_days' => 0,
+
+            'multiple_recommendation_days' => 0,
+
+            'excluded_days' => 0,
+
+            'average_absolute_difference' => null,
+        ];
+
+        $totalAbsoluteDifference = 0;
+
+        foreach ($history as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $date = $row['date'] ?? null;
+
+            if (
+                !$date
+                || !isset($snapshots[$date])
+            ) {
+                continue;
+            }
+
+            /*
+            * 정상 마감된 날짜만 분석합니다.
+            *
+            * 수량이 잘못된 날짜도 제외합니다.
+            */
+            if (
+                ($row['closure_status'] ?? null) !== 'closed'
+                || ($row['daily_quantity_valid'] ?? false) !== true
+            ) {
+                $summary['excluded_days']++;
+                continue;
+            }
+
+            $salesValue =
+                $row['estimated_sales_quantity'] ?? null;
+
+            if (
+                $salesValue === null
+                || !is_numeric($salesValue)
+                || (float) $salesValue < 0
+            ) {
+                $summary['excluded_days']++;
+                continue;
+            }
+
+            /*
+            * 해당 날짜의 추천 기록입니다.
+            *
+            * 생산을 여러 번 등록했다면
+            * 추천 기록도 여러 건일 수 있습니다.
+            */
+            $dailySnapshots = $snapshots[$date];
+
+            $recommendationCount =
+                $dailySnapshots->count();
+
+            /*
+            * 추천량, 추천 범위, 신뢰도가
+            * 모두 동일한지 확인합니다.
+            *
+            * 동일한 결과가 여러 번 저장된 것은
+            * 하나의 추천으로 취급합니다.
+            */
+            $distinctRecommendations = $dailySnapshots
+                ->map(
+                    fn ($item) => json_encode([
+                        'center' =>
+                            (int) $item->center_quantity,
+
+                        'min' =>
+                            $item->range_min !== null
+                                ? (int) $item->range_min
+                                : null,
+
+                        'max' =>
+                            $item->range_max !== null
+                                ? (int) $item->range_max
+                                : null,
+
+                        'confidence' =>
+                            (string) $item->confidence,
+                    ])
+                )
+                ->unique()
+                ->values();
+
+            $hasMultipleRecommendations =
+                $distinctRecommendations->count() > 1;
+
+            /*
+            * 동일한 추천 기록이라면
+            * 첫 번째 기록을 대표값으로 사용합니다.
+            */
+            $snapshot = $dailySnapshots->first();
+
+            /*
+            * 사용자에게 실제 표시했던 최종 추천량
+            */
+            $recommended =
+                (int) $snapshot->center_quantity;
+
+            /*
+            * 조정 전 추천량을 확인합니다.
+            *
+            * 과거 데이터에는 조정 기록이
+            * 존재하지 않을 수 있습니다.
+            */
+            $originalRecommended = $recommended;
+
+            $recommendationAdjusted = false;
+
+            $adjustmentMeta =
+                $snapshot->adjustment_meta;
+
+            if (
+                is_array($adjustmentMeta)
+                && isset(
+                    $adjustmentMeta['original_quantity'],
+                    $adjustmentMeta['adjusted_quantity']
+                )
+                && is_numeric(
+                    $adjustmentMeta['original_quantity']
+                )
+                && is_numeric(
+                    $adjustmentMeta['adjusted_quantity']
+                )
+            ) {
+                $storedOriginal = (int) (
+                    $adjustmentMeta['original_quantity']
+                );
+
+                $storedAdjusted = (int) (
+                    $adjustmentMeta['adjusted_quantity']
+                );
+
+                /*
+                * 최종 추천량과 저장된 조정 결과가
+                * 일치하는 경우에만 사용합니다.
+                */
+                if (
+                    $storedOriginal >= 0
+                    && $storedAdjusted === $recommended
+                ) {
+                    $originalRecommended =
+                        $storedOriginal;
+
+                    $recommendationAdjusted =
+                        $originalRecommended !== $recommended;
+                }
+            }
+
+            /*
+            * 최종 추천은 같더라도
+            * 조정 전 추천량이 서로 다를 수 있습니다.
+            *
+            * 이 경우 하나의 대표 추천을
+            * 확정할 수 없으므로 검증에서 제외합니다.
+            */
+            $distinctOriginals = $dailySnapshots
+                ->map(function ($item) {
+                    $final = (int) $item->center_quantity;
+
+                    $meta = $item->adjustment_meta;
+
+                    if (
+                        !is_array($meta)
+                        || !isset(
+                            $meta['original_quantity'],
+                            $meta['adjusted_quantity']
+                        )
+                        || !is_numeric(
+                            $meta['original_quantity']
+                        )
+                        || !is_numeric(
+                            $meta['adjusted_quantity']
+                        )
+                    ) {
+                        return $final;
+                    }
+
+                    $original =
+                        (int) $meta['original_quantity'];
+
+                    $adjusted =
+                        (int) $meta['adjusted_quantity'];
+
+                    if (
+                        $original < 0
+                        || $adjusted !== $final
+                    ) {
+                        return $final;
+                    }
+
+                    return $original;
+                })
+                ->unique()
+                ->values();
+
+            if ($distinctOriginals->count() > 1) {
+                $hasMultipleRecommendations = true;
+            }
+
+            /*
+            * 기존 날짜별 합산 결과를 사용합니다.
+            */
+            $production = max(
+                0,
+                (int) ($row['production'] ?? 0)
+            );
+
+            $carryoverIn = max(
+                0,
+                (int) ($row['carryover_in'] ?? 0)
+            );
+
+            $carryoverOut = max(
+                0,
+                (int) ($row['carryover_out'] ?? 0)
+            );
+
+            $loss = max(
+                0,
+                (int) ($row['operational_loss'] ?? 0)
+            );
+
+            $waste = max(
+                0,
+                (int) ($row['operational_waste'] ?? 0)
+            );
+
+            /*
+            * 판매량은 별도로 입력받지 않습니다.
+            *
+            * 생산 + 이월 입고
+            * - 로스 - 폐기 - 이월 출고
+            *
+            * 기존 함수에서 계산된 값을 사용합니다.
+            */
+            $estimatedSales = (int) $salesValue;
+
+            /*
+            * 최종 추천량으로 확보 가능한 수량
+            */
+            $recommendedAvailable =
+                $recommended + $carryoverIn;
+
+            /*
+            * 최초 추천량으로 확보 가능한 수량
+            */
+            $originalRecommendedAvailable =
+                $originalRecommended + $carryoverIn;
+
+            /*
+            * 실제 확보했던 수량
+            */
+            $actualAvailable =
+                $production + $carryoverIn;
+
+            /*
+            * 기존 추천 검증은
+            * 사용자에게 표시된 최종 추천량을
+            * 기준으로 유지합니다.
+            */
+            $difference =
+                $recommendedAvailable - $estimatedSales;
+
+            $absoluteDifference = abs(
+                $difference
+            );
+
+            /*
+            * 최초 추천량과 판매 추정량의 차이
+            *
+            * 기존 검증 결과를 변경하지 않고
+            * 별도 비교 자료로 보관합니다.
+            */
+            $originalDifference =
+                $originalRecommendedAvailable
+                    - $estimatedSales;
+
+            /*
+            * 기존 근접 판단 기준 유지
+            */
+            $tolerance = max(
+                2,
+                (int) round($estimatedSales * 0.10)
+            );
+
+            $status = 'uncertain';
+
+            /*
+            * 서로 다른 추천이 존재하는 날짜는
+            * 정확도 판단을 보류합니다.
+            */
+            if ($hasMultipleRecommendations) {
+                $status = 'multiple_recommendations';
+
+                $summary['multiple_recommendation_days']++;
+            } elseif ($difference < 0) {
+                $status = 'below_observed_sales';
+
+                $summary['below_observed_sales_days']++;
+            } elseif (
+                $difference > $tolerance
+                && ($waste + $carryoverOut) > 0
+            ) {
+                $status = 'possible_excess';
+
+                $summary['possible_excess_days']++;
+            } elseif (
+                $absoluteDifference <= $tolerance
+                && ($waste + $carryoverOut) > 0
+            ) {
+                if ($difference === 0) {
+                    $status = 'exact';
+
+                    $summary['exact_days']++;
+                } else {
+                    $status = 'near';
+
+                    $summary['near_days']++;
+                }
+            } else {
+                $status = 'uncertain';
+
+                $summary['uncertain_days']++;
+            }
+
+            /*
+            * 날짜별 상세 분석 기록
+            */
+            $records[] = [
+                'date' => $date,
+
+                'weekday' =>
+                    Carbon::parse($date)->dayOfWeek,
+
+                'month' =>
+                    Carbon::parse($date)->format('Y-m'),
+
+                /*
+                * 사용자에게 표시된 최종 추천량
+                */
+                'recommended_quantity' =>
+                    $recommended,
+
+                /*
+                * 자동 조정 전 최초 추천량
+                */
+                'original_recommended_quantity' =>
+                    $originalRecommended,
+
+                /*
+                * 추천량 조정 여부
+                */
+                'recommendation_adjusted' =>
+                    $recommendationAdjusted,
+
+                /*
+                * 조정된 수량
+                */
+                'recommendation_adjustment_quantity' =>
+                    $recommended - $originalRecommended,
+
+                'recommended_available' =>
+                    $recommendedAvailable,
+
+                'original_recommended_available' =>
+                    $originalRecommendedAvailable,
+
+                'actual_production' =>
+                    $production,
+
+                'actual_available' =>
+                    $actualAvailable,
+
+                'carryover_in' =>
+                    $carryoverIn,
+
+                'loss' => $loss,
+
+                'waste' => $waste,
+
+                'carryover_out' =>
+                    $carryoverOut,
+
+                'estimated_sales' =>
+                    $estimatedSales,
+
+                'difference_from_observed_sales' =>
+                    $difference,
+
+                'original_difference_from_observed_sales' =>
+                    $originalDifference,
+
+                'absolute_difference' =>
+                    $absoluteDifference,
+
+                'original_absolute_difference' =>
+                    abs($originalDifference),
+
+                'status' => $status,
+
+                'recommendation_referenced' =>
+                    (bool) $snapshot->referenced,
+
+                'recommendation_count' =>
+                    $recommendationCount,
+
+                'has_multiple_recommendations' =>
+                    $hasMultipleRecommendations,
+
+                'recommendation_selection' =>
+                    $recommendationCount > 1
+                        ? (
+                            $hasMultipleRecommendations
+                                ? 'conflicting'
+                                : 'identical'
+                        )
+                        : 'single',
+
+                'confidence' =>
+                    $snapshot->confidence,
+            ];
+
+            /*
+            * 서로 다른 추천이 존재하는 날짜는
+            * 기존 정확도 집계에서 제외합니다.
+            */
+            if (!$hasMultipleRecommendations) {
+                $summary['evaluated_days']++;
+
+                $totalAbsoluteDifference +=
+                    $absoluteDifference;
+            }
+        }
+
+        /*
+        * 분석 날짜를 오래된 순서로 정렬합니다.
+        */
+        usort(
+            $records,
+            fn (array $a, array $b) =>
+                strcmp(
+                    $a['date'],
+                    $b['date']
+                )
+        );
+
+        /*
+        * 기존 평균 차이 계산 유지
+        */
+        if ($summary['evaluated_days'] > 0) {
+            $summary['average_absolute_difference'] =
+                round(
+                    $totalAbsoluteDifference
+                        / $summary['evaluated_days'],
+                    2
+                );
+        }
+
+        return [
+            'period' => [
+                'from' => $from,
+                'to' => $to,
+            ],
+
+            'summary' => $summary,
+
+            'records' => $records,
+
+            'notice' =>
+                '추천량과 실제 마감 결과를 비교한 자료입니다. 실제로 추천량대로 생산했을 때의 판매량이나 폐기량을 확정하는 결과는 아닙니다.',
+        ];
     }
 
     /**
@@ -3295,7 +6137,11 @@ class ProductionManagementController extends Controller
     /**
      * 생산 분석 데이터를 조회합니다.
      *
-     * product_id가 있으면 해당 제품의 12개월 추천 데이터를 조회합니다.
+     * product_id가 있으면 해당 제품의
+     * 최근 12개월 추천 데이터를 분석합니다.
+     *
+     * 과거 추천 검증은 전체 누적 기록을 사용합니다.
+     *
      * product_id가 없으면 기존 전체 분석 방식을 유지합니다.
      */
     public function analysis(Request $request): JsonResponse
@@ -3337,6 +6183,7 @@ class ProductionManagementController extends Controller
         );
 
         $target = Carbon::parse($data['date']);
+
         $days = (int) ($data['days'] ?? 30);
 
         $from = $target->copy()
@@ -3346,9 +6193,10 @@ class ProductionManagementController extends Controller
         $to = $target->toDateString();
 
         /*
-        * 실제 생산 입력창의 제품별 추천
+        * 제품별 추천 분석
         *
-        * 제품 하나만 조회하므로 전체 매장 분석을 실행하지 않습니다.
+        * 생산 입력창과 추천 이유 분석 다이얼로그에서
+        * 사용하는 기존 조회 방식입니다.
         */
         if (isset($data['product_id'])) {
             $productId = (int) $data['product_id'];
@@ -3357,14 +6205,26 @@ class ProductionManagementController extends Controller
                 ->where('store_id', $storeId)
                 ->where('is_active', true)
                 ->whereKey($productId)
-                ->firstOrFail(['id', 'name']);
+                ->firstOrFail([
+                    'id',
+                    'name',
+                ]);
 
-            $history = $this->recommendationHistoryForProduct(
-                $storeId,
-                $productId,
-                $target
-            );
+            /*
+            * 기존 추천 생산량 계산용 기록
+            *
+            * 최근 12개월 정책을 유지합니다.
+            */
+            $history =
+                $this->recommendationHistoryForProduct(
+                    $storeId,
+                    $productId,
+                    $target
+                );
 
+            /*
+            * 추천 대상 날짜의 행사
+            */
             $targetEvents = collect(
                 $this->eventsForDate(
                     $storeId,
@@ -3376,70 +6236,241 @@ class ProductionManagementController extends Controller
                 ->filter(
                     fn (array $event) =>
                         empty($event['products'])
-                        || collect($event['products'])
-                            ->contains('id', $productId)
+                        || collect(
+                            $event['products']
+                        )->contains(
+                            'id',
+                            $productId
+                        )
                 )
                 ->values()
                 ->all();
 
-            $targetWeatherCode = StoreDailyWeather::query()
-                ->where('store_id', $storeId)
-                ->whereDate('work_date', $data['date'])
-                ->value('condition');
+            /*
+            * 추천 대상 날짜의 날씨
+            *
+            * 기존 날씨 보정 정책을 유지합니다.
+            */
+            $targetWeatherCode =
+                StoreDailyWeather::query()
+                    ->where('store_id', $storeId)
+                    ->whereDate(
+                        'work_date',
+                        $data['date']
+                    )
+                    ->value('condition');
 
             if (!empty($targetWeatherCode)) {
                 $productEvents[] = [
-                    'weather_code' => (string) $targetWeatherCode,
+                    'weather_code' =>
+                        (string) $targetWeatherCode,
                 ];
             }
 
             /*
-            * 추천 대상 날짜에 이미 확보된 이월 재고 조회
+            * 추천 대상 날짜의 이월 입고
             *
-            * 기존 ProductStockMovement의 carryover_in 기록을
-            * 그대로 사용합니다.
+            * 기존 기록을 날짜별 합산하며
+            * 추천량 계산 시 한 번만 차감합니다.
             */
-            $targetCarryoverIn = (int) ProductStockMovement::query()
-                ->where('store_id', $storeId)
-                ->where('product_id', $productId)
-                ->whereDate('work_date', $data['date'])
-                ->where('movement_type', 'carryover_in')
-                ->sum('quantity');
+            $targetCarryoverIn =
+                (int) ProductStockMovement::query()
+                    ->where('store_id', $storeId)
+                    ->where('product_id', $productId)
+                    ->whereDate(
+                        'work_date',
+                        $data['date']
+                    )
+                    ->where(
+                        'movement_type',
+                        'carryover_in'
+                    )
+                    ->sum('quantity');
 
             $productEvents[] = [
                 'condition_type' => 'target_inventory',
                 'carryover_in' => $targetCarryoverIn,
             ];
 
-            $recommendation = $this->recommendationService
-                ->recommend(
+            /*
+            * 1. 기존 추천 생산량 계산
+            *
+            * 동일 요일 분석, 최근 3개월 70%,
+            * 이전 9개월 30%, 폐기·이월 분석 등
+            * 기존 계산 정책을 그대로 사용합니다.
+            */
+            $recommendation =
+                $this->recommendationService->recommend(
                     $history,
                     $target,
                     $productEvents
                 );
 
             /*
-            * 추천 상세 다이얼로그용 분석 자료
+            * 2. 기존 상세 분석 자료
             *
-            * 이미 조회한 과거 기록을 재사용하므로
+            * 기존 12개월 기록을 재사용하므로
             * 추가 데이터베이스 조회가 발생하지 않습니다.
             */
-            $analysisDetails = $this->recommendationAnalysisDetails(
-                $history,
-                $target
+            $analysisDetails =
+                $this->recommendationAnalysisDetails(
+                    $history,
+                    $target
+                );
+
+            /*
+            * 3. 과거 추천 검증 자료
+            *
+            * 전체 누적 추천 기록을 분석합니다.
+            *
+            * 기존 12개월 기록을 우선 재사용하고,
+            * 필요한 경우에만 이전 기록을 조회합니다.
+            *
+            * 생산 저장 과정에서도 동일한
+            * 공통 조회 함수를 사용합니다.
+            */
+            $recommendationOutcomes =
+                $this->recommendationOutcomesForProduct(
+                    $storeId,
+                    $productId,
+                    $target,
+                    $history
+                );
+
+            /*
+            * 4. 월별·요일별 추천 결과 분석
+            *
+            * 이미 조회한 과거 추천 결과를 사용합니다.
+            */
+            $recommendationOutcomes['breakdowns'] =
+                $this->summarizeRecommendationOutcomes(
+                    $recommendationOutcomes
+                );
+
+            /*
+            * 5. 실제 날짜와 수량을 활용한 분석 문장
+            *
+            * 기존 추천 이유는 유지합니다.
+            */
+            $recommendationOutcomes['messages'] =
+                $this->recommendationOutcomeMessages(
+                    $recommendationOutcomes
+                );
+
+            /*
+            * 6. 과거 추천 검증 결과
+            *
+            * 기존 분석 결과에 검증 지표를 추가합니다.
+            */
+            $actualBacktest =
+                $recommendationOutcomes['adjustment_backtest']
+                    ?? [];
+
+            $adjustmentEvidence =
+                $recommendationOutcomes['adjustment_evidence']
+                    ?? [];
+
+            $testedDays = (int) (
+                $actualBacktest['tested_days'] ?? 0
             );
 
+            $backtestResult = (string) (
+                $actualBacktest['result'] ?? 'insufficient'
+            );
+
+            $evidenceEligible = (bool) (
+                $adjustmentEvidence['eligible'] ?? false
+            );
+
+            /*
+            * 기존 추천 지표는 보존하면서
+            * 새로운 검증 결과만 추가합니다.
+            */
+            $recommendation['metrics'] ??= [];
+
+            $recommendation['metrics']['historical_validation'] = [
+                'tested_days' => $testedDays,
+
+                'result' => $backtestResult,
+
+                'evidence_eligible' => $evidenceEligible,
+
+                'original_total_difference' =>
+                    $actualBacktest['original_total_difference']
+                        ?? 0,
+
+                'candidate_total_difference' =>
+                    $actualBacktest['candidate_total_difference']
+                        ?? 0,
+
+                'improvement_rate' =>
+                    $actualBacktest['improvement_rate']
+                        ?? null,
+
+                'original_shortage_days' =>
+                    $actualBacktest['original_shortage_days']
+                        ?? 0,
+
+                'candidate_shortage_days' =>
+                    $actualBacktest['candidate_shortage_days']
+                        ?? 0,
+
+                'original_shortfall_total' =>
+                    $actualBacktest['original_shortfall_total']
+                        ?? 0,
+
+                'candidate_shortfall_total' =>
+                    $actualBacktest['candidate_shortfall_total']
+                        ?? 0,
+
+                'candidate_supported_days' =>
+                    $actualBacktest['candidate_supported_days']
+                        ?? 0,
+
+                'applied' => false,
+            ];
+
+            /*
+            * 7. 최종 추천량 계산
+            *
+            * 기존 추천량에 과거 검증 결과를 반영합니다.
+            *
+            * 검증 조건을 충족하지 않으면
+            * 기존 추천량을 그대로 유지합니다.
+            *
+            * 생산 저장 시에도 동일한 공통 함수를 사용합니다.
+            */
+            $recommendation =
+                $this->applyHistoricalRecommendation(
+                    $recommendation,
+                    $recommendationOutcomes,
+                    $target
+                );
+
+            /*
+            * 8. 기존 주의사항 및 경고
+            *
+            * 기존 동작을 유지합니다.
+            */
             $recent = $history->take(-5);
+
             $recentCount = $recent->count();
+
             $flags = [];
 
-            if ($recent->where('waste', '>', 0)->count() >= 3) {
+            if (
+                $recent->where('waste', '>', 0)->count() >= 3
+            ) {
                 $flags[] =
                     "최근 생산 기록 {$recentCount}건 중 3건 이상에서 폐기가 발생했습니다. 생산량을 확인해 주세요.";
             }
 
             if (
-                $recent->where('carryover_out', '>', 0)->count() >= 3
+                $recent->where(
+                    'carryover_out',
+                    '>',
+                    0
+                )->count() >= 3
             ) {
                 $flags[] =
                     "최근 생산 기록 {$recentCount}건 중 3건 이상에서 재고를 다음 날로 이월했습니다.";
@@ -3449,18 +6480,34 @@ class ProductionManagementController extends Controller
                 $flags[] = $recommendation['warning'];
             }
 
+            /*
+            * 9. 기존 API 응답 구조 유지
+            *
+            * 새로운 추천 검증 결과는
+            * recommendation_outcomes로 전달합니다.
+            */
             return response()->json([
                 'items' => [
                     [
                         'product_id' => $product->id,
+
                         'product_name' => $product->name,
+
                         'recommendation' => $recommendation,
+
                         'analysis_details' => $analysisDetails,
+
+                        'recommendation_outcomes' =>
+                            $recommendationOutcomes,
+
                         'flags' => $flags,
                     ],
                 ],
+
                 'daily_flow' => [],
+
                 'product_totals' => [],
+
                 'range' => [
                     'from' => $from,
                     'to' => $to,
@@ -3472,13 +6519,17 @@ class ProductionManagementController extends Controller
         /*
         * 기존 전체 분석 요청
         *
-        * 개발 검토 중인 분석 탭의 기존 동작을 유지합니다.
+        * 개발 검토 중인 분석 탭의
+        * 기존 동작을 그대로 유지합니다.
         */
         $products = Product::query()
             ->where('store_id', $storeId)
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name']);
+            ->get([
+                'id',
+                'name',
+            ]);
 
         $dateMetrics = [
             'production' => $this->sumByDate(
@@ -3488,14 +6539,19 @@ class ProductionManagementController extends Controller
                 $from,
                 $to
             ),
+
             'carryover' => $this->sumByDate(
                 ProductStockMovement::query()
-                    ->where('movement_type', 'carryover_in'),
+                    ->where(
+                        'movement_type',
+                        'carryover_in'
+                    ),
                 $storeId,
                 'work_date',
                 $from,
                 $to
             ),
+
             'loss' => $this->sumByDate(
                 ProductionLoss::query(),
                 $storeId,
@@ -3503,6 +6559,7 @@ class ProductionManagementController extends Controller
                 $from,
                 $to
             ),
+
             'waste' => $this->sumByDate(
                 ProductionWaste::query(),
                 $storeId,
@@ -3510,6 +6567,7 @@ class ProductionManagementController extends Controller
                 $from,
                 $to
             ),
+
             'attributed_waste' => $this->sumByDate(
                 ProductionWaste::query(),
                 $storeId,
@@ -3542,14 +6600,19 @@ class ProductionManagementController extends Controller
 
             $dailyFlow->push([
                 'date' => $key,
+
                 'production' => $production,
+
                 'carryover' => (int) (
                     $dateMetrics['carryover'][$key] ?? 0
                 ),
+
                 'loss' => (int) (
                     $dateMetrics['loss'][$key] ?? 0
                 ),
+
                 'waste' => $waste,
+
                 'waste_rate' => $this->wasteRate(
                     $attributedWaste,
                     $production
@@ -3565,14 +6628,19 @@ class ProductionManagementController extends Controller
                 $from,
                 $to
             ),
+
             'carryover' => $this->sumByProduct(
                 ProductStockMovement::query()
-                    ->where('movement_type', 'carryover_in'),
+                    ->where(
+                        'movement_type',
+                        'carryover_in'
+                    ),
                 $storeId,
                 'work_date',
                 $from,
                 $to
             ),
+
             'loss' => $this->sumByProduct(
                 ProductionLoss::query(),
                 $storeId,
@@ -3580,6 +6648,7 @@ class ProductionManagementController extends Controller
                 $from,
                 $to
             ),
+
             'waste' => $this->sumByProduct(
                 ProductionWaste::query(),
                 $storeId,
@@ -3593,16 +6662,21 @@ class ProductionManagementController extends Controller
             ->map(
                 fn (Product $product) => [
                     'product_id' => $product->id,
+
                     'product_name' => $product->name,
+
                     'production' => (int) (
                         $productMetrics['production'][$product->id] ?? 0
                     ),
+
                     'carryover' => (int) (
                         $productMetrics['carryover'][$product->id] ?? 0
                     ),
+
                     'loss' => (int) (
                         $productMetrics['loss'][$product->id] ?? 0
                     ),
+
                     'waste' => (int) (
                         $productMetrics['waste'][$product->id] ?? 0
                     ),
@@ -3614,6 +6688,7 @@ class ProductionManagementController extends Controller
         * 기존 전체 분석은 최근 28일 기록을 사용합니다.
         */
         $historyByProduct = collect();
+
         $recommendationDays = 28;
 
         $historyFrom = $target->copy()
@@ -3624,13 +6699,18 @@ class ProductionManagementController extends Controller
             ->subDay()
             ->toDateString();
 
-        $recommendationContext = $this->recommendationData(
-            $storeId,
-            $historyFrom,
-            $historyTo
-        );
+        $recommendationContext =
+            $this->recommendationData(
+                $storeId,
+                $historyFrom,
+                $historyTo
+            );
 
-        for ($i = $recommendationDays; $i >= 1; $i--) {
+        for (
+            $i = $recommendationDays;
+            $i >= 1;
+            $i--
+        ) {
             $date = $target->copy()
                 ->subDays($i)
                 ->toDateString();
@@ -3646,7 +6726,9 @@ class ProductionManagementController extends Controller
             );
 
             foreach ($daily['rows'] as $row) {
-                if (!($row['production_confirmed'] ?? false)) {
+                if (
+                    !($row['production_confirmed'] ?? false)
+                ) {
                     continue;
                 }
 
@@ -3661,8 +6743,8 @@ class ProductionManagementController extends Controller
             }
         }
 
-        $historyByProduct = $historyByProduct
-            ->groupBy('product_id');
+        $historyByProduct =
+            $historyByProduct->groupBy('product_id');
 
         $targetEvents = collect(
             $this->eventsForDate(
@@ -3671,14 +6753,19 @@ class ProductionManagementController extends Controller
             )
         );
 
-        $targetWeatherCode = StoreDailyWeather::query()
-            ->where('store_id', $storeId)
-            ->whereDate('work_date', $data['date'])
-            ->value('condition');
+        $targetWeatherCode =
+            StoreDailyWeather::query()
+                ->where('store_id', $storeId)
+                ->whereDate(
+                    'work_date',
+                    $data['date']
+                )
+                ->value('condition');
 
         if (!empty($targetWeatherCode)) {
             $targetEvents->push([
-                'weather_code' => (string) $targetWeatherCode,
+                'weather_code' =>
+                    (string) $targetWeatherCode,
             ]);
         }
 
@@ -3689,32 +6776,48 @@ class ProductionManagementController extends Controller
                 $target
             ) {
                 $history = collect(
-                    $historyByProduct->get($product->id, [])
+                    $historyByProduct->get(
+                        $product->id,
+                        []
+                    )
                 )->values();
 
                 $productEvents = $targetEvents
                     ->filter(
                         fn (array $event) =>
                             empty($event['products'])
-                            || collect($event['products'])
-                                ->contains('id', $product->id)
+                            || collect(
+                                $event['products']
+                            )->contains(
+                                'id',
+                                $product->id
+                            )
                     )
                     ->values()
                     ->all();
 
-                $recommendation = $this->recommendationService
-                    ->recommend(
+                /*
+                * 기존 전체 분석 추천 계산 유지
+                */
+                $recommendation =
+                    $this->recommendationService->recommend(
                         $history,
                         $target,
                         $productEvents
                     );
 
                 $recent = $history->take(-5);
+
                 $recentCount = $recent->count();
+
                 $flags = [];
 
                 if (
-                    $recent->where('waste', '>', 0)->count() >= 3
+                    $recent->where(
+                        'waste',
+                        '>',
+                        0
+                    )->count() >= 3
                 ) {
                     $flags[] =
                         "최근 생산 기록 {$recentCount}건 중 3건 이상에서 폐기가 발생했습니다. 생산량을 확인해 주세요.";
@@ -3737,8 +6840,11 @@ class ProductionManagementController extends Controller
 
                 return [
                     'product_id' => $product->id,
+
                     'product_name' => $product->name,
+
                     'recommendation' => $recommendation,
+
                     'flags' => $flags,
                 ];
             }
@@ -3746,8 +6852,11 @@ class ProductionManagementController extends Controller
 
         return response()->json([
             'items' => $items,
+
             'daily_flow' => $dailyFlow,
+
             'product_totals' => $productTotals,
+
             'range' => [
                 'from' => $from,
                 'to' => $to,
@@ -3757,26 +6866,34 @@ class ProductionManagementController extends Controller
     }
 
     /**
-     * 제품별 최근 최대 12개월 추천 데이터를 조회합니다.
+     * 제품별 생산·이월·로스·폐기 기록 조회
      *
-     * 생산·이월·로스·폐기 기록을 기간별로 집계합니다.
-     * 날짜별 dailyService->build() 반복 호출은 사용하지 않습니다.
+     * 기본 조회 기간은 기존과 동일한 최근 12개월입니다.
      *
-     * 기존 최초 생산일 귀속 폐기율 정책을 유지합니다.
+     * 시작 날짜를 별도로 전달하면
+     * 해당 날짜부터 전체 누적 기록을 조회할 수 있습니다.
      *
-     * 신규 생산이 없는 날이라도 정상 마감되었고
-     * 이월 재고의 실제 처리 기록이 있다면 분석에 포함합니다.
+     * 기존 호출부와 계산 정책을 유지합니다.
      */
     private function recommendationHistoryForProduct(
         int $storeId,
         int $productId,
-        Carbon $targetDate
+        Carbon $targetDate,
+        ?Carbon $startDate = null
     ): Collection {
         $target = $targetDate->copy()->startOfDay();
 
-        $from = $target->copy()
-            ->subYear()
-            ->toDateString();
+        /*
+        * 기본값: 최근 12개월
+        *
+        * 기존 추천 생산량 계산은
+        * 이전과 동일하게 동작합니다.
+        */
+        $from = $startDate !== null
+            ? $startDate->copy()->toDateString()
+            : $target->copy()
+                ->subYear()
+                ->toDateString();
 
         $to = $target->copy()
             ->subDay()
@@ -3906,11 +7023,16 @@ class ProductionManagementController extends Controller
             )
             ->all();
 
-        // 기존 날씨·행사·판매 관련 조회 구조 유지
+        /*
+        * 제품별 추천에 필요한 자료만 조회합니다.
+        *
+        * 기존 판매량 자동 추정 계산은 유지합니다.
+        */
         $context = $this->recommendationData(
             $storeId,
             $from,
-            $to
+            $to,
+            $productId
         );
 
         /*
@@ -4383,14 +7505,128 @@ class ProductionManagementController extends Controller
     // 생산 배치 요청을 검증합니다.
     private function validateBatch(Request $request): array
     {
-        return $request->validate(['store_id' => ['required', 'integer', 'exists:stores,id'], 'product_id' => ['required', 'integer', 'exists:products,id'], 'work_date' => ['required', 'date_format:Y-m-d'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'recipe_deviated' => ['boolean'], 'recipe_deviation_note' => ['nullable', 'required_if:recipe_deviated,true', 'string', 'max:1000'], 'note' => ['nullable', 'string', 'max:1000'], 'recommendation_referenced' => ['nullable', 'boolean'], 'recommendation_deviation_reason' => ['nullable', 'string', 'max:1000'], 'workers' => ['required', 'array', 'min:1'], 
+        return $request->validate([
+            'store_id' => [
+                'required',
+                'integer',
+                'exists:stores,id',
+            ],
+
+            'product_id' => [
+                'required',
+                'integer',
+                'exists:products,id',
+            ],
+
+            'work_date' => [
+                'required',
+                'date_format:Y-m-d',
+            ],
+
+            'quantity' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:100000',
+            ],
+
+            'recipe_deviated' => [
+                'boolean',
+            ],
+
+            'recipe_deviation_note' => [
+                'nullable',
+                'required_if:recipe_deviated,true',
+                'string',
+                'max:1000',
+            ],
+
+            'note' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+
+            'recommendation_referenced' => [
+                'nullable',
+                'boolean',
+            ],
+
+            'recommendation_deviation_reason' => [
+                'nullable',
+                'string',
+                'max:1000',
+            ],
+
+            /*
+            * 추천 데이터가 없는 경우에도
+            * 기존 생산 기록 등록은 정상적으로 허용합니다.
+            *
+            * 추천 데이터가 존재하는 경우에만
+            * 배열 형식과 내부 수량을 검증합니다.
+            */
+            'displayed_recommendation' => [
+                'nullable',
+                'array',
+            ],
+
+            'displayed_recommendation.center' => [
+                'required_with:displayed_recommendation',
+                'integer',
+                'min:0',
+                'max:100000',
+            ],
+
+            'displayed_recommendation.min' => [
+                'required_with:displayed_recommendation',
+                'integer',
+                'min:0',
+                'max:100000',
+            ],
+
+            'displayed_recommendation.max' => [
+                'required_with:displayed_recommendation',
+                'integer',
+                'min:0',
+                'max:100000',
+            ],
+
+            'displayed_recommendation.confidence' => [
+                'required_with:displayed_recommendation',
+                'string',
+                Rule::in([
+                    'insufficient',
+                    'low',
+                    'normal',
+                ]),
+            ],
+
+            'workers' => [
+                'required',
+                'array',
+                'min:1',
+            ],
+
             'workers.*.user_id' => [
                 'required',
                 'integer',
                 'distinct',
                 'exists:users,id',
             ],
-            'workers.*.process_type' => ['nullable', 'string', Rule::in(['all', 'mixing', 'shaping', 'proofing', 'oven', 'other'])]]);
+
+            'workers.*.process_type' => [
+                'nullable',
+                'string',
+                Rule::in([
+                    'all',
+                    'mixing',
+                    'shaping',
+                    'proofing',
+                    'oven',
+                    'other',
+                ]),
+            ],
+        ]);
     }
 
     /**
