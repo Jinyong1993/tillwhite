@@ -1,7 +1,13 @@
 <template>
   <div class="inventory-dialog inventory-dialog__waste-rate-tab">
-    <!-- 통계 불러오는 중 -->
-    <div v-if="loading" class="inventory-dialog__status">
+    <!-- 조회 중 -->
+    <div
+      v-if="loading"
+      class="inventory-dialog__status d-flex align-center justify-center ga-2"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
       <v-progress-circular
         indeterminate
         size="22"
@@ -10,8 +16,12 @@
       <span>폐기율 통계를 불러오는 중입니다.</span>
     </div>
 
-    <!-- 조회 오류 -->
-    <div v-else-if="error" class="inventory-dialog__status">
+    <!-- 오류 -->
+    <div
+      v-else-if="error"
+      class="inventory-dialog__status d-flex flex-column align-center ga-2"
+      role="alert"
+    >
       <span>{{ error }}</span>
 
       <v-btn
@@ -25,252 +35,495 @@
     </div>
 
     <template v-else-if="statistics">
-      <!-- 최근 7일 / 이전 7일 비교 -->
+      <!-- 폐기율 비교 -->
       <section class="inventory-dialog__card">
         <div class="inventory-dialog__heading">
           <strong>폐기율 비교</strong>
         </div>
 
-        <div class="inventory-dialog__comparison">
-          <div class="inventory-dialog__metric">
-            <span class="inventory-dialog__metric-label">
-              최근 7일
-            </span>
-
-            <span class="inventory-dialog__metric-period">
-              {{ recentPeriod }}
-            </span>
-
-            <strong class="inventory-dialog__metric-value">
-              {{ formatRate(recent?.waste_rate) }}
+        <!-- 7일 비교 -->
+        <div class="app-dialog-subcard d-flex flex-column ga-2">
+          <div class="d-flex align-center justify-space-between ga-2">
+            <strong class="inventory-dialog__period-title">
+              최근 7일 비교
             </strong>
 
-            <span class="inventory-dialog__metric-detail">
-              생산 {{ formatQuantity(recent?.production) }}개 /
-              폐기 {{ formatQuantity(recent?.attributed_waste) }}개
+            <span class="inventory-dialog__period-caption">
+              이전 7일 대비
             </span>
           </div>
 
-          <div class="inventory-dialog__metric">
-            <span class="inventory-dialog__metric-label">
-              이전 7일
-            </span>
+          <div class="inventory-dialog__comparison">
+            <div class="inventory-dialog__metric">
+              <span class="inventory-dialog__metric-label">
+                최근 7일
+              </span>
 
-            <span class="inventory-dialog__metric-period">
-              {{ previousPeriod }}
-            </span>
+              <span class="inventory-dialog__metric-period">
+                {{ recentPeriod }}
+              </span>
 
-            <strong class="inventory-dialog__metric-value">
-              {{ formatRate(previous?.waste_rate) }}
-            </strong>
+              <strong class="inventory-dialog__metric-value">
+                {{ formatRate(recent?.waste_rate) }}
+              </strong>
 
-            <span class="inventory-dialog__metric-detail">
-              생산 {{ formatQuantity(previous?.production) }}개 /
-              폐기 {{ formatQuantity(previous?.attributed_waste) }}개
-            </span>
+              <span class="inventory-dialog__metric-detail">
+                생산 {{ formatQuantity(recent?.production) }}개
+                / 폐기 {{ formatQuantity(recent?.attributed_waste) }}개
+              </span>
+            </div>
+
+            <div class="inventory-dialog__metric">
+              <span class="inventory-dialog__metric-label">
+                이전 7일
+              </span>
+
+              <span class="inventory-dialog__metric-period">
+                {{ previousPeriod }}
+              </span>
+
+              <strong class="inventory-dialog__metric-value">
+                {{ formatRate(previous?.waste_rate) }}
+              </strong>
+
+              <span class="inventory-dialog__metric-detail">
+                생산 {{ formatQuantity(previous?.production) }}개
+                / 폐기 {{ formatQuantity(previous?.attributed_waste) }}개
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div
-          v-if="comparisonAvailable"
-          class="inventory-dialog__difference"
-          :class="{
-            'inventory-dialog__difference--good': difference < 0,
-            'inventory-dialog__difference--bad': difference > 0,
-          }"
-        >
-          <v-icon
-            v-if="difference !== null && difference !== 0"
-            :icon="difference > 0 ? 'mdi-arrow-up' : 'mdi-arrow-down'"
-            size="16"
-          />
-
-          <strong>{{ differenceText }}</strong>
-          <span>{{ differenceDescription }}</span>
-        </div>
-
-        <p
-          v-if="!comparisonAvailable"
-          class="inventory-dialog__form-help"
-        >
-          <template v-if="!recent?.complete || !previous?.complete">
-            생산 미확인 날짜가 포함되어 있습니다.
-            표시된 폐기율은 잠정 수치이며, 기간 비교는
-            양쪽 기간의 생산 확인이 완료된 후 제공됩니다.
-          </template>
-
-          <template v-else>
-            비교 기간 중 생산량이 0개인 기간이 있어
-            폐기율 증감을 계산할 수 없습니다.
-          </template>
-        </p>
-      </section>
-
-      <!-- 날짜별 폐기율 막대그래프 -->
-      <section class="inventory-dialog__card">
-        <div class="inventory-dialog__heading">
-          <strong>최근 7일 날짜별 폐기율</strong>
-        </div>
-
-        <div class="inventory-dialog__chart">
-          <button
-            v-for="day in daily"
-            :key="day.date"
-            type="button"
-            class="inventory-dialog__chart-item"
-            :class="{
-              'inventory-dialog__chart-item--selected':
-                selectedDate === day.date,
-            }"
-            :aria-pressed="selectedDate === day.date"
-            :aria-label="`${day.date} 폐기율 ${formatRate(day.waste_rate)}`"
-            @click="selectedDate = day.date"
+          <div
+            v-if="comparisonAvailable"
+            class="inventory-dialog__difference d-flex align-center flex-wrap ga-2"
+            :class="differenceClass(difference)"
           >
-            <span class="inventory-dialog__chart-value">
-              {{ formatRate(day.waste_rate) }}
-            </span>
-
-            <span class="inventory-dialog__chart-track">
-              <span
-                v-if="day.waste_rate != null"
-                class="inventory-dialog__chart-bar"
-                :class="{
-                  'inventory-dialog__chart-bar--zero':
-                    Number(day.waste_rate) === 0,
-                }"
-                :style="{ height: barHeight(day.waste_rate) }"
-              />
-
-              <span
-                v-else
-                class="inventory-dialog__chart-missing"
-              />
-            </span>
-
-            <span class="inventory-dialog__chart-date">
-              {{ formatShortDate(day.date) }}
-            </span>
-          </button>
+            <strong>{{ formatDifference(difference) }}</strong>
+            <span>{{ differenceDescription(difference) }}</span>
+          </div>
+          <p
+            v-else
+            class="inventory-dialog__form-help"
+          >
+            {{ comparisonUnavailableText(recent, previous) }}
+          </p>
         </div>
 
-        <div
-          v-if="selectedDay"
-          class="inventory-dialog__day-detail"
-        >
-          <strong>{{ selectedDay.date }}</strong>
+        <!-- 30일 비교 -->
+        <div class="app-dialog-subcard d-flex flex-column ga-2">
+          <div class="d-flex align-center justify-space-between ga-2">
+            <strong class="inventory-dialog__period-title">
+              최근 30일 비교
+            </strong>
 
-          <span>
-            생산
-            {{
-              selectedDay.production === null
-                ? "미확인"
-                : `${formatQuantity(selectedDay.production)}개`
-            }}
-          </span>
+            <span class="inventory-dialog__period-caption">
+              이전 30일 대비
+            </span>
+          </div>
 
-          <span>
-            폐기 {{ formatQuantity(selectedDay.attributed_waste) }}개
-          </span>
+          <div class="inventory-dialog__comparison">
+            <div class="inventory-dialog__metric">
+              <span class="inventory-dialog__metric-label">
+                최근 30일
+              </span>
 
-          <span>
-            폐기율 {{ formatRate(selectedDay.waste_rate) }}
-          </span>
+              <span class="inventory-dialog__metric-period">
+                {{ recent30Period }}
+              </span>
+
+              <strong class="inventory-dialog__metric-value">
+                {{ formatRate(recent30?.waste_rate) }}
+              </strong>
+
+              <span class="inventory-dialog__metric-detail">
+                생산 {{ formatQuantity(recent30?.production) }}개
+                / 폐기 {{ formatQuantity(recent30?.attributed_waste) }}개
+              </span>
+            </div>
+
+            <div class="inventory-dialog__metric">
+              <span class="inventory-dialog__metric-label">
+                이전 30일
+              </span>
+
+              <span class="inventory-dialog__metric-period">
+                {{ previous30Period }}
+              </span>
+
+              <strong class="inventory-dialog__metric-value">
+                {{ formatRate(previous30?.waste_rate) }}
+              </strong>
+
+              <span class="inventory-dialog__metric-detail">
+                생산 {{ formatQuantity(previous30?.production) }}개
+                / 폐기 {{ formatQuantity(previous30?.attributed_waste) }}개
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="comparison30Available"
+            class="inventory-dialog__difference d-flex align-center flex-wrap ga-2"
+            :class="differenceClass(difference30)"
+          >
+            <strong>{{ formatDifference(difference30) }}</strong>
+            <span>{{ differenceDescription(difference30) }}</span>
+          </div>
+          <p
+            v-else
+            class="inventory-dialog__form-help"
+          >
+            {{ comparisonUnavailableText(recent30, previous30) }}
+          </p>
         </div>
 
         <p class="inventory-dialog__form-help">
-          생산량이 0개이거나 미확인인 날짜는 폐기율을 표시하지 않습니다.
+          폐기율 변화는 두 기간의 폐기율 차이(%p)입니다.
+          감소할수록 폐기 비율이 낮아진 것입니다.
         </p>
       </section>
 
-      <!-- 폐기 사유별 구성비 -->
+      <!-- 상세 분석 -->
       <section class="inventory-dialog__card">
         <div class="inventory-dialog__heading">
-          <strong>폐기 사유별 구성비</strong>
-          <span>최근 7일 생산분 기준</span>
+          <strong>상세 분석</strong>
         </div>
 
-        <template v-if="reasonSegments.length">
-          <div class="inventory-dialog__reason-layout">
+        <!-- 내부 탭 -->
+        <div
+          class="inventory-dialog__tabs d-flex ga-1"
+          role="tablist"
+          aria-label="폐기율 상세 분석"
+        >
+          <button
+            v-for="tab in analysisTabs"
+            :key="tab.value"
+            type="button"
+            role="tab"
+            class="inventory-dialog__tab"
+            :class="{
+              'inventory-dialog__tab--active':
+                activeTab === tab.value,
+            }"
+            :aria-selected="activeTab === tab.value"
+            @click="activeTab = tab.value"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+
+        <!-- 폐기율 추이 -->
+        <div
+          v-if="activeTab === 'trend'"
+          class="d-flex flex-column ga-3"
+          role="tabpanel"
+        >
+          <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+            <strong class="inventory-dialog__section-title">
+              날짜별 폐기율
+            </strong>
+
+            <div class="inventory-dialog__range-switch d-flex ga-1">
+              <button
+                type="button"
+                :class="{ 'is-active': chartRange === 7 }"
+                :aria-pressed="chartRange === 7"
+                @click="chartRange = 7"
+              >
+                최근 7일
+              </button>
+
+              <button
+                type="button"
+                :class="{ 'is-active': chartRange === 30 }"
+                :aria-pressed="chartRange === 30"
+                @click="chartRange = 30"
+              >
+                최근 30일
+              </button>
+            </div>
+          </div>
+
+          <div class="app-dialog-subcard d-flex flex-column ga-3">
             <div
-              class="inventory-dialog__donut"
-              :style="{ background: donutBackground }"
-              role="img"
-              :aria-label="`총 폐기 수량 ${formatQuantity(totalReasonQuantity)}개`"
+              v-if="chartDays.length"
+              class="inventory-dialog__chart-scroll"
+              tabindex="0"
+              aria-label="날짜별 폐기율 차트. 좌우로 스크롤할 수 있습니다."
             >
-              <div class="inventory-dialog__donut-center">
-                <strong>{{ formatQuantity(totalReasonQuantity) }}</strong>
-                <span>총 폐기 수량</span>
+              <div
+                class="inventory-dialog__chart"
+                :class="{
+                  'inventory-dialog__chart--monthly':
+                    chartRange === 30,
+                }"
+              >
+                <button
+                  v-for="day in chartDays"
+                  :key="day.date"
+                  type="button"
+                  class="inventory-dialog__chart-item"
+                  :class="{
+                    'inventory-dialog__chart-item--selected':
+                      selectedDate === day.date,
+                  }"
+                  :aria-pressed="selectedDate === day.date"
+                  :aria-label="`${day.date} 폐기율 ${formatRate(day.waste_rate)}`"
+                  @click="selectedDate = day.date"
+                >
+                  <span class="inventory-dialog__chart-value">
+                    {{ formatRate(day.waste_rate) }}
+                  </span>
+
+                  <span class="inventory-dialog__chart-track">
+                    <span
+                      v-if="day.waste_rate != null"
+                      class="inventory-dialog__chart-bar"
+                      :class="{
+                        'inventory-dialog__chart-bar--zero':
+                          Number(day.waste_rate) === 0,
+                      }"
+                      :style="{
+                        height: barHeight(day.waste_rate),
+                      }"
+                    />
+
+                    <span
+                      v-else
+                      class="inventory-dialog__chart-missing"
+                    />
+                  </span>
+
+                  <span class="inventory-dialog__chart-date">
+                    {{ formatShortDate(day.date) }}
+                  </span>
+                </button>
               </div>
             </div>
 
-            <div class="inventory-dialog__legend">
-              <div
-                v-for="reason in reasonSegments"
-                :key="reason.key"
-                class="inventory-dialog__legend-item"
-              >
-                <span
-                  class="inventory-dialog__legend-color"
-                  :style="{ backgroundColor: reason.color }"
-                />
+            <p v-else class="inventory-dialog__empty">
+              표시할 날짜별 기록이 없습니다.
+            </p>
 
-                <span class="inventory-dialog__legend-name">
-                  {{ reason.label }}
+            <div
+              v-if="selectedDay"
+              class="inventory-dialog__day-detail d-flex flex-column ga-2"
+            >
+              <strong>{{ selectedDay.date }}</strong>
+
+              <div class="d-flex flex-wrap ga-3">
+                <span>
+                  생산
+                  {{
+                    selectedDay.production === null
+                      ? "미확인"
+                      : `${formatQuantity(selectedDay.production)}개`
+                  }}
                 </span>
 
-                <strong>
-                  {{ formatQuantity(reason.quantity) }}개
-                </strong>
+                <span>
+                  폐기
+                  {{ formatQuantity(selectedDay.attributed_waste) }}개
+                </span>
 
-                <span class="inventory-dialog__legend-rate">
-                  {{ reason.percentage.toFixed(1) }}%
+                <span>
+                  폐기율
+                  {{ formatRate(selectedDay.waste_rate) }}
                 </span>
               </div>
             </div>
           </div>
-        </template>
 
-        <p v-else class="inventory-dialog__empty">
-          해당 기간에 등록된 폐기 사유가 없습니다.
-        </p>
+          <p class="inventory-dialog__form-help">
+            막대를 누르면 해당 날짜의 수량을 확인할 수 있습니다.
+            생산량이 0개이거나 미확인인 날짜는 폐기율이 표시되지 않습니다.
+          </p>
+        </div>
+
+        <!-- 폐기 사유 -->
+        <div
+          v-else-if="activeTab === 'reasons'"
+          class="d-flex flex-column ga-3"
+          role="tabpanel"
+        >
+          <div class="d-flex align-center justify-space-between flex-wrap ga-2">
+            <strong class="inventory-dialog__section-title">
+              폐기 사유별 구성비
+            </strong>
+
+            <div class="inventory-dialog__range-switch d-flex ga-1">
+              <button
+                type="button"
+                :class="{ 'is-active': reasonRange === 7 }"
+                :aria-pressed="reasonRange === 7"
+                @click="reasonRange = 7"
+              >
+                최근 7일
+              </button>
+
+              <button
+                type="button"
+                :class="{ 'is-active': reasonRange === 30 }"
+                :aria-pressed="reasonRange === 30"
+                @click="reasonRange = 30"
+              >
+                최근 30일
+              </button>
+            </div>
+          </div>
+
+          <div class="app-dialog-subcard">
+            <div
+              v-if="reasonSegments.length"
+              class="inventory-dialog__reason-layout"
+            >
+              <div
+                class="inventory-dialog__donut"
+                :style="{ background: donutBackground }"
+                role="img"
+                :aria-label="`총 폐기 수량 ${formatQuantity(totalReasonQuantity)}개`"
+              >
+                <div class="inventory-dialog__donut-center">
+                  <strong>
+                    {{ formatQuantity(totalReasonQuantity) }}
+                  </strong>
+
+                  <span>총 폐기 수량</span>
+                </div>
+              </div>
+
+              <div class="inventory-dialog__legend">
+                <div
+                  v-for="reason in reasonSegments"
+                  :key="reason.key"
+                  class="inventory-dialog__legend-item"
+                >
+                  <span
+                    class="inventory-dialog__legend-color"
+                    :style="{ backgroundColor: reason.color }"
+                  />
+
+                  <span class="inventory-dialog__legend-name">
+                    {{ reason.label }}
+                  </span>
+
+                  <strong>
+                    {{ formatQuantity(reason.quantity) }}개
+                  </strong>
+
+                  <span class="inventory-dialog__legend-rate">
+                    {{ reason.percentage.toFixed(1) }}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p v-else class="inventory-dialog__empty">
+              해당 기간에 등록된 폐기 사유가 없습니다.
+            </p>
+          </div>
+
+          <p class="inventory-dialog__form-help">
+            선택한 기간에 생산된 제품의 폐기 사유별 수량 비율입니다.
+          </p>
+        </div>
+
+        <!-- 날짜별 기록 -->
+        <div
+          v-else-if="activeTab === 'records'"
+          class="d-flex flex-column ga-3"
+          role="tabpanel"
+        >
+          <div class="inventory-dialog__heading">
+            <strong class="inventory-dialog__section-title">
+              최근 30일 날짜별 기록
+            </strong>
+          </div>
+
+          <div
+            v-if="daily30.length"
+            class="inventory-dialog__records"
+            tabindex="0"
+            aria-label="최근 30일 날짜별 폐기율 기록"
+          >
+            <div
+              v-for="day in reversedDaily30"
+              :key="day.date"
+              class="inventory-dialog__record app-dialog-subcard"
+            >
+              <div class="d-flex align-center justify-space-between ga-2">
+                <strong>{{ day.date }}</strong>
+
+                <strong class="inventory-dialog__record-rate">
+                  {{ formatRate(day.waste_rate) }}
+                </strong>
+              </div>
+
+              <div class="d-flex flex-wrap ga-3">
+                <span>
+                  생산
+                  {{
+                    day.production === null
+                      ? "미확인"
+                      : `${formatQuantity(day.production)}개`
+                  }}
+                </span>
+
+                <span>
+                  폐기 {{ formatQuantity(day.attributed_waste) }}개
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <p v-else class="inventory-dialog__empty">
+            표시할 날짜별 기록이 없습니다.
+          </p>
+        </div>
       </section>
+
+      <!-- 폐기율 안내 -->
+      <details class="inventory-dialog__guide">
+        <summary class="inventory-dialog__guide-summary">
+          폐기율 계산 기준
+        </summary>
+
+        <div class="inventory-dialog__guide-content d-flex flex-column ga-2">
+          <p class="inventory-dialog__form-help">
+            폐기율은 최초 생산일 기준으로 계산합니다.
+            이월 재고를 나중에 폐기해도 최초 생산일에 반영됩니다.
+          </p>
+
+          <p class="inventory-dialog__form-help">
+            표시된 폐기율은 조회 시점 기준이며,
+            이후 폐기 기록의 추가·수정에 따라 변경될 수 있습니다.
+          </p>
+
+          <div class="inventory-dialog__formula">
+            <span>계산식</span>
+            <strong>폐기 수량 ÷ 생산 수량 × 100</strong>
+          </div>
+
+          <p class="inventory-dialog__example">
+            <strong>예시</strong>
+            10/3 생산 10개 중 2개를 10/5에 폐기
+            → 10/3 폐기율 20%
+          </p>
+        </div>
+      </details>
     </template>
-
-    <!-- 폐기율 안내 -->
-    <div class="inventory-dialog__guide">
-      <div class="inventory-dialog__guide-heading">
-        <strong>폐기율 안내</strong>
-      </div>
-
-      <p class="inventory-dialog__form-help">
-        폐기율은 최초 생산일 기준으로 계산하며,
-        이월 재고를 나중에 폐기해도 최초 생산일에 반영됩니다.
-      </p>
-
-      <p class="inventory-dialog__form-help">
-        <strong class="inventory-dialog__notice">
-          표시된 폐기율은 조회 시점 기준이며,
-          이후 폐기 기록의 추가·수정에 따라 변경될 수 있습니다.
-        </strong>
-      </p>
-
-      <div class="inventory-dialog__formula">
-        <span>계산식</span>
-        <strong>폐기 수량 ÷ 생산 수량 × 100</strong>
-      </div>
-
-      <p class="inventory-dialog__example">
-        <strong>예시</strong>
-        10/3 생산 10개 중 2개를 10/5에 폐기 → 10/3 폐기율 20%
-      </p>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, shallowRef, ref, watch } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  shallowRef,
+  ref,
+  watch,
+} from "vue";
 
-// 부모 다이얼로그에서 전달받는 제품과 업무 날짜
 const props = defineProps({
   product: {
     type: Object,
@@ -286,17 +539,29 @@ const props = defineProps({
   },
 });
 
-// API 조회 상태
+// API 조회
 const statistics = shallowRef(null);
 const loading = ref(false);
 const error = ref("");
 const selectedDate = ref(null);
 
-// 이전 조회 요청 중단
 let controller = null;
 let requestId = 0;
 
-// 서버에서 받은 폐기 사유 목록을 조회용 Map으로 변환
+// 내부 탭
+const activeTab = ref("trend");
+
+const analysisTabs = [
+  { value: "trend", label: "폐기율 추이" },
+  { value: "reasons", label: "폐기 사유" },
+  { value: "records", label: "날짜별 기록" },
+];
+
+// 조회 기간 선택
+const chartRange = ref(7);
+const reasonRange = ref(7);
+
+// 폐기 사유 명칭
 const reasonLabelMap = computed(
   () =>
     new Map(
@@ -307,7 +572,7 @@ const reasonLabelMap = computed(
     )
 );
 
-// 그래프 색상 설정
+// 기존 차트 색상 유지
 const chartColors = [
   "#5278bd",
   "#e4a148",
@@ -317,12 +582,10 @@ const chartColors = [
   "#8a9aaa",
 ];
 
-// 공통 수량 표시
 function formatQuantity(value) {
   return Number(value ?? 0).toLocaleString("ko-KR");
 }
 
-// 공통 폐기율 표시
 function formatRate(value) {
   if (value === null || value === undefined) {
     return "-";
@@ -331,18 +594,16 @@ function formatRate(value) {
   return `${Number(value).toFixed(1)}%`;
 }
 
-// 날짜 표시
 function formatShortDate(value) {
   if (!value) return "-";
 
   return value.slice(5).replace("-", "/");
 }
 
-// 서버에서 제품별 폐기율 통계 조회
+// 서버 조회
 async function loadStatistics() {
   const currentRequest = ++requestId;
 
-  // 이전 요청이 진행 중이면 중단
   controller?.abort();
 
   statistics.value = null;
@@ -374,12 +635,10 @@ async function loadStatistics() {
       }
     );
 
-    // 이전 요청의 응답이면 무시
     if (currentRequest !== requestId) return;
 
     statistics.value = response.data;
 
-    // 선택 날짜를 최근 조회일로 초기화
     const days = response.data?.daily ?? [];
 
     selectedDate.value = days.at(-1)?.date ?? null;
@@ -404,27 +663,26 @@ async function loadStatistics() {
   }
 }
 
-// 제품 또는 업무 날짜 변경 시에만 재조회
+// 제품 또는 업무 날짜 변경 시 재조회
 watch(
   () => [props.product?.id, props.workDate],
   loadStatistics,
   { immediate: true }
 );
 
-// 탭 제거 시 진행 중인 요청 정리
+// 요청 정리
 onBeforeUnmount(() => {
   requestId++;
   controller?.abort();
   controller = null;
 });
 
-// YYYY-MM-DD 문자열을 로컬 시간 기준 날짜로 변환
+// 날짜 처리
 function parseWorkDate(value) {
   const [year, month, day] = value.split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
-// 선택 날짜에서 지정한 일수만큼 이동
 function shiftDate(value, days) {
   if (!value) return "";
 
@@ -438,36 +696,74 @@ function shiftDate(value, days) {
   return `${year}-${month}-${day}`;
 }
 
-// 최근 7일: 선택 날짜 포함 7일
+// 7일 기간
 const recentPeriod = computed(() => {
   if (!props.workDate) return "";
 
   return `${shiftDate(props.workDate, -6)} ~ ${props.workDate}`;
 });
 
-// 이전 7일: 최근 7일 바로 이전의 7일
 const previousPeriod = computed(() => {
   if (!props.workDate) return "";
 
   return `${shiftDate(props.workDate, -13)} ~ ${shiftDate(props.workDate, -7)}`;
 });
 
-// API 통계 데이터
-const recent = computed(() => statistics.value?.recent ?? null);
-const previous = computed(() => statistics.value?.previous ?? null);
-const daily = computed(() => statistics.value?.daily ?? []);
+// 30일 기간
+const recent30Period = computed(() => {
+  if (!props.workDate) return "";
 
-// 두 기간의 생산 확인이 완료되고 폐기율이 계산된 경우에만 비교
-const comparisonAvailable = computed(() => {
-  return (
-    recent.value?.complete === true &&
-    previous.value?.complete === true &&
-    recent.value?.waste_rate != null &&
-    previous.value?.waste_rate != null
-  );
+  return `${shiftDate(props.workDate, -29)} ~ ${props.workDate}`;
 });
 
-// 이전 기간 대비 폐기율 증감
+const previous30Period = computed(() => {
+  if (!props.workDate) return "";
+
+  return `${shiftDate(props.workDate, -59)} ~ ${shiftDate(props.workDate, -30)}`;
+});
+
+// 기존 API 데이터
+const recent = computed(() => statistics.value?.recent ?? null);
+const previous = computed(() => statistics.value?.previous ?? null);
+
+const daily = computed(() => statistics.value?.daily ?? []);
+
+// 신규 30일 API 데이터
+const recent30 = computed(
+  () => statistics.value?.recent_30 ?? null
+);
+
+const previous30 = computed(
+  () => statistics.value?.previous_30 ?? null
+);
+
+const daily30 = computed(
+  () => statistics.value?.daily_30 ?? []
+);
+
+const reversedDaily30 = computed(
+  () => [...daily30.value].reverse()
+);
+
+// 비교 가능 여부
+function canCompare(current, past) {
+  return (
+    current?.waste_rate != null &&
+    past?.waste_rate != null &&
+    Number.isFinite(Number(current.waste_rate)) &&
+    Number.isFinite(Number(past.waste_rate))
+  );
+}
+
+const comparisonAvailable = computed(() =>
+  canCompare(recent.value, previous.value)
+);
+
+const comparison30Available = computed(() =>
+  canCompare(recent30.value, previous30.value)
+);
+
+// 기존 7일 변화
 const difference = computed(() => {
   const value = statistics.value?.difference_percentage_points;
 
@@ -476,51 +772,112 @@ const difference = computed(() => {
     : Number(value);
 });
 
-const differenceText = computed(() => {
-  if (difference.value === null) return "비교 불가";
+// 신규 30일 변화
+const difference30 = computed(() => {
+  const value =
+    statistics.value?.difference_30_percentage_points;
 
-  if (difference.value === 0) return "변동 없음";
-
-  const sign = difference.value > 0 ? "+" : "";
-
-  return `${sign}${difference.value.toFixed(1)}%p`;
+  return value === null || value === undefined
+    ? null
+    : Number(value);
 });
 
-const differenceDescription = computed(() => {
-  if (difference.value === null) {
+// 퍼센트포인트 표시
+function formatDifference(value) {
+  if (value === null || !Number.isFinite(value)) {
+    return "비교 불가";
+  }
+
+  if (value === 0) {
+    return "변동 없음";
+  }
+
+  const sign = value > 0 ? "+" : "";
+
+  return `${sign}${value.toFixed(1)}%p`;
+}
+
+function differenceDescription(value) {
+  if (value === null || !Number.isFinite(value)) {
     return "비교할 생산 기록이 없습니다.";
   }
 
-  if (difference.value < 0) {
+  if (value < 0) {
     return "이전 기간보다 폐기율 감소";
   }
 
-  if (difference.value > 0) {
+  if (value > 0) {
     return "이전 기간보다 폐기율 증가";
   }
 
   return "이전 기간과 동일";
+}
+
+function differenceClass(value) {
+  return {
+    "inventory-dialog__difference--good":
+      Number.isFinite(value) && value < 0,
+
+    "inventory-dialog__difference--bad":
+      Number.isFinite(value) && value > 0,
+  };
+}
+
+function comparisonUnavailableText(current, past) {
+  if (!current || !past) {
+    return "비교할 기록이 없습니다.";
+  }
+
+  if (!current.complete || !past.complete) {
+    return "생산 기록이 확인되지 않은 날짜가 있어 폐기율을 비교할 수 없습니다.";
+  }
+
+  if (
+    current.waste_rate == null ||
+    past.waste_rate == null
+  ) {
+    return "비교 기간의 생산량이 0개여서 폐기율을 비교할 수 없습니다.";
+  }
+
+  return "";
+}
+
+// 차트 조회 기간
+const chartDays = computed(() =>
+  chartRange.value === 30
+    ? daily30.value
+    : daily.value
+);
+
+// 기간 변경 시 선택 날짜 조정
+watch(chartRange, () => {
+  selectedDate.value =
+    chartDays.value.at(-1)?.date ?? null;
 });
 
-// 날짜별 막대그래프 최대 높이 계산
+// 그래프 최대 폐기율
 const maxRate = computed(() => {
-  const rates = daily.value
+  const rates = chartDays.value
     .map((day) => day.waste_rate)
     .filter((rate) => rate !== null && rate !== undefined)
-    .map(Number);
+    .map(Number)
+    .filter(Number.isFinite);
 
   return Math.max(10, ...rates);
 });
 
-// 폐기율에 따라 막대 높이 계산
+// 막대 높이
 function barHeight(value) {
+  if (value === null || value === undefined) {
+    return "0%";
+  }
+
   const rate = Number(value);
 
   if (!Number.isFinite(rate) || rate < 0) {
     return "0%";
   }
 
-  // 실제 폐기율 0%는 얇은 막대로 표시
   if (rate === 0) {
     return "3px";
   }
@@ -531,16 +888,22 @@ function barHeight(value) {
   )}%`;
 }
 
-// 선택한 날짜의 상세 정보
+// 선택한 날짜
 const selectedDay = computed(() =>
-  daily.value.find((day) => day.date === selectedDate.value) ?? null
+  chartDays.value.find(
+    (day) => day.date === selectedDate.value
+  ) ?? null
 );
 
-// 폐기 사유별 집계 데이터를 화면 표시 형태로 변환
-const reasons = computed(() => {
-  const rows = statistics.value?.reasons ?? [];
+// 폐기 사유별 데이터
+const reasonRows = computed(() => {
+  return reasonRange.value === 30
+    ? statistics.value?.reasons_30 ?? []
+    : statistics.value?.reasons ?? [];
+});
 
-  return rows
+const reasons = computed(() => {
+  return reasonRows.value
     .map((row, index) => {
       const code = row.reason_code;
       const quantity = Number(row.quantity ?? 0);
@@ -563,12 +926,14 @@ const reasons = computed(() => {
     .sort((a, b) => b.quantity - a.quantity);
 });
 
-// 사유별 합계 수량
 const totalReasonQuantity = computed(() =>
-  reasons.value.reduce((total, row) => total + row.quantity, 0)
+  reasons.value.reduce(
+    (total, row) => total + row.quantity,
+    0
+  )
 );
 
-// 도넛그래프 비율 및 색상 계산
+// 도넛그래프 구성
 const reasonSegments = computed(() => {
   if (!totalReasonQuantity.value) return [];
 
@@ -576,6 +941,7 @@ const reasonSegments = computed(() => {
 
   return reasons.value.map((reason, index) => {
     const start = accumulated;
+
     const percentage =
       (reason.quantity / totalReasonQuantity.value) * 100;
 
@@ -591,7 +957,6 @@ const reasonSegments = computed(() => {
   });
 });
 
-// CSS 원형그래프 생성
 const donutBackground = computed(() => {
   if (!reasonSegments.value.length) {
     return "rgba(var(--v-theme-on-surface), 0.08)";
@@ -607,7 +972,6 @@ const donutBackground = computed(() => {
 </script>
 
 <style scoped>
-/* 폐기율 탭 기본 영역 */
 .inventory-dialog__waste-rate-tab {
   display: flex;
   flex-direction: column;
@@ -619,12 +983,12 @@ const donutBackground = computed(() => {
   overflow-wrap: anywhere;
 }
 
-/* 통계 카드 및 폐기율 안내 카드 */
+/* 주요 카드 */
 .inventory-dialog__card,
 .inventory-dialog__guide {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   min-width: 0;
   max-width: 100%;
@@ -632,14 +996,13 @@ const donutBackground = computed(() => {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 12px;
   background: transparent;
-  text-align: left;
 }
 
-/* 통계 제목 */
+/* 제목 */
 .inventory-dialog__heading {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 6px;
 }
@@ -649,28 +1012,30 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-.inventory-dialog__heading > span {
+.inventory-dialog__period-title,
+.inventory-dialog__section-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inventory-dialog__period-caption {
   font-size: 11px;
   opacity: 0.7;
 }
 
-/* 폐기율 비교 */
+/* 7일·30일 비교 */
 .inventory-dialog__comparison {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  width: 100%;
   min-width: 0;
-  max-width: 100%;
 }
 
 .inventory-dialog__metric {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 100%;
   min-width: 0;
-  max-width: 100%;
   padding: 12px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
   border-radius: 10px;
@@ -681,12 +1046,10 @@ const donutBackground = computed(() => {
   opacity: 0.7;
 }
 
-/* 비교 기간 표시 */
 .inventory-dialog__metric-period {
   font-size: 10px;
   line-height: 1.4;
   opacity: 0.65;
-  white-space: normal;
   overflow-wrap: anywhere;
 }
 
@@ -700,15 +1063,10 @@ const donutBackground = computed(() => {
   font-size: 11px;
   line-height: 1.5;
   opacity: 0.7;
-  overflow-wrap: anywhere;
 }
 
-/* 이전 기간 대비 증감 */
+/* 폐기율 변화 */
 .inventory-dialog__difference {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
   font-size: 11px;
 }
 
@@ -725,15 +1083,94 @@ const donutBackground = computed(() => {
   color: #d26363;
 }
 
-/* 날짜별 막대그래프 */
+/* 상세 분석 내부 탭 */
+.inventory-dialog__tabs {
+  width: 100%;
+  min-width: 0;
+  padding: 4px;
+  border-radius: 9px;
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.inventory-dialog__tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 5px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.inventory-dialog__tab--active {
+  background: rgb(var(--v-theme-surface));
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.inventory-dialog__tab:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+
+/* 7일·30일 전환 */
+.inventory-dialog__range-switch {
+  min-width: 0;
+}
+
+.inventory-dialog__range-switch button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.inventory-dialog__range-switch button.is-active {
+  border-color: rgba(var(--v-theme-primary), 0.45);
+  background: rgba(var(--v-theme-primary), 0.08);
+  font-weight: 600;
+}
+
+.inventory-dialog__range-switch button:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
+}
+
+/* 날짜별 차트 */
+.inventory-dialog__chart-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
 .inventory-dialog__chart {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 7px;
   width: 100%;
   min-width: 0;
-  max-width: 100%;
   height: 154px;
+}
+
+.inventory-dialog__chart--monthly {
+  grid-template-columns: repeat(30, minmax(28px, 1fr));
+  min-width: 900px;
 }
 
 .inventory-dialog__chart-item {
@@ -791,7 +1228,6 @@ const donutBackground = computed(() => {
   background: rgb(var(--v-theme-primary));
 }
 
-/* 실제 폐기율 0%는 얇은 실선 */
 .inventory-dialog__chart-bar--zero {
   opacity: 0.5;
 }
@@ -804,12 +1240,9 @@ const donutBackground = computed(() => {
   border-top: 1px dashed rgba(var(--v-theme-on-surface), 0.35);
 }
 
-/* 선택한 날짜 상세 */
+/* 선택 날짜 */
 .inventory-dialog__day-detail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 8px;
   background: rgba(var(--v-theme-on-surface), 0.04);
@@ -820,14 +1253,13 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-/* 폐기 사유별 도넛그래프 */
+/* 폐기 사유 */
 .inventory-dialog__reason-layout {
   display: flex;
   align-items: center;
   gap: 20px;
   width: 100%;
   min-width: 0;
-  max-width: 100%;
 }
 
 .inventory-dialog__donut {
@@ -862,7 +1294,6 @@ const donutBackground = computed(() => {
   opacity: 0.7;
 }
 
-/* 폐기 사유 목록 */
 .inventory-dialog__legend {
   display: flex;
   flex: 1;
@@ -875,9 +1306,7 @@ const donutBackground = computed(() => {
   display: flex;
   align-items: center;
   gap: 7px;
-  width: 100%;
   min-width: 0;
-  max-width: 100%;
   font-size: 11px;
 }
 
@@ -905,7 +1334,37 @@ const donutBackground = computed(() => {
   opacity: 0.7;
 }
 
-/* 빈 데이터 */
+/* 날짜별 기록 */
+.inventory-dialog__records {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+.inventory-dialog__record {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+}
+
+.inventory-dialog__record strong {
+  font-weight: 600;
+}
+
+.inventory-dialog__record-rate {
+  white-space: nowrap;
+}
+
+/* 빈 상태 */
 .inventory-dialog__empty {
   margin: 0;
   padding: 18px 0;
@@ -915,16 +1374,10 @@ const donutBackground = computed(() => {
   opacity: 0.7;
 }
 
-/* 로딩 및 오류 */
+/* 로딩·오류 */
 .inventory-dialog__status {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 10px;
   width: 100%;
   min-width: 0;
-  max-width: 100%;
   min-height: 90px;
   font-size: 11px;
   line-height: 1.6;
@@ -935,19 +1388,22 @@ const donutBackground = computed(() => {
   min-height: 40px;
 }
 
-/* 폐기율 안내 제목 */
-.inventory-dialog__guide-heading {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+/* 안내 */
+.inventory-dialog__guide {
+  gap: 0;
 }
 
-.inventory-dialog__guide-heading strong {
+.inventory-dialog__guide-summary {
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-/* 안내 문구 */
+.inventory-dialog__guide-content {
+  margin-top: 12px;
+}
+
 .inventory-dialog__form-help {
   margin: 0;
   font-size: 11px;
@@ -956,7 +1412,6 @@ const donutBackground = computed(() => {
   text-align: left;
 }
 
-/* 계산식 */
 .inventory-dialog__formula {
   display: flex;
   align-items: center;
@@ -977,13 +1432,11 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-/* 계산 예시 */
 .inventory-dialog__example {
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
   opacity: 0.7;
-  text-align: left;
 }
 
 .inventory-dialog__example strong {
@@ -991,13 +1444,7 @@ const donutBackground = computed(() => {
   font-weight: 600;
 }
 
-/* 폐기율 통계 변동 안내 */
-.inventory-dialog__notice {
-  font-size: 11px;
-  font-weight: 500;
-}
-
-/* 모바일 대응 */
+/* 모바일 */
 @media (max-width: 600px) {
   .inventory-dialog__card,
   .inventory-dialog__guide {
@@ -1032,7 +1479,6 @@ const donutBackground = computed(() => {
   }
 }
 
-/* 작은 모바일 화면 */
 @media (max-width: 430px) {
   .inventory-dialog__comparison {
     gap: 8px;
@@ -1056,7 +1502,7 @@ const donutBackground = computed(() => {
   }
 }
 
-/* 320px 등 좁은 화면 대응 */
+/* 320px 대응 */
 @media (max-width: 360px) {
   .inventory-dialog__card,
   .inventory-dialog__guide {
@@ -1083,6 +1529,10 @@ const donutBackground = computed(() => {
   .inventory-dialog__legend {
     flex: 1 1 100%;
     width: 100%;
+  }
+
+  .inventory-dialog__tab {
+    padding-inline: 3px;
   }
 }
 </style>

@@ -2590,7 +2590,7 @@ class ProductionManagementController extends Controller
     }
 
     /**
-     * 선택 제품의 최근 7일 및 이전 7일 폐기율 통계를 조회합니다.
+     * 선택 제품의 최근/이전 7일 및 30일 폐기율을 조회합니다.
      * 폐기량은 실제 폐기일이 아닌 최초 생산일 기준으로 집계합니다.
      */
     public function productWasteStatistics(
@@ -2613,36 +2613,37 @@ class ProductionManagementController extends Controller
 
         $this->assertStoreReadable($user, $storeId);
 
-        // 선택 날짜를 기준으로 최근 7일과 이전 7일을 구성합니다.
         $end = Carbon::createFromFormat('!Y-m-d', $data['work_date']);
-        $start = $end->copy()->subDays(13);
+        $start = $end->copy()->subDays(59);
 
         $from = $start->toDateString();
         $to = $end->toDateString();
 
-        // 제품별 생산량 조회
+        // 최근 60일 생산량
         $production = ProductionBatch::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
             ->whereDate('work_date', '>=', $from)
             ->whereDate('work_date', '<=', $to)
             ->get(['work_date', 'quantity'])
-            ->groupBy(fn ($row) => Carbon::parse($row->work_date)->toDateString())
+            ->groupBy(
+                fn ($row) => Carbon::parse($row->work_date)->toDateString()
+            )
             ->map(fn ($rows) => (int) $rows->sum('quantity'));
 
-        // 최초 생산일에 귀속되는 폐기량 조회
-        $wastes = ProductionWaste::query()
+        // 최초 생산일에 귀속되는 폐기량
+        $attributedWaste = ProductionWaste::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
             ->whereDate('attribution_date', '>=', $from)
             ->whereDate('attribution_date', '<=', $to)
-            ->get(['id', 'attribution_date', 'quantity']);
-
-        $attributedWaste = $wastes
-            ->groupBy(fn ($row) => Carbon::parse($row->attribution_date)->toDateString())
+            ->get(['attribution_date', 'quantity'])
+            ->groupBy(
+                fn ($row) => Carbon::parse($row->attribution_date)->toDateString()
+            )
             ->map(fn ($rows) => (int) $rows->sum('quantity'));
 
-        // 생산 0개 확인과 미확인 날짜를 구분합니다.
+        // 생산량 0개 확인과 기록 미확인 구분
         $confirmedDates = ProductionConfirmation::query()
             ->where('store_id', $storeId)
             ->where('product_id', $productId)
@@ -2679,7 +2680,7 @@ class ProductionManagementController extends Controller
             ]);
         }
 
-        // 기간별 수량을 합산해 폐기율을 계산합니다.
+        // 기간별 총생산량과 총폐기량을 기준으로 폐기율 계산
         $buildPeriod = function ($items) {
             $productionTotal = (int) $items->sum('production');
             $wasteTotal = (int) $items->sum('attributed_waste');
@@ -2697,45 +2698,22 @@ class ProductionManagementController extends Controller
             ];
         };
 
-        $previous = $buildPeriod($days->take(7));
-        $recentDays = $days->slice(7)->values();
-        $recent = $buildPeriod($recentDays);
+        // 60일 데이터를 시간순으로 구분
+        $previous30Days = $days->take(30);
+        $recent30Days = $days->slice(30, 30)->values();
 
-        // 최근 7일에 귀속된 폐기 기록의 사유별 수량
-        $reasonRows = DB::table('production_waste_reasons')
-            ->join(
-                'production_wastes',
-                'production_wastes.id',
-                '=',
-                'production_waste_reasons.production_waste_id'
-            )
-            ->where('production_wastes.store_id', $storeId)
-            ->where('production_wastes.product_id', $productId)
-            // 소프트 삭제된 폐기 기록은 사유별 통계에서 제외합니다.
-            ->whereNull('production_wastes.deleted_at')
-            ->whereDate(
-                'production_wastes.attribution_date',
-                '>=',
-                $end->copy()->subDays(6)->toDateString()
-            )
-            ->whereDate(
-                'production_wastes.attribution_date',
-                '<=',
-                $to
-            )
-            ->select(
-                'production_waste_reasons.reason_code',
-                'production_waste_reasons.reason_text'
-            )
-            ->selectRaw(
-                'SUM(production_waste_reasons.quantity) as quantity'
-            )
-            ->groupBy(
-                'production_waste_reasons.reason_code',
-                'production_waste_reasons.reason_text'
-            )
-            ->get();
+        $previous7Days = $days->slice(46, 7)->values();
+        $recent7Days = $days->slice(53, 7)->values();
 
+        // 기존 7일 응답 유지
+        $previous = $buildPeriod($previous7Days);
+        $recent = $buildPeriod($recent7Days);
+
+        // 신규 30일 비교
+        $previous30 = $buildPeriod($previous30Days);
+        $recent30 = $buildPeriod($recent30Days);
+
+        // 기존 7일 변화량
         $difference = (
             $recent['waste_rate'] !== null &&
             $previous['waste_rate'] !== null
@@ -2746,14 +2724,107 @@ class ProductionManagementController extends Controller
             )
             : null;
 
+        // 신규 30일 변화량
+        $difference30 = (
+            $recent30['waste_rate'] !== null &&
+            $previous30['waste_rate'] !== null
+        )
+            ? round(
+                $recent30['waste_rate'] - $previous30['waste_rate'],
+                1
+            )
+            : null;
+
+        // 최근 30일에 귀속된 폐기 사유를 한 번에 조회
+        $reasonRows = DB::table('production_waste_reasons')
+            ->join(
+                'production_wastes',
+                'production_wastes.id',
+                '=',
+                'production_waste_reasons.production_waste_id'
+            )
+            ->where('production_wastes.store_id', $storeId)
+            ->where('production_wastes.product_id', $productId)
+            ->whereNull('production_wastes.deleted_at')
+            ->whereDate(
+                'production_wastes.attribution_date',
+                '>=',
+                $end->copy()->subDays(29)->toDateString()
+            )
+            ->whereDate(
+                'production_wastes.attribution_date',
+                '<=',
+                $to
+            )
+            ->select(
+                'production_wastes.attribution_date',
+                'production_waste_reasons.reason_code',
+                'production_waste_reasons.reason_text'
+            )
+            ->selectRaw(
+                'SUM(production_waste_reasons.quantity) as quantity'
+            )
+            ->groupBy(
+                'production_wastes.attribution_date',
+                'production_waste_reasons.reason_code',
+                'production_waste_reasons.reason_text'
+            )
+            ->get();
+
+        $recent7Start = $end->copy()
+            ->subDays(6)
+            ->toDateString();
+
+        // 동일 사유의 날짜별 수량을 합쳐 응답 생성
+        $summarizeReasons = function ($rows) {
+            return $rows
+                ->groupBy(
+                    fn ($row) => json_encode([
+                        $row->reason_code,
+                        $row->reason_text,
+                    ])
+                )
+                ->map(function ($group) {
+                    $first = $group->first();
+
+                    return [
+                        'reason_code' => $first->reason_code,
+                        'reason_text' => $first->reason_text,
+                        'quantity' => (int) $group->sum('quantity'),
+                    ];
+                })
+                ->values();
+        };
+
+        // 기존 7일 사유 데이터 유지
+        $reasons7 = $summarizeReasons(
+            $reasonRows->filter(
+                fn ($row) => Carbon::parse(
+                    $row->attribution_date
+                )->toDateString() >= $recent7Start
+            )
+        );
+
+        // 신규 30일 사유 데이터
+        $reasons30 = $summarizeReasons($reasonRows);
+
         return response()->json([
             'product_id' => $productId,
             'work_date' => $to,
+
+            // 기존 응답
             'recent' => $recent,
             'previous' => $previous,
             'difference_percentage_points' => $difference,
-            'daily' => $recentDays,
-            'reasons' => $reasonRows,
+            'daily' => $recent7Days,
+            'reasons' => $reasons7,
+
+            // 신규 30일 응답
+            'recent_30' => $recent30,
+            'previous_30' => $previous30,
+            'difference_30_percentage_points' => $difference30,
+            'daily_30' => $recent30Days,
+            'reasons_30' => $reasons30,
         ]);
     }
 
