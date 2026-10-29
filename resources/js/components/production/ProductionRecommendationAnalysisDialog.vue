@@ -236,23 +236,73 @@
           참고한 기록
         </span>
 
+        <!-- 참고한 영업일 -->
         <div class="recommendation-analysis__rows">
-          <div
-            v-for="row in historyRows"
-            :key="row.label"
-            class="recommendation-analysis__row"
-          >
+          <div class="recommendation-analysis__row">
             <span class="recommendation-analysis__label">
-              {{ row.label }}
+              참고한 영업일
             </span>
 
             <span class="recommendation-analysis__value">
-              {{ row.value }}
+              {{ formatCount(history?.valid_record_count) }}일치
+            </span>
+          </div>
+
+          <div class="recommendation-analysis__row">
+            <span class="recommendation-analysis__label">
+              같은 요일 기록
+            </span>
+
+            <span class="recommendation-analysis__value">
+              {{ formatCount(history?.same_weekday_count) }}일치
+            </span>
+          </div>
+
+          <div class="recommendation-analysis__row">
+            <span class="recommendation-analysis__label">
+              제외된 기록
+            </span>
+
+            <span class="recommendation-analysis__value">
+              {{ formatCount(history?.excluded_record_count) }}일치
             </span>
           </div>
         </div>
 
-        <!-- 같은 요일 기록 부족 -->
+        <!-- 기간별 기록 반영 비율 -->
+        <div class="recommendation-analysis__history-weight d-flex flex-column ga-3">
+          <span class="app-form-section-title">
+            기간별 기록 반영 비율
+          </span>
+
+          <div class="recommendation-analysis__rows">
+            <div class="recommendation-analysis__row">
+              <span class="recommendation-analysis__label">
+                최근 3개월
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ formatPercent(history?.recent_weight) }}
+              </span>
+            </div>
+
+            <div class="recommendation-analysis__row">
+              <span class="recommendation-analysis__label">
+                이전 9개월
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ formatPercent(history?.older_weight) }}
+              </span>
+            </div>
+          </div>
+
+          <p class="recommendation-analysis__note">
+            판매량을 예상할 때 최근 기록을 더 많이 참고했습니다.
+          </p>
+        </div>
+
+        <!-- 같은 요일 기록 부족 안내 -->
         <v-alert
           v-if="history && history.same_weekday_count < 2"
           type="info"
@@ -2305,5 +2355,18 @@ const accuracyRows = computed(() => [
 .recommendation-analysis__calculation-result > span {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/*
+ * 기간별 기록 반영 비율
+ *
+ * 참고한 영업일 정보와 구분합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__history-weight {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 </style>
