@@ -8,18 +8,17 @@
     :error="error"
     :retryable="Boolean(error)"
     :empty="!recommendation"
-    empty-text="표시할 추천 분석 자료가 없습니다."
+    empty-text="분석할 기록이 없습니다."
     @retry="emit('retry')"
   >
     <div class="recommendation-analysis d-flex flex-column ga-3">
-
-      <!-- 분석 대상 기간 -->
+      <!-- 분석 기간 -->
       <section
         v-if="details?.period"
         class="d-flex flex-column ga-2"
       >
         <span class="app-form-section-title">
-          분석 대상 기간
+          분석 기간
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -37,19 +36,17 @@
 
           <div class="recommendation-analysis__row">
             <span class="recommendation-analysis__label">
-              실제 분석 가능한 기록
+              분석한 영업일
             </span>
 
             <span class="recommendation-analysis__value">
-              {{ formatCount(totals?.valid_days) }}일
+              {{ formatCount(totals?.valid_days) }}일치
             </span>
           </div>
         </div>
 
         <p class="recommendation-analysis__note">
-          최근 최대 12개월을 대상으로 분석합니다.
-          휴무일이나 기록이 없는 날짜는
-          판매량 0개로 계산하지 않습니다.
+          최근 최대 12개월의 영업 기록입니다.
         </p>
       </section>
 
@@ -105,16 +102,16 @@
           v-if="!reasons.length"
           class="recommendation-analysis__note"
         >
-          표시할 추천 이유가 없습니다.
+          추천 이유를 확인할 수 없습니다.
         </p>
       </section>
 
       <v-divider />
 
-      <!-- 추천량 계산 과정 -->
+      <!-- 추천 생산량 상세 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          추천량 계산 과정
+          추천 생산량 상세
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -136,19 +133,11 @@
           </div>
         </div>
 
-        <p
-          v-if="calculation?.high_quantity_adjusted"
-          class="recommendation-analysis__note"
-        >
-          추천 수량이 평소보다 높게 계산되어
-          최근 판매 흐름을 기준으로 추가 조정했습니다.
-        </p>
-
         <v-divider />
 
-        <!-- 분석에 사용한 기록 -->
+        <!-- 참고한 기록 -->
         <span class="app-form-section-title">
-          분석 기록
+          참고한 기록
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -169,9 +158,9 @@
 
         <v-divider />
 
-        <!-- 기간별 수요 비교 -->
+        <!-- 기간별 추정 판매량 -->
         <span class="app-form-section-title">
-          기간별 수요 비교
+          기간별 추정 판매량
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -197,10 +186,8 @@
           density="comfortable"
           class="app-supporting-alert"
         >
-          같은 요일의 기록이 아직 충분하지 않아
-          다른 정상 영업일의 기록도 참고했습니다.
-          기록이 쌓이면 해당 요일의 판매 흐름을
-          더 자세하게 분석할 수 있습니다.
+          같은 요일의 기록이 부족해
+          다른 영업일도 참고했습니다.
         </v-alert>
 
         <v-alert
@@ -210,23 +197,20 @@
           density="comfortable"
           class="app-supporting-alert"
         >
-          일부 기록은 마감 상태 또는 수량 확인 문제로
-          추천 계산에서 제외되었습니다.
-          제외된 기록은 판매량 0개로 계산하지 않습니다.
+          확인이 필요한 기록은 분석에서 제외했습니다.
         </v-alert>
       </section>
 
       <v-divider />
 
-      <!-- 최근 12개월 판매 흐름 -->
+      <!-- 월별 추정 판매량 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          최근 12개월 판매 흐름
+          월별 추정 판매량
         </span>
 
         <p class="recommendation-analysis__note">
-          각 월의 기록이 있는 날을 기준으로
-          하루 평균 판매 수량을 계산했습니다.
+          월별 하루 평균 추정 판매량입니다.
         </p>
 
         <div
@@ -261,7 +245,7 @@
             />
 
             <span class="recommendation-analysis__note">
-              기록 {{ formatCount(month.record_count) }}일
+              {{ formatCount(month.record_count) }}일치 기록
             </span>
           </div>
         </div>
@@ -270,22 +254,20 @@
           v-else
           class="recommendation-analysis__note"
         >
-          월별 판매 흐름을 보여줄 기록이 없습니다.
+          월별 기록이 없습니다.
         </p>
       </section>
 
       <v-divider />
 
-      <!-- 최근 판매량 변화 -->
+      <!-- 최근 추정 판매량 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          최근 판매량 변화
+          최근 추정 판매량
         </span>
 
         <p class="recommendation-analysis__note">
-          최근 최대 28개 정상 기록의 추정 판매량입니다.
-          날짜를 선택하면 해당 날짜의 상세 수량을
-          확인할 수 있습니다.
+          날짜를 선택하면 상세 기록을 볼 수 있습니다.
         </p>
 
         <div
@@ -307,7 +289,7 @@
                 selectedDailyRecord?.date === day.date
               "
               :aria-label="
-                `${day.date}, 추정 판매 ${formatQuantity(day.estimated_sales)}`
+                `${day.date}, 추정 판매량 ${formatQuantity(day.estimated_sales)}`
               "
               @click="selectedDailyDate = day.date"
             >
@@ -336,9 +318,7 @@
           </div>
 
           <p class="recommendation-analysis__note">
-            작은 막대는 추정 판매량을 나타냅니다.
-            최근 기록 중 판매량이 가장 높은 날을
-            기준으로 비교합니다.
+            막대가 길수록 추정 판매량이 많습니다.
           </p>
 
           <v-divider />
@@ -349,7 +329,7 @@
             class="d-flex flex-column ga-3"
           >
             <span class="app-form-section-title">
-              {{ selectedDailyRecord.date }} 상세 기록
+              {{ selectedDailyRecord.date }} 생산·판매 기록
             </span>
 
             <span
@@ -388,9 +368,7 @@
             </div>
 
             <p class="recommendation-analysis__note">
-              상세 그래프는 당일 생산량과 들어온 이월을
-              합친 수량을 기준으로 표시합니다.
-              폐기와 다음 날 이월은 서로 다른 항목입니다.
+              막대는 생산량과 이월재고의 합계를 기준으로 합니다.
             </p>
           </div>
         </div>
@@ -399,21 +377,20 @@
           v-else
           class="recommendation-analysis__note"
         >
-          최근 판매량 변화를 보여줄 기록이 없습니다.
+          최근 기록이 없습니다.
         </p>
       </section>
 
       <v-divider />
 
-      <!-- 요일별 판매 비교 -->
+      <!-- 요일별 추정 판매량 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          요일별 판매 비교
+          요일별 추정 판매량
         </span>
 
         <p class="recommendation-analysis__note">
-          특별한 행사일을 제외한 정상 영업일의
-          하루 평균 판매 수량입니다.
+          행사일을 제외한 하루 평균 추정 판매량입니다.
         </p>
 
         <div class="d-flex flex-column ga-3">
@@ -449,7 +426,7 @@
             />
 
             <span class="recommendation-analysis__note">
-              기록 {{ formatCount(day.record_count) }}일
+              {{ formatCount(day.record_count) }}일치 기록
             </span>
           </div>
         </div>
@@ -457,10 +434,10 @@
 
       <v-divider />
 
-      <!-- 생산과 남은 재고 -->
+      <!-- 생산·판매·폐기 현황 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          생산과 남은 재고
+          생산·판매·폐기 현황
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -484,7 +461,7 @@
         <div class="d-flex flex-column ga-2">
           <div class="recommendation-analysis__row">
             <span class="recommendation-analysis__label">
-              남은 재고 비율
+              폐기·이월예정 비율
             </span>
 
             <span class="recommendation-analysis__value">
@@ -503,7 +480,7 @@
         <v-divider />
 
         <span class="app-form-section-title">
-          재고 사용 비율
+          수량별 사용 현황
         </span>
 
         <div class="d-flex flex-column ga-3">
@@ -536,18 +513,18 @@
         </div>
 
         <p class="recommendation-analysis__note">
-          남은 재고는 폐기와 다음 날 이월을 합산한 수량입니다.
-          이 비율은 생산일 기준 공식 폐기율과 구분되는
-          추천 분석용 수치입니다.
+          생산량과 이월재고를 합친 수량 중
+          폐기·이월예정의 비율입니다.
+          생산일 기준 폐기율과는 다릅니다.
         </p>
       </section>
 
       <v-divider />
 
-      <!-- 완판과 추가 판매 가능성 -->
+      <!-- 완판과 판매 기회 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          완판과 추가 판매 가능성
+          완판과 판매 기회
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -567,18 +544,17 @@
         </div>
 
         <p class="recommendation-analysis__note">
-          재고가 모두 소진되었다고 해서 반드시
-          추가 판매가 가능했던 것은 아닙니다.
-          판매 기회가 있었을 가능성을 확인하는 지표입니다.
+          재고가 모두 소진된 날은
+          더 팔 수 있었을 가능성이 있습니다.
         </p>
       </section>
 
       <v-divider />
 
-      <!-- 최근 판매 흐름의 변화 -->
+      <!-- 최근 판매 변화 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          최근 판매 흐름의 변화
+          최근 판매 변화
         </span>
 
         <p class="recommendation-analysis__note">
@@ -591,7 +567,7 @@
         >
           <div class="recommendation-analysis__row">
             <span class="recommendation-analysis__label">
-              최근 동일 요일 판매량 변화
+              같은 요일 추정 판매량 변화
             </span>
 
             <span
@@ -616,9 +592,7 @@
           </div>
 
           <span class="recommendation-analysis__note">
-            같은 요일의 최근 기록
-            {{ formatCount(trend.recent_trend.sample_count) }}일을
-            비교한 결과입니다.
+            같은 요일 {{ formatCount(trend.recent_trend.sample_count) }}일치 기록을 비교했습니다.
           </span>
         </div>
 
@@ -626,17 +600,16 @@
           v-if="trend?.recent_outlier"
           class="recommendation-analysis__note"
         >
-          최근 기록 중 평소와 차이가 큰 날이 확인되었습니다.
-          일시적인 변화인지 함께 확인해 주세요.
+          평소와 차이가 큰 날이 있었습니다.
         </p>
       </section>
 
       <v-divider />
 
-      <!-- 과거 추천 결과 -->
+      <!-- 추천 생산량과 실제 결과 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          과거 추천 결과
+          추천 생산량과 실제 결과
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -655,21 +628,16 @@
           </div>
         </div>
 
+        <p class="recommendation-analysis__note">
+          추천 생산량과 추정 판매량을 비교한 결과입니다.
+        </p>
+
         <v-divider />
 
-        <!-- 기존 추천과 개선된 추천 비교 -->
-        <div class="d-flex flex-column ga-2">
-          <span class="app-form-section-title">
-            기존 추천과 개선된 추천 비교
-          </span>
+        <span class="app-form-section-title">
+          날짜별 생산 결과
+        </span>
 
-          <p class="recommendation-analysis__note">
-            과거에 저장한 추천량과 실제 마감 결과를 비교했습니다.
-            개선된 추천이 판매 추정량에 더 가까웠는지 확인할 수 있습니다.
-          </p>
-        </div>
-
-        <!-- 비교 기록이 없는 경우 -->
         <v-alert
           v-if="!comparisonRecords.length"
           type="info"
@@ -677,31 +645,10 @@
           density="comfortable"
           class="app-supporting-alert"
         >
-          아직 비교할 추천 기록이 없습니다.
-          새로운 추천 생산량과 실제 마감 기록이 쌓이면
-          기존 추천 방식과 개선된 추천 방식을 비교할 수 있습니다.
+          아직 비교할 기록이 없습니다.
         </v-alert>
 
-        <!-- 비교 기록이 있는 경우 -->
         <template v-else>
-          <div class="recommendation-analysis__rows">
-            <div
-              v-for="row in comparisonSummaryRows"
-              :key="row.label"
-              class="recommendation-analysis__row"
-            >
-              <span class="recommendation-analysis__label">
-                {{ row.label }}
-              </span>
-
-              <span class="recommendation-analysis__value">
-                {{ row.value }}
-              </span>
-            </div>
-          </div>
-
-          <v-divider />
-
           <!-- 날짜 이동 -->
           <div class="d-flex align-center justify-space-between ga-2">
             <v-btn
@@ -737,10 +684,9 @@
             {{ selectedComparisonIndex + 1 }}
             /
             {{ comparisonRecords.length }}
-            번째 기록
           </p>
 
-          <!-- 선택한 날짜의 추천 결과 -->
+          <!-- 선택한 날짜의 생산 결과 -->
           <div
             v-if="selectedComparisonRecord"
             class="d-flex flex-column ga-3"
@@ -769,99 +715,26 @@
               />
             </div>
 
-            <v-divider />
-
-            <!-- 상세 비교 수량 -->
-            <div class="recommendation-analysis__rows">
-              <div
-                v-for="row in comparisonDetailRows"
-                :key="row.label"
-                class="recommendation-analysis__row"
-              >
-                <span class="recommendation-analysis__label">
-                  {{ row.label }}
-                </span>
-
-                <span class="recommendation-analysis__value">
-                  {{ row.value }}
-                </span>
-              </div>
-            </div>
-
             <p class="recommendation-analysis__note">
               {{ comparisonResultText }}
             </p>
           </div>
 
-          <v-alert
-            type="info"
-            variant="tonal"
-            density="comfortable"
-            class="app-supporting-alert"
-          >
-            판매량은 생산·이월·로스·폐기 기록으로 계산한
-            추정값입니다. 추천량대로 생산했을 때 발생했을
-            폐기량이나 추가 판매량을 확정한 결과는 아닙니다.
-          </v-alert>
+          <p class="recommendation-analysis__note">
+            추정 판매량은 실제 판매 기록이 아닌 계산된 수량입니다.
+          </p>
         </template>
-
-        <v-divider />
-
-        <!-- 기존 생산량 조정 방식 비교 -->
-        <span class="app-form-section-title">
-          생산량 조정 방식 비교
-        </span>
-
-        <p class="recommendation-analysis__note">
-          과거 재고가 많이 남았던 날을 대상으로
-          기존 방식과 생산량을 5% 줄이는 방식을
-          비교한 결과입니다.
-        </p>
-
-        <div class="recommendation-analysis__rows">
-          <div
-            v-for="row in adjustmentRows"
-            :key="row.label"
-            class="recommendation-analysis__row"
-          >
-            <span class="recommendation-analysis__label">
-              {{ row.label }}
-            </span>
-
-            <span class="recommendation-analysis__value">
-              {{ row.value }}
-            </span>
-          </div>
-        </div>
-
-        <p class="recommendation-analysis__note">
-          {{ adjustmentText }}
-        </p>
-
-        <v-alert
-          type="info"
-          variant="tonal"
-          density="comfortable"
-          class="app-supporting-alert"
-        >
-          이 결과는 과거 기록을 이용해 생산량을 줄였을 때의
-          차이를 계산한 참고 자료입니다.
-          실제 생산 결과를 확인한 실험은 아닙니다.
-          과거 추천 검증을 통한 자동 조정 기능과는 별도로
-          계산되며, 예상 부족 수량은 실제 결품 수량과
-          다를 수 있습니다.
-        </v-alert>
       </section>
 
       <v-divider />
 
-      <!-- 확인이 필요한 내용 -->
+      <!-- 확인 사항 -->
       <section
         v-if="warnings.length"
         class="d-flex flex-column ga-2"
       >
         <span class="app-form-section-title">
-          확인이 필요한 내용
+          확인 사항
         </span>
 
         <v-alert
@@ -894,6 +767,7 @@ import {
   ref,
   watch,
 } from "vue";
+
 import AppDialogLayout from "../common/AppDialogLayout.vue";
 import AppDialogFooter from "../common/AppDialogFooter.vue";
 
@@ -967,10 +841,6 @@ const accuracy = computed(
   () => explanation.value?.accuracy ?? null
 );
 
-const adjustment = computed(
-  () => accuracy.value?.adjustment_test ?? null
-);
-
 const totals = computed(
   () => details.value?.totals ?? null
 );
@@ -1038,32 +908,32 @@ const dailyDetailRows = computed(() => {
 
   return [
     {
-      label: "당일 생산",
+      label: "생산량",
       quantity: day.production,
       color: "success",
     },
     {
-      label: "이월 재고",
+      label: "이월재고",
       quantity: day.carryover_in,
       color: "secondary",
     },
     {
-      label: "판매(추정)",
+      label: "추정 판매량",
       quantity: day.estimated_sales,
       color: "primary",
     },
     {
-      label: "로스",
+      label: "로스량",
       quantity: day.loss,
       color: "warning",
     },
     {
-      label: "폐기",
+      label: "폐기량",
       quantity: day.waste,
       color: "error",
     },
     {
-      label: "이월 예정",
+      label: "이월예정",
       quantity: day.carryover_out,
       color: "secondary",
     },
@@ -1128,36 +998,23 @@ const confidenceColor = computed(() =>
     : undefined
 );
 
-/* 최근 추세 */
+/* 최근 판매 변화 */
 const trendText = computed(() => {
   const value = trend.value?.recent_trend;
 
   if (!value) {
-    return "최근 동일 요일에서 뚜렷한 증가·감소 추세가 확인되지 않았거나 비교할 기록이 부족합니다.";
+    return "최근 같은 요일의 판매 변화를 판단하기 어렵습니다.";
   }
 
-  return value.direction === "increasing"
-    ? "최근 동일 요일의 추정 판매량이 증가하는 흐름입니다."
-    : "최근 동일 요일의 추정 판매량이 감소하는 흐름입니다.";
-});
-
-/* 과거 생산량 조정 방식 비교 */
-const adjustmentText = computed(() => {
-  const status = accuracy.value?.adjustment_assessment;
-
-  switch (status) {
-    case "promising":
-      return "과거 기록에서 생산량을 조금 줄이는 실험이 좋은 결과를 보였습니다. 실제 추천량에는 아직 적용하지 않았습니다.";
-
-    case "shortage_risk":
-      return "생산량을 줄이는 실험에서 판매 수량이 부족해질 가능성이 높아졌습니다.";
-
-    case "not_better":
-      return "생산량을 줄이는 실험이 현재 추천 방식보다 좋은 결과를 보여주지 못했습니다.";
-
-    default:
-      return "생산량 조정 방법을 비교하기에는 아직 기록이 부족합니다.";
+  if (value.direction === "increasing") {
+    return "최근 같은 요일의 추정 판매량이 늘었습니다.";
   }
+
+  if (value.direction === "decreasing") {
+    return "최근 같은 요일의 추정 판매량이 줄었습니다.";
+  }
+
+  return "최근 같은 요일의 추정 판매량은 비슷한 수준입니다.";
 });
 
 /* 수량 표시 */
@@ -1269,93 +1126,95 @@ function rateBar(value) {
   );
 }
 
-/* 추천량 계산 과정 */
+/* 추천 생산량 상세 */
 const calculationRows = computed(() => [
   {
-    label: "과거 기록으로 계산한 기본 수요",
+    label: "평소 예상 판매량",
     value: formatQuantity(calculation.value?.base_demand),
   },
   {
-    label: "날씨·행사 등을 고려한 예상 수요",
+    label: "해당 날짜 예상 판매량",
     value: formatQuantity(
       calculation.value?.expected_demand_before_carryover
     ),
   },
   {
-    label: "당일 이월 재고",
-    value: formatQuantity(calculation.value?.target_carryover_in),
+    label: "이월재고",
+    value: formatQuantity(
+      calculation.value?.target_carryover_in
+    ),
   },
   {
-    label: "최종 신규 생산 추천량",
+    label: "추천 생산량",
     value: formatQuantity(recommendation.value?.center),
     highlight: true,
   },
 ]);
 
-/* 분석 기록 */
+/* 참고한 기록 */
 const historyRows = computed(() => [
   {
-    label: "분석에 사용한 기록",
-    value: `${formatCount(history.value?.valid_record_count)}일`,
+    label: "참고한 기록",
+    value: `${formatCount(history.value?.valid_record_count)}일치`,
   },
   {
-    label: "분석에서 제외된 기록",
-    value: `${formatCount(history.value?.excluded_record_count)}일`,
+    label: "제외된 기록",
+    value: `${formatCount(history.value?.excluded_record_count)}일치`,
   },
   {
     label: "같은 요일 기록",
-    value: `${formatCount(history.value?.same_weekday_count)}일`,
+    value: `${formatCount(history.value?.same_weekday_count)}일치`,
   },
   {
-    label: "최근 3개월 반영 비중",
+    label: "최근 3개월 비중",
     value: formatPercent(history.value?.recent_weight),
   },
   {
-    label: "이전 9개월 반영 비중",
+    label: "이전 9개월 비중",
     value: formatPercent(history.value?.older_weight),
   },
 ]);
 
-/* 기간별 수요 비교 */
+/* 기간별 추정 판매량 */
 const periodRows = computed(() => [
   {
-    label: "최근 3개월 분석 기록",
-    value: `${formatCount(history.value?.recent_record_count)}일`,
+    label: "최근 3개월 기록",
+    value: `${formatCount(history.value?.recent_record_count)}일치`,
   },
   {
-    label: "최근 3개월 평균 수요",
+    label: "최근 3개월 평균 추정 판매량",
     value: formatQuantity(history.value?.recent_average),
   },
   {
-    label: "이전 9개월 분석 기록",
-    value: `${formatCount(history.value?.older_record_count)}일`,
+    label: "이전 9개월 기록",
+    value: `${formatCount(history.value?.older_record_count)}일치`,
   },
   {
-    label: "이전 9개월 평균 수요",
+    label: "이전 9개월 평균 추정 판매량",
     value: formatQuantity(history.value?.older_average),
   },
 ]);
 
-/* 생산·이월·로스·폐기 합계 */
+/* 생산·판매·폐기 현황 */
 const totalRows = computed(() => [
   {
-    label: "생산",
+    label: "생산량",
     value: formatQuantity(totals.value?.production),
   },
   {
-    label: "이월 입고",
+    label: "이월재고",
     value: formatQuantity(totals.value?.carryover_in),
   },
   {
-    label: "로스",
+    label: "로스량",
     value: formatQuantity(totals.value?.loss),
   },
   {
-    label: "폐기",
+    label: "폐기량",
     value: formatQuantity(totals.value?.waste),
   },
   {
-    label: "다음 날로 이월",
+    label: "이월예정",
     value: formatQuantity(totals.value?.carryover_out),
   },
   {
@@ -1364,48 +1223,47 @@ const totalRows = computed(() => [
   },
 ]);
 
-/* 재고 사용 비율 */
+/* 생산·판매·폐기 비율 */
 const inventoryRateRows = computed(() => [
   {
-    label: "추정 판매",
+    label: "추정 판매량",
     quantity: totals.value?.estimated_sales,
     color: "primary",
   },
   {
-    label: "로스",
+    label: "로스량",
     quantity: totals.value?.loss,
     color: "warning",
   },
   {
-    label: "폐기",
+    label: "폐기량",
     quantity: totals.value?.waste,
     color: "error",
   },
   {
-    label: "다음 날 이월",
+    label: "이월예정",
     quantity: totals.value?.carryover_out,
     color: "secondary",
   },
 ]);
 
-/* 완판 및 추가 판매 가능성 */
+/* 완판과 판매 기회 */
 const inventoryRows = computed(() => [
   {
-    label: "최근 재고가 모두 소진된 날",
-    value: `${formatCount(inventory.value?.zero_remaining_days)}일`,
+    label: "폐기·이월예정이 없었던 날",
+    value: `${formatCount(inventory.value?.zero_remaining_days)}일치`,
   },
   {
-    label: "완판 가능성이 확인된 날",
-    value: `${formatCount(inventory.value?.possible_sellout_days)}일`,
+    label: "완판 가능성이 있었던 날",
+    value: `${formatCount(inventory.value?.possible_sellout_days)}일치`,
   },
   {
-    label: "폐기·이월 합계가 1개였던 날",
-    value: `${formatCount(inventory.value?.one_remaining_days)}일`,
+    label: "폐기·이월예정 합계가 1개였던 날",
+    value: `${formatCount(inventory.value?.one_remaining_days)}일치`,
   },
 ]);
 
-/* 기존 추천과 개선된 추천 비교 */
-
+/* 날짜별 생산 결과 */
 const recommendationOutcomes = computed(
   () => props.data?.recommendation_outcomes ?? null
 );
@@ -1462,33 +1320,6 @@ function moveComparisonDate(direction) {
   selectedComparisonIndex.value = next;
 }
 
-const comparisonSummaryRows = computed(() => {
-  const data = adjustmentComparison.value;
-
-  return [
-    {
-      label: "비교한 날짜",
-      value: `${formatCount(data?.evaluated_days)}일`,
-    },
-    {
-      label: "추천량을 조정한 날짜",
-      value: `${formatCount(data?.adjusted_days)}일`,
-    },
-    {
-      label: "개선된 추천이 더 가까웠던 날",
-      value: `${formatCount(data?.improved_days)}일`,
-    },
-    {
-      label: "기존 추천이 더 가까웠던 날",
-      value: `${formatCount(data?.worsened_days)}일`,
-    },
-    {
-      label: "차이가 없었던 날",
-      value: `${formatCount(data?.unchanged_days)}일`,
-    },
-  ];
-});
-
 const comparisonChartRows = computed(() => {
   const record = selectedComparisonRecord.value;
 
@@ -1498,12 +1329,7 @@ const comparisonChartRows = computed(() => {
 
   const rows = [
     {
-      label: "기존 추천 생산량",
-      value: Number(record.original_quantity) || 0,
-      color: "secondary",
-    },
-    {
-      label: "개선된 추천 생산량",
+      label: "추천 생산량",
       value: Number(record.adjusted_quantity) || 0,
       color: "primary",
     },
@@ -1513,14 +1339,19 @@ const comparisonChartRows = computed(() => {
       color: "success",
     },
     {
-      label: "판매 추정량",
+      label: "추정 판매량",
       value: Number(record.estimated_sales) || 0,
       color: "info",
     },
     {
-      label: "실제 폐기량",
+      label: "폐기량",
       value: Number(record.actual_waste) || 0,
       color: "error",
+    },
+    {
+      label: "이월예정",
+      value: Number(record.actual_carryover) || 0,
+      color: "secondary",
     },
   ];
 
@@ -1533,97 +1364,63 @@ const comparisonChartRows = computed(() => {
     ...row,
     percent: Math.max(
       0,
-      Math.min(100, (row.value / maxValue) * 100)
+      Math.min(
+        100,
+        (row.value / maxValue) * 100
+      )
     ),
   }));
 });
 
-const comparisonDetailRows = computed(() => {
+const comparisonResultText = computed(() => {
   const record = selectedComparisonRecord.value;
 
   if (!record) {
-    return [];
+    return "";
   }
 
-  return [
-    {
-      label: "기존 추천의 예상 부족 수량",
-      value: formatQuantity(record.original_shortfall),
-    },
-    {
-      label: "개선된 추천의 예상 부족 수량",
-      value: formatQuantity(record.adjusted_shortfall),
-    },
-    {
-      label: "기존 추천의 남을 가능성이 있는 수량",
-      value: formatQuantity(record.original_possible_excess),
-    },
-    {
-      label: "개선된 추천의 남을 가능성이 있는 수량",
-      value: formatQuantity(record.adjusted_possible_excess),
-    },
-    {
-      label: "실제 다음 날 이월",
-      value: formatQuantity(record.actual_carryover),
-    },
-  ];
+  const waste = Math.max(
+    0,
+    Number(record.actual_waste) || 0
+  );
+
+  const carryover = Math.max(
+    0,
+    Number(record.actual_carryover) || 0
+  );
+
+  if (waste === 0 && carryover === 0) {
+    return "폐기량과 이월예정이 모두 0개였습니다.";
+  }
+
+  if (waste > 0 && carryover > 0) {
+    return `폐기 ${waste}개, 이월예정 ${carryover}개입니다.`;
+  }
+
+  if (waste > 0) {
+    return `폐기 ${waste}개입니다.`;
+  }
+
+  return `이월예정 ${carryover}개입니다.`;
 });
 
-const comparisonResultText = computed(() => {
-  const result = selectedComparisonRecord.value?.comparison;
-
-  if (result === "improved") {
-    return "이 날짜에는 개선된 추천량이 실제 판매 추정량에 더 가까웠습니다.";
-  }
-
-  if (result === "worsened") {
-    return "이 날짜에는 기존 추천량이 실제 판매 추정량에 더 가까웠습니다. 조정 효과를 추가로 확인할 필요가 있습니다.";
-  }
-
-  return "이 날짜에는 기존 추천량과 개선된 추천량의 비교 결과에 차이가 없었습니다.";
-});
-
-/* 과거 추천 정확도 */
+/* 추천 생산량과 실제 결과 */
 const accuracyRows = computed(() => [
   {
-    label: "과거 추천을 시험한 기록",
-    value: `${formatCount(accuracy.value?.tested_days)}일`,
+    label: "비교한 영업일",
+    value: `${formatCount(accuracy.value?.tested_days)}일치`,
   },
   {
-    label: "평균적으로 차이 난 수량",
-    value: formatQuantity(accuracy.value?.average_error_quantity),
+    label: "평균 수량 차이",
+    value: formatQuantity(
+      accuracy.value?.average_error_quantity
+    ),
   },
   {
-    label: "전체 추천 차이 비율",
-    value: formatPercent(accuracy.value?.overall_error_rate),
-  },
-]);
-
-/* 생산량 조정 방식 비교 */
-const adjustmentRows = computed(() => [
-  {
-    label: "비교한 기록",
-    value: `${formatCount(adjustment.value?.count)}일`,
-  },
-  {
-    label: "기존 방식의 평균 차이",
-    value: formatQuantity(adjustment.value?.base_mae),
-  },
-  {
-    label: "생산량을 줄인 방식의 평균 차이",
-    value: formatQuantity(adjustment.value?.candidate_mae),
-  },
-  {
-    label: "평균 차이의 개선 비율",
-    value: formatPercent(adjustment.value?.improvement_rate),
-  },
-  {
-    label: "기존 방식의 예상 부족 수량",
-    value: formatQuantity(adjustment.value?.base_shortage_total),
-  },
-  {
-    label: "생산량을 줄인 방식의 예상 부족 수량",
-    value: formatQuantity(adjustment.value?.candidate_shortage_total),
+    label: "평균 차이율",
+    value: formatPercent(
+      accuracy.value?.overall_error_rate
+    ),
   },
 ]);
 </script>
