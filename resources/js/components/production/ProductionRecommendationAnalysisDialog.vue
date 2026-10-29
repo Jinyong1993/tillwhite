@@ -459,9 +459,10 @@
         </span>
 
         <p class="recommendation-analysis__note">
-          날짜를 선택하면 상세 기록을 볼 수 있습니다.
+          날짜를 선택하면 해당 날짜의 기록을 확인할 수 있습니다.
         </p>
 
+        <!-- 최근 기록이 있는 경우 -->
         <div
           v-if="recentDaily.length"
           class="d-flex flex-column ga-3"
@@ -485,20 +486,26 @@
               "
               @click="selectedDailyDate = day.date"
             >
+              <!-- 날짜 -->
               <span class="recommendation-analysis__day-tile-date">
                 {{ day.date.slice(5) }}
               </span>
 
+              <!-- 추정 판매량 -->
               <span class="recommendation-analysis__day-tile-quantity">
                 {{ formatQuantity(day.estimated_sales) }}
               </span>
 
+              <!-- 날짜별 추정 판매량 비교 -->
               <span class="recommendation-analysis__mini-bar">
                 <span
                   class="recommendation-analysis__mini-fill"
                   :style="{
                     width: `${
-                      barPercent(day.estimated_sales, maxRecentSales)
+                      barPercent(
+                        day.estimated_sales,
+                        maxRecentSales
+                      )
                     }%`,
                   }"
                 />
@@ -506,21 +513,23 @@
             </button>
           </div>
 
-          <p class="recommendation-analysis__note">
-            막대가 길수록 추정 판매량이 많습니다.
-          </p>
-
-          <v-divider />
-
-          <!-- 선택 날짜 상세 -->
+          <!-- 선택한 날짜의 상세 기록 -->
           <div
             v-if="selectedDailyRecord"
-            class="d-flex flex-column ga-3"
+            class="recommendation-analysis__daily-detail d-flex flex-column ga-3"
           >
-            <span class="app-form-section-title">
-              {{ selectedDailyRecord.date }} 생산·판매 기록
-            </span>
+            <!-- 선택한 날짜 -->
+            <div class="d-flex flex-column ga-1">
+              <span class="app-form-section-title">
+                {{ selectedDailyRecord.date }} 생산·판매 기록
+              </span>
 
+              <p class="recommendation-analysis__note">
+                선택한 날짜의 기록입니다.
+              </p>
+            </div>
+
+            <!-- 특별 영업일 안내 -->
             <span
               v-if="selectedDailyRecord.special_day"
               class="recommendation-analysis__note"
@@ -528,6 +537,7 @@
               행사·특별 영업일
             </span>
 
+            <!-- 생산·판매·재고 상세 그래프 -->
             <div
               v-for="row in dailyDetailRows"
               :key="row.label"
@@ -545,21 +555,24 @@
 
               <v-progress-linear
                 :model-value="
-                  barPercent(row.quantity, dailyAvailable)
+                  barPercent(
+                    row.quantity,
+                    dailyAvailable
+                  )
                 "
                 :color="row.color"
                 height="8"
                 rounded
               />
             </div>
-
-            <p class="recommendation-analysis__note">
-              막대는 생산량과 이월재고의 합계를 기준으로 합니다.
-            </p>
           </div>
         </div>
 
-        <p v-else class="recommendation-analysis__note">
+        <!-- 최근 기록이 없는 경우 -->
+        <p
+          v-else
+          class="recommendation-analysis__note"
+        >
           최근 기록이 없습니다.
         </p>
       </section>
@@ -2444,6 +2457,19 @@ const accuracyRows = computed(() => [
  * 기존 글자 크기와 글로벌 색상을 유지합니다.
  */
 .recommendation-analysis__monthly-item {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 선택한 날짜의 생산·판매 기록
+ *
+ * 날짜 선택 영역과 상세 기록을 구분합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__daily-detail {
   min-width: 0;
   padding: 10px;
   border-radius: 8px;
