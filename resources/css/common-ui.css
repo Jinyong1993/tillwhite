@@ -663,3 +663,18 @@ button.app-date-main {
         font-size: 18px;
     }
 }
+
+/*
+ * 다이얼로그 내부 공통 정보 카드
+ *
+ * 분석 결과, 기록, 요약 정보 등
+ * 관련 내용을 구분할 때 사용합니다.
+ *
+ * 글자 크기는 부모 설정을 그대로 따릅니다.
+ */
+.app-dialog-subcard {
+    min-width: 0;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(var(--v-theme-on-surface), 0.04);
+}

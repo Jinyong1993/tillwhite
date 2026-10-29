@@ -98,7 +98,7 @@
             <!-- 해당 이유의 날짜별 폐기·이월 기록 -->
             <div
               v-if="item.records.length"
-              class="recommendation-analysis__reason-records d-flex flex-column ga-2"
+              class="app-dialog-subcard d-flex flex-column ga-2 mt-2"
             >
               <span class="app-form-section-title">
                 참고한 날짜별 폐기·이월 기록
@@ -270,7 +270,7 @@
         </div>
 
         <!-- 기간별 기록 반영 비율 -->
-        <div class="recommendation-analysis__history-weight d-flex flex-column ga-3">
+        <div class="app-dialog-subcard d-flex flex-column ga-3">
           <span class="app-form-section-title">
             기간별 기록 반영 비율
           </span>
@@ -333,7 +333,7 @@
         </span>
 
         <!-- 최근 3개월 -->
-        <div class="recommendation-analysis__period-group d-flex flex-column ga-3">
+        <div class="app-dialog-subcard d-flex flex-column ga-3">
           <span class="app-form-section-title">
             최근 3개월
           </span>
@@ -362,7 +362,7 @@
         </div>
 
         <!-- 이전 9개월 -->
-        <div class="recommendation-analysis__period-group d-flex flex-column ga-3">
+        <div class="app-dialog-subcard d-flex flex-column ga-3">
           <span class="app-form-section-title">
             이전 9개월
           </span>
@@ -409,7 +409,7 @@
           <div
             v-for="month in monthly"
             :key="month.month"
-            class="recommendation-analysis__monthly-item d-flex flex-column ga-2"
+            class="app-dialog-subcard d-flex flex-column ga-2"
           >
             <!-- 월과 하루 평균 추정 판매량 -->
             <div class="recommendation-analysis__row">
@@ -516,7 +516,7 @@
           <!-- 선택한 날짜의 상세 기록 -->
           <div
             v-if="selectedDailyRecord"
-            class="recommendation-analysis__daily-detail d-flex flex-column ga-3"
+            class="app-dialog-subcard d-flex flex-column ga-3"
           >
             <!-- 선택한 날짜 -->
             <div class="d-flex flex-column ga-1">
@@ -706,7 +706,7 @@
         </div>
 
         <!-- 폐기·이월예정 비율 -->
-        <div class="recommendation-analysis__usage-summary">
+        <div class="app-dialog-subcard">
           <div class="recommendation-analysis__row align-center">
             <span class="font-weight-medium">
               폐기·이월예정 비율
@@ -731,7 +731,7 @@
 
         <!-- 품절 가능성이 있었던 날 -->
         <div
-          class="recommendation-analysis__sellout-summary d-flex flex-column ga-2"
+          class="app-dialog-subcard d-flex flex-column ga-2"
         >
           <div class="recommendation-analysis__row">
             <span class="font-weight-medium">
@@ -781,7 +781,7 @@
         <!-- 최근 판매 변화가 확인된 경우 -->
         <template v-if="trend?.recent_trend">
           <div
-            class="recommendation-analysis__trend-summary d-flex flex-column ga-2"
+            class="app-dialog-subcard d-flex flex-column ga-2"
           >
             <div class="recommendation-analysis__row align-center">
               <span class="recommendation-analysis__label">
@@ -905,7 +905,7 @@
           <!-- 선택 날짜의 생산 결과 -->
           <div
             v-if="selectedComparisonRecord"
-            class="recommendation-analysis__comparison-detail d-flex flex-column ga-3"
+            class="app-dialog-subcard d-flex flex-column ga-3"
           >
             <!-- 기존 그래프 항목 모두 유지 -->
             <div
@@ -2556,20 +2556,6 @@ const accuracyRows = computed(() => [
 }
 
 /*
- * 추천 이유의 날짜별 상세 기록
- *
- * 관련 기록을 하나의 영역에 묶습니다.
- * 별도의 강조선이나 아이콘은 사용하지 않습니다.
- */
-.recommendation-analysis__reason-records {
-  min-width: 0;
-  margin-top: 8px;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
  * 날짜별 기록
  *
  * 날짜는 왼쪽, 폐기·이월 수량은 오른쪽에 표시합니다.
@@ -2613,58 +2599,6 @@ const accuracyRows = computed(() => [
 }
 
 /*
- * 기간별 기록 반영 비율
- *
- * 참고한 영업일 정보와 구분합니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__history-weight {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
- * 기간별 추정 판매량
- *
- * 최근 3개월과 이전 9개월을 구분합니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__period-group {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
- * 월별 추정 판매량
- *
- * 각 월의 기록을 독립된 영역으로 구분합니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__monthly-item {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
- * 선택한 날짜의 생산·판매 기록
- *
- * 날짜 선택 영역과 상세 기록을 구분합니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__daily-detail {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
  * 추천 날짜와 같은 요일
  *
  * 기존 글자 크기와 색상 체계를 유지합니다.
@@ -2683,57 +2617,6 @@ const accuracyRows = computed(() => [
  */
 .recommendation-analysis__usage-item {
   min-width: 0;
-}
-
-/*
- * 폐기·이월예정 비율 요약
- *
- * 항목별 그래프와 구분해 보여줍니다.
- */
-.recommendation-analysis__usage-summary {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
- * 품절 가능성 요약
- *
- * 중요한 정보를 먼저 표시합니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__sellout-summary {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
- * 최근 판매 변화 요약
- *
- * 판매량 변화와 설명을 하나의 영역으로 표시합니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__trend-summary {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-}
-
-/*
- * 저장된 추천량과 마감 결과
- *
- * 날짜별 그래프와 결과 설명을 묶습니다.
- * 기존 글자 크기와 글로벌 색상을 유지합니다.
- */
-.recommendation-analysis__comparison-detail {
-  min-width: 0;
-  padding: 10px;
-  border-radius: 8px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 /*
