@@ -153,8 +153,9 @@
           </span>
 
           <p class="recommendation-analysis__note">
-            추천 생산량을 계산할 때 참고한
-            {{ formatCount(referenceRecords.length) }}일치 기록입니다.
+            추천 생산량 계산에 사용한
+            {{ formatCount(history?.analysis_record_count) }}일치 기록 중
+            최근 {{ formatCount(referenceRecords.length) }}일치를 표시합니다.
           </p>
         </div>
 
