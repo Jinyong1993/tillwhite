@@ -398,9 +398,10 @@
         </span>
 
         <p class="recommendation-analysis__note">
-          월별 하루 평균 추정 판매량입니다.
+          월별 하루 평균 추정 판매량을 비교합니다.
         </p>
 
+        <!-- 월별 기록이 있는 경우 -->
         <div
           v-if="monthly.length"
           class="d-flex flex-column ga-3"
@@ -408,34 +409,45 @@
           <div
             v-for="month in monthly"
             :key="month.month"
-            class="recommendation-analysis__chart-item d-flex flex-column ga-2"
+            class="recommendation-analysis__monthly-item d-flex flex-column ga-2"
           >
+            <!-- 월과 하루 평균 추정 판매량 -->
             <div class="recommendation-analysis__row">
-              <span class="recommendation-analysis__label">
+              <span class="font-weight-medium">
                 {{ month.month }}
               </span>
 
-              <span class="recommendation-analysis__value">
+              <span class="font-weight-medium text-right">
                 {{ formatNumber(month.average_sales) }}개
               </span>
             </div>
 
+            <!-- 월별 판매량 비교 그래프 -->
             <v-progress-linear
               :model-value="
-                barPercent(month.average_sales, maxMonthlySales)
+                barPercent(
+                  month.average_sales,
+                  maxMonthlySales
+                )
               "
               color="primary"
               height="8"
               rounded
             />
 
-            <span class="recommendation-analysis__note">
-              {{ formatCount(month.record_count) }}일치 기록
-            </span>
+            <!-- 해당 월에 참고한 기록 수 -->
+            <p class="recommendation-analysis__note">
+              참고한 영업일
+              {{ formatCount(month.record_count) }}일치
+            </p>
           </div>
         </div>
 
-        <p v-else class="recommendation-analysis__note">
+        <!-- 월별 기록이 없는 경우 -->
+        <p
+          v-else
+          class="recommendation-analysis__note"
+        >
           월별 기록이 없습니다.
         </p>
       </section>
@@ -2419,6 +2431,19 @@ const accuracyRows = computed(() => [
  * 기존 글자 크기와 글로벌 색상을 유지합니다.
  */
 .recommendation-analysis__period-group {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 월별 추정 판매량
+ *
+ * 각 월의 기록을 독립된 영역으로 구분합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__monthly-item {
   min-width: 0;
   padding: 10px;
   border-radius: 8px;
