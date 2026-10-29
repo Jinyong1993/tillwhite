@@ -193,9 +193,12 @@
           추천 생산량 상세
         </span>
 
+        <!-- 예상 판매량과 이월재고 -->
         <div class="recommendation-analysis__rows">
           <div
-            v-for="row in calculationRows"
+            v-for="row in calculationRows.filter(
+              (item) => !item.highlight
+            )"
             :key="row.label"
             class="recommendation-analysis__row"
           >
@@ -203,18 +206,32 @@
               {{ row.label }}
             </span>
 
-            <span
-              class="recommendation-analysis__value"
-              :class="row.highlight ? 'text-primary font-weight-medium' : ''"
-            >
+            <span class="recommendation-analysis__value">
               {{ row.value }}
             </span>
           </div>
         </div>
 
-        <v-divider />
+        <!-- 추천 생산량 -->
+        <div
+          v-for="row in calculationRows.filter(
+            (item) => item.highlight
+          )"
+          :key="row.label"
+          class="recommendation-analysis__calculation-result"
+        >
+          <span class="font-weight-medium">
+            {{ row.label }}
+          </span>
 
-        <!-- 참고한 기록 -->
+          <span class="font-weight-medium text-right">
+            {{ row.value }}
+          </span>
+        </div>
+      </section>
+
+      <!-- 참고한 기록 -->
+      <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
           참고한 기록
         </span>
@@ -235,9 +252,32 @@
           </div>
         </div>
 
-        <v-divider />
+        <!-- 같은 요일 기록 부족 -->
+        <v-alert
+          v-if="history && history.same_weekday_count < 2"
+          type="info"
+          variant="tonal"
+          density="comfortable"
+          class="app-supporting-alert"
+        >
+          같은 요일의 기록이 부족해
+          다른 영업일도 참고했습니다.
+        </v-alert>
 
-        <!-- 기간별 추정 판매량 -->
+        <!-- 제외된 기록 안내 -->
+        <v-alert
+          v-if="history && history.excluded_record_count > 0"
+          type="warning"
+          variant="tonal"
+          density="comfortable"
+          class="app-supporting-alert"
+        >
+          확인이 필요한 기록은 분석에서 제외했습니다.
+        </v-alert>
+      </section>
+
+      <!-- 기간별 추정 판매량 -->
+      <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
           기간별 추정 판매량
         </span>
@@ -257,27 +297,6 @@
             </span>
           </div>
         </div>
-
-        <v-alert
-          v-if="history && history.same_weekday_count < 2"
-          type="info"
-          variant="tonal"
-          density="comfortable"
-          class="app-supporting-alert"
-        >
-          같은 요일의 기록이 부족해
-          다른 영업일도 참고했습니다.
-        </v-alert>
-
-        <v-alert
-          v-if="history && history.excluded_record_count > 0"
-          type="warning"
-          variant="tonal"
-          density="comfortable"
-          class="app-supporting-alert"
-        >
-          확인이 필요한 기록은 분석에서 제외했습니다.
-        </v-alert>
       </section>
 
       <!-- 월별 추정 판매량 -->
@@ -2257,6 +2276,34 @@ const accuracyRows = computed(() => [
   line-height: inherit;
   font-weight: 400;
   color: rgb(var(--v-theme-on-surface));
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 최종 추천 생산량
+ *
+ * 기존 글자 크기를 유지하면서
+ * 계산 결과만 별도 영역으로 구분합니다.
+ */
+.recommendation-analysis__calculation-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  min-width: 0;
+  padding: 10px;
+
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+
+  color: rgb(var(--v-theme-on-surface));
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.recommendation-analysis__calculation-result > span {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 </style>
