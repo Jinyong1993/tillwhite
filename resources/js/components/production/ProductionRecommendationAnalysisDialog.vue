@@ -647,9 +647,10 @@
       <!-- 생산·판매·폐기 현황 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          생산·판매·폐기 현황
+          전체 기간 수량 현황
         </span>
 
+        <!-- 생산·판매·재고 수량 -->
         <div class="recommendation-analysis__rows">
           <div
             v-for="row in totalRows"
@@ -665,39 +666,20 @@
             </span>
           </div>
         </div>
+      </section>
 
-        <v-divider />
-
-        <div class="d-flex flex-column ga-2">
-          <div class="recommendation-analysis__row">
-            <span class="recommendation-analysis__label">
-              폐기·이월예정 비율
-            </span>
-
-            <span class="recommendation-analysis__value">
-              {{ formatPercent(totals?.remaining_rate) }}
-            </span>
-          </div>
-
-          <v-progress-linear
-            :model-value="rateBar(totals?.remaining_rate)"
-            color="secondary"
-            height="8"
-            rounded
-          />
-        </div>
-
-        <v-divider />
-
+      <!-- 수량별 현황 -->
+      <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          수량별 사용 현황
+          수량별 비율
         </span>
 
+        <!-- 항목별 수량 및 비율 -->
         <div class="d-flex flex-column ga-3">
           <div
             v-for="row in inventoryRateRows"
             :key="row.label"
-            class="d-flex flex-column ga-2"
+            class="recommendation-analysis__usage-item d-flex flex-column ga-2"
           >
             <div class="recommendation-analysis__row">
               <span class="recommendation-analysis__label">
@@ -711,6 +693,7 @@
               </span>
             </div>
 
+            <!-- 전체 수량 대비 비율 -->
             <v-progress-linear
               :model-value="
                 rateBar(inventoryRate(row.quantity))
@@ -722,10 +705,21 @@
           </div>
         </div>
 
+        <!-- 폐기·이월예정 비율 -->
+        <div class="recommendation-analysis__usage-summary">
+          <div class="recommendation-analysis__row align-center">
+            <span class="font-weight-medium">
+              폐기·이월예정 비율
+            </span>
+
+            <span class="font-weight-medium text-right">
+              {{ formatPercent(totals?.remaining_rate) }}
+            </span>
+          </div>
+        </div>
+
         <p class="recommendation-analysis__note">
-          생산량과 이월재고를 합친 수량 중
-          폐기·이월예정의 비율입니다.
-          생산일 기준 폐기율과는 다릅니다.
+          생산량과 이월재고를 합친 전체 수량을 기준으로 합니다.
         </p>
       </section>
 
@@ -2589,5 +2583,27 @@ const accuracyRows = computed(() => [
 .recommendation-analysis__weekday-item--target {
   background: rgba(var(--v-theme-primary), 0.06);
   border: 1px solid rgba(var(--v-theme-primary), 0.18);
+}
+
+/*
+ * 수량별 현황
+ *
+ * 판매·로스·폐기·이월예정의 수량과 비율을 표시합니다.
+ * 기존 그래프 색상과 글자 크기를 유지합니다.
+ */
+.recommendation-analysis__usage-item {
+  min-width: 0;
+}
+
+/*
+ * 폐기·이월예정 비율 요약
+ *
+ * 항목별 그래프와 구분해 보여줍니다.
+ */
+.recommendation-analysis__usage-summary {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 </style>
