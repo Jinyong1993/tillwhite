@@ -584,41 +584,62 @@
         </span>
 
         <p class="recommendation-analysis__note">
-          행사일을 제외한 하루 평균 추정 판매량입니다.
+          행사일을 제외한 요일별 하루 평균 추정 판매량입니다.
         </p>
 
         <div class="d-flex flex-column ga-3">
           <div
             v-for="day in weekdays"
             :key="day.weekday"
-            class="recommendation-analysis__chart-item d-flex flex-column ga-2"
+            class="recommendation-analysis__weekday-item d-flex flex-column ga-2"
+            :class="{
+              'recommendation-analysis__weekday-item--target':
+                isTargetWeekday(day),
+            }"
           >
+            <!-- 요일 및 추정 판매량 -->
             <div class="recommendation-analysis__row">
-              <span class="recommendation-analysis__label">
-                {{ day.name }}
-              </span>
+              <div class="d-flex flex-column ga-1">
+                <span class="font-weight-medium">
+                  {{ day.name }}
+                </span>
 
-              <span class="recommendation-analysis__value">
+                <!-- 추천 날짜와 같은 요일만 표시 -->
+                <span
+                  v-if="isTargetWeekday(day)"
+                  class="recommendation-analysis__note"
+                >
+                  추천 날짜의 요일
+                </span>
+              </div>
+
+              <span class="font-weight-medium text-right">
                 {{
-                  day.average_sales == null
-                    ? '기록 없음'
-                    : `${formatNumber(day.average_sales)}개`
+                  hasWeekdaySales(day)
+                    ? `${formatNumber(day.average_sales)}개`
+                    : '기록 없음'
                 }}
               </span>
             </div>
 
+            <!-- 기록이 있는 요일만 그래프 표시 -->
             <v-progress-linear
+              v-if="hasWeekdaySales(day)"
               :model-value="
-                barPercent(day.average_sales, maxWeekdaySales)
+                barPercent(
+                  day.average_sales,
+                  maxWeekdaySales
+                )
               "
               color="primary"
               height="8"
               rounded
             />
 
-            <span class="recommendation-analysis__note">
-              {{ formatCount(day.record_count) }}일치 기록
-            </span>
+            <!-- 해당 요일의 판매 기록 수 -->
+            <p class="recommendation-analysis__note">
+              판매 기록 {{ formatCount(day.record_count) }}일치
+            </p>
           </div>
         </div>
       </section>
@@ -1022,6 +1043,89 @@ const monthly = computed(
 const weekdays = computed(
   () => details.value?.weekdays ?? []
 );
+
+/*
+ * 추천 날짜의 요일
+ *
+ * 서버에서 전달한 추천 대상 날짜를 사용합니다.
+ * 날짜를 확인할 수 없으면 특정 요일을 강조하지 않습니다.
+ */
+const targetWeekdayName = computed(() => {
+  const date =
+    props.data?.target_date ??
+    recommendation.value?.target_date;
+
+  if (
+    typeof date !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) {
+    return null;
+  }
+
+  const [year, month, day] = date
+    .split("-")
+    .map(Number);
+
+  const parsed = new Date(
+    Date.UTC(year, month - 1, day)
+  );
+
+  /* 잘못된 날짜는 사용하지 않습니다. */
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  const names = [
+    "일", "월", "화", "수",
+    "목", "금", "토",
+  ];
+
+  return names[parsed.getUTCDay()];
+});
+
+/*
+ * 추천 날짜와 같은 요일인지 확인합니다.
+ *
+ * '월', '월요일' 형태를 모두 비교할 수 있습니다.
+ */
+function isTargetWeekday(day) {
+  if (!targetWeekdayName.value) {
+    return false;
+  }
+
+  const name = String(day?.name ?? "")
+    .replace("요일", "")
+    .trim();
+
+  return name === targetWeekdayName.value;
+}
+
+/*
+ * 해당 요일의 판매 기록이 있는지 확인합니다.
+ *
+ * 실제 판매량 0개와 기록 없음을 구분합니다.
+ */
+function hasWeekdaySales(day) {
+  if (!day) {
+    return false;
+  }
+
+  const count = Number(day.record_count);
+  const sales = Number(day.average_sales);
+
+  return (
+    day.average_sales !== null &&
+    day.average_sales !== undefined &&
+    day.average_sales !== "" &&
+    Number.isFinite(sales) &&
+    Number.isFinite(count) &&
+    count > 0
+  );
+}
 
 const recentDaily = computed(
   () => details.value?.recent_daily ?? []
@@ -2474,5 +2578,16 @@ const accuracyRows = computed(() => [
   padding: 10px;
   border-radius: 8px;
   background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 추천 날짜와 같은 요일
+ *
+ * 기존 글자 크기와 색상 체계를 유지합니다.
+ * 카드 배경만 은은하게 구분합니다.
+ */
+.recommendation-analysis__weekday-item--target {
+  background: rgba(var(--v-theme-primary), 0.06);
+  border: 1px solid rgba(var(--v-theme-primary), 0.18);
 }
 </style>
