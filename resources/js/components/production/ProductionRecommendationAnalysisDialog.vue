@@ -332,19 +332,61 @@
           기간별 추정 판매량
         </span>
 
-        <div class="recommendation-analysis__rows">
-          <div
-            v-for="row in periodRows"
-            :key="row.label"
-            class="recommendation-analysis__row"
-          >
-            <span class="recommendation-analysis__label">
-              {{ row.label }}
-            </span>
+        <!-- 최근 3개월 -->
+        <div class="recommendation-analysis__period-group d-flex flex-column ga-3">
+          <span class="app-form-section-title">
+            최근 3개월
+          </span>
 
-            <span class="recommendation-analysis__value">
-              {{ row.value }}
-            </span>
+          <div class="recommendation-analysis__rows">
+            <div class="recommendation-analysis__row">
+              <span class="recommendation-analysis__label">
+                참고한 영업일
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ formatCount(history?.recent_record_count) }}일치
+              </span>
+            </div>
+
+            <div class="recommendation-analysis__row">
+              <span class="recommendation-analysis__label">
+                하루 평균 추정 판매량
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ formatQuantity(history?.recent_average) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 이전 9개월 -->
+        <div class="recommendation-analysis__period-group d-flex flex-column ga-3">
+          <span class="app-form-section-title">
+            이전 9개월
+          </span>
+
+          <div class="recommendation-analysis__rows">
+            <div class="recommendation-analysis__row">
+              <span class="recommendation-analysis__label">
+                참고한 영업일
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ formatCount(history?.older_record_count) }}일치
+              </span>
+            </div>
+
+            <div class="recommendation-analysis__row">
+              <span class="recommendation-analysis__label">
+                하루 평균 추정 판매량
+              </span>
+
+              <span class="recommendation-analysis__value">
+                {{ formatQuantity(history?.older_average) }}
+              </span>
+            </div>
           </div>
         </div>
       </section>
@@ -2364,6 +2406,19 @@ const accuracyRows = computed(() => [
  * 기존 글자 크기와 글로벌 색상을 유지합니다.
  */
 .recommendation-analysis__history-weight {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 기간별 추정 판매량
+ *
+ * 최근 3개월과 이전 9개월을 구분합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__period-group {
   min-width: 0;
   padding: 10px;
   border-radius: 8px;
