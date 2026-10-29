@@ -141,15 +141,35 @@
         </p>
       </section>
 
-      <!-- 실제 참고한 판매 기록 -->
+      <!-- 추천에 참고한 판매 기록 -->
       <section
         v-if="referenceRecords.length > 0"
-        class="d-flex flex-column ga-2"
+        class="d-flex flex-column ga-3"
       >
-        <span class="app-form-section-title">
-          참고한 판매 기록
-        </span>
+        <!-- 제목과 기록 수 -->
+        <div class="d-flex flex-column ga-1">
+          <span class="app-form-section-title">
+            추천에 참고한 판매 기록
+          </span>
 
+          <p class="recommendation-analysis__note">
+            추천 생산량을 계산할 때 참고한
+            {{ formatCount(referenceRecords.length) }}일치 기록입니다.
+          </p>
+        </div>
+
+        <!-- 항목 제목 -->
+        <div class="recommendation-analysis__row">
+          <span class="recommendation-analysis__label">
+            날짜
+          </span>
+
+          <span class="recommendation-analysis__label text-right">
+            추정 판매량
+          </span>
+        </div>
+
+        <!-- 날짜별 추정 판매량 -->
         <div class="recommendation-analysis__rows">
           <div
             v-for="record in referenceRecords"
@@ -165,10 +185,6 @@
             </span>
           </div>
         </div>
-
-        <p class="recommendation-analysis__note">
-          표시된 수량은 추정 판매량입니다.
-        </p>
       </section>
 
       <!-- 추천 생산량 상세 -->
