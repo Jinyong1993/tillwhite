@@ -723,32 +723,53 @@
         </p>
       </section>
 
-      <!-- 완판과 판매 기회 -->
+      <!-- 품절 가능성과 추가 판매 기회 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          완판과 판매 기회
+          품절 가능성과 추가 판매 기회
         </span>
 
+        <!-- 품절 가능성이 있었던 날 -->
+        <div
+          class="recommendation-analysis__sellout-summary d-flex flex-column ga-2"
+        >
+          <div class="recommendation-analysis__row">
+            <span class="font-weight-medium">
+              품절 가능성이 있었던 날
+            </span>
+
+            <span class="font-weight-medium text-right">
+              {{ formatCount(inventory?.possible_sellout_days) }}일치
+            </span>
+          </div>
+
+          <p class="recommendation-analysis__note">
+            제품이 모두 팔려 더 판매할 기회가 있었을 수 있습니다.
+          </p>
+        </div>
+
+        <!-- 남은 제품 관련 기록 -->
         <div class="recommendation-analysis__rows">
-          <div
-            v-for="row in inventoryRows"
-            :key="row.label"
-            class="recommendation-analysis__row"
-          >
+          <div class="recommendation-analysis__row">
             <span class="recommendation-analysis__label">
-              {{ row.label }}
+              폐기·이월예정이 없던 날
             </span>
 
             <span class="recommendation-analysis__value">
-              {{ row.value }}
+              {{ formatCount(inventory?.zero_remaining_days) }}일치
+            </span>
+          </div>
+
+          <div class="recommendation-analysis__row">
+            <span class="recommendation-analysis__label">
+              폐기·이월예정이 1개였던 날
+            </span>
+
+            <span class="recommendation-analysis__value">
+              {{ formatCount(inventory?.one_remaining_days) }}일치
             </span>
           </div>
         </div>
-
-        <p class="recommendation-analysis__note">
-          재고가 모두 소진된 날은
-          더 팔 수 있었을 가능성이 있습니다.
-        </p>
       </section>
 
       <!-- 최근 판매 변화 -->
@@ -757,54 +778,51 @@
           최근 판매 변화
         </span>
 
-        <p class="recommendation-analysis__note">
-          {{ trendText }}
-        </p>
+        <!-- 최근 판매 변화가 확인된 경우 -->
+        <template v-if="trend?.recent_trend">
+          <div
+            class="recommendation-analysis__trend-summary d-flex flex-column ga-2"
+          >
+            <div class="recommendation-analysis__row align-center">
+              <span class="recommendation-analysis__label">
+                같은 요일 추정 판매량
+              </span>
 
-        <div
-          v-if="trend?.recent_trend"
-          class="d-flex flex-column ga-2"
-        >
-          <div class="recommendation-analysis__row">
-            <span class="recommendation-analysis__label">
-              같은 요일 추정 판매량 변화
-            </span>
+              <span
+                class="recommendation-analysis__value font-weight-medium"
+                :class="trendDirectionColor"
+              >
+                {{ trendDirectionText }}
+              </span>
+            </div>
 
-            <span
-              class="recommendation-analysis__value font-weight-medium"
-              :class="
-                trend.recent_trend.direction === 'increasing'
-                  ? 'text-success'
-                  : 'text-error'
-              "
-            >
-              {{
-                trend.recent_trend.direction === 'increasing'
-                  ? '증가'
-                  : '감소'
-              }}
-              {{
-                formatPercent(
-                  Math.abs(trend.recent_trend.change_rate)
-                )
-              }}
-            </span>
+            <p class="recommendation-analysis__note">
+              {{ trendText }}
+            </p>
           </div>
 
-          <span class="recommendation-analysis__note">
-            같은 요일
-            {{ formatCount(trend.recent_trend.sample_count) }}일치
-            기록을 비교했습니다.
-          </span>
-        </div>
+          <p class="recommendation-analysis__note">
+            같은 요일 판매 기록
+            {{ formatCount(trend.recent_trend.sample_count) }}일치를 비교했습니다.
+          </p>
+        </template>
+
+        <!-- 최근 판매 변화를 판단하기 어려운 경우 -->
+        <p
+          v-else
+          class="recommendation-analysis__note"
+        >
+          기록이 충분하지 않아 최근 같은 요일의 판매 변화를 판단하기 어렵습니다.
+        </p>
       </section>
 
-      <!-- 추천 수량 정확도 -->
+      <!-- 추천 수량과 판매량 차이 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          추천 수량 정확도
+          추천 수량과 판매량 차이
         </span>
 
+        <!-- 과거 추천 결과 -->
         <div class="recommendation-analysis__rows">
           <div
             v-for="row in accuracyRows"
@@ -822,16 +840,18 @@
         </div>
 
         <p class="recommendation-analysis__note">
-          지난 영업일의 기록으로 계산한 추천 수량과
-          추정 판매량의 차이입니다.
+          지난 영업일에 계산한 추천 수량과
+          추정 판매량을 비교한 결과입니다.
         </p>
+      </section>
 
-        <v-divider />
-
+      <!-- 저장된 추천량과 마감 결과 -->
+      <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
           저장된 추천량과 마감 결과
         </span>
 
+        <!-- 비교할 기록이 없는 경우 -->
         <v-alert
           v-if="!comparisonRecords.length"
           type="info"
@@ -839,7 +859,7 @@
           density="comfortable"
           class="app-supporting-alert"
         >
-          아직 비교할 기록이 없습니다.
+          기록이 충분하지 않습니다.
         </v-alert>
 
         <template v-else>
@@ -856,9 +876,17 @@
               이전
             </v-btn>
 
-            <span class="text-body-2 text-center">
-              {{ selectedComparisonDateLabel }}
-            </span>
+            <div class="d-flex flex-column align-center ga-1">
+              <span class="text-body-2 text-center">
+                {{ selectedComparisonDateLabel }}
+              </span>
+
+              <span class="recommendation-analysis__note">
+                {{ selectedComparisonIndex + 1 }}
+                /
+                {{ comparisonRecords.length }}
+              </span>
+            </div>
 
             <v-btn
               variant="outlined"
@@ -874,17 +902,12 @@
             </v-btn>
           </div>
 
-          <p class="recommendation-analysis__note text-center">
-            {{ selectedComparisonIndex + 1 }}
-            /
-            {{ comparisonRecords.length }}
-          </p>
-
-          <!-- 선택한 날짜의 생산 결과 -->
+          <!-- 선택 날짜의 생산 결과 -->
           <div
             v-if="selectedComparisonRecord"
-            class="d-flex flex-column ga-3"
+            class="recommendation-analysis__comparison-detail d-flex flex-column ga-3"
           >
+            <!-- 기존 그래프 항목 모두 유지 -->
             <div
               v-for="item in comparisonChartRows"
               :key="item.label"
@@ -909,6 +932,7 @@
               />
             </div>
 
+            <!-- 선택 날짜의 추천 결과 설명 -->
             <p class="recommendation-analysis__note">
               {{ comparisonResultText }}
             </p>
@@ -923,22 +947,29 @@
       <!-- 확인 사항 -->
       <section
         v-if="warnings.length"
-        class="d-flex flex-column ga-2"
+        class="d-flex flex-column ga-3"
       >
-        <span class="app-form-section-title">
-          확인 사항
-        </span>
+        <!-- 제목과 확인 사항 개수 -->
+        <div class="d-flex align-center justify-space-between ga-2">
+          <span class="app-form-section-title">
+            확인 사항
+          </span>
 
-        <v-alert
-          v-for="(warning, index) in warnings"
-          :key="index"
-          type="warning"
-          variant="tonal"
-          density="comfortable"
-          class="app-supporting-alert"
-        >
-          {{ warning }}
-        </v-alert>
+          <span class="recommendation-analysis__note">
+            {{ warnings.length }}건
+          </span>
+        </div>
+
+        <!-- 확인이 필요한 내용 -->
+        <div class="d-flex flex-column ga-2">
+          <div
+            v-for="(warning, index) in warnings"
+            :key="index"
+            class="recommendation-analysis__warning-item"
+          >
+            {{ warning }}
+          </div>
+        </div>
       </section>
     </div>
 
@@ -1527,6 +1558,65 @@ const trendText = computed(() => {
   }
 
   return "최근 같은 요일의 추정 판매량은 비슷한 수준입니다.";
+});
+
+/*
+ * 최근 판매 변화 표시
+ *
+ * 증가, 감소, 비슷함을 정확하게 구분합니다.
+ * 서버에서 전달한 변화율을 그대로 사용합니다.
+ */
+const trendDirectionText = computed(() => {
+  const value = trend.value?.recent_trend;
+
+  if (!value) {
+    return "자료 없음";
+  }
+
+  const changeRate = value.change_rate;
+
+  if (
+    changeRate === null ||
+    changeRate === undefined ||
+    !Number.isFinite(Number(changeRate))
+  ) {
+    return "자료 없음";
+  }
+
+  const rate = formatPercent(
+    Math.abs(Number(changeRate))
+  );
+
+  if (value.direction === "increasing") {
+    return `${rate} 증가`;
+  }
+
+  if (value.direction === "decreasing") {
+    return `${rate} 감소`;
+  }
+
+  return "비슷한 수준";
+});
+
+/*
+ * 판매 변화에 따른 색상
+ *
+ * 증가: 초록색
+ * 감소: 빨간색
+ * 비슷함 또는 자료 부족: 기본 색상
+ */
+const trendDirectionColor = computed(() => {
+  const direction = trend.value?.recent_trend?.direction;
+
+  if (direction === "increasing") {
+    return "text-success";
+  }
+
+  if (direction === "decreasing") {
+    return "text-error";
+  }
+
+  return "";
 });
 
 /*
@@ -2605,5 +2695,65 @@ const accuracyRows = computed(() => [
   padding: 10px;
   border-radius: 8px;
   background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 품절 가능성 요약
+ *
+ * 중요한 정보를 먼저 표시합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__sellout-summary {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 최근 판매 변화 요약
+ *
+ * 판매량 변화와 설명을 하나의 영역으로 표시합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__trend-summary {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 저장된 추천량과 마감 결과
+ *
+ * 날짜별 그래프와 결과 설명을 묶습니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__comparison-detail {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 확인 사항
+ *
+ * 경고 아이콘 대신 문장으로 안내합니다.
+ * 기존 글자 크기와 글로벌 색상을 유지합니다.
+ */
+.recommendation-analysis__warning-item {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  color: rgb(var(--v-theme-on-surface));
+
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 400;
+
+  overflow-wrap: anywhere;
 }
 </style>
