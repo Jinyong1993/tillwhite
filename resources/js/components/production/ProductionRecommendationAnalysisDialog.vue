@@ -13,23 +13,26 @@
   >
     <div class="recommendation-analysis d-flex flex-column ga-3">
       <!-- 분석 기간 -->
-      <section v-if="details?.period" class="d-flex flex-column ga-2">
-        <span class="app-form-section-title">분석 기간</span>
+      <section
+        v-if="details?.period"
+        class="d-flex flex-column ga-3"
+      >
+        <span class="app-form-section-title">
+          분석 기간
+        </span>
 
-        <div class="recommendation-analysis__rows">
-          <div class="recommendation-analysis__row">
-            <span class="recommendation-analysis__label">기간</span>
-            <span class="recommendation-analysis__value">
-              {{ details.period.from }} ~ {{ details.period.to }}
-            </span>
-          </div>
+        <div class="recommendation-analysis__date-range">
+          {{ details.period.from }} ~ {{ details.period.to }}
+        </div>
 
-          <div class="recommendation-analysis__row">
-            <span class="recommendation-analysis__label">분석한 영업일</span>
-            <span class="recommendation-analysis__value">
-              {{ formatCount(totals?.valid_days) }}일치
-            </span>
-          </div>
+        <div class="recommendation-analysis__row">
+          <span class="recommendation-analysis__label">
+            분석한 영업일
+          </span>
+
+          <span class="recommendation-analysis__value">
+            {{ formatCount(totals?.valid_days) }}일치
+          </span>
         </div>
 
         <p class="recommendation-analysis__note">
@@ -38,22 +41,31 @@
       </section>
 
       <!-- 추천 생산량 -->
-      <section class="d-flex flex-column ga-2">
-        <span class="app-form-section-title">추천 생산량</span>
+      <section class="d-flex flex-column ga-3">
+        <span class="app-form-section-title">
+          추천 생산량
+        </span>
 
-        <div class="d-flex align-center justify-space-between ga-3">
-          <div class="d-flex flex-column ga-1">
-            <span class="recommendation-analysis__main-quantity">
-              {{ formatQuantity(recommendation?.center) }}
-            </span>
+        <span class="recommendation-analysis__main-quantity">
+          {{ formatQuantity(recommendation?.center) }}
+        </span>
 
-            <span class="recommendation-analysis__note">
-              추천 범위
-              {{ formatQuantity(recommendation?.min) }}
-              ~
-              {{ formatQuantity(recommendation?.max) }}
-            </span>
-          </div>
+        <div class="recommendation-analysis__row">
+          <span class="recommendation-analysis__label">
+            추천 범위
+          </span>
+
+          <span class="recommendation-analysis__value">
+            {{ formatQuantity(recommendation?.min) }}
+            ~
+            {{ formatQuantity(recommendation?.max) }}
+          </span>
+        </div>
+
+        <div class="recommendation-analysis__row align-center">
+          <span class="recommendation-analysis__label">
+            추천 신뢰도
+          </span>
 
           <v-chip
             size="small"
@@ -65,26 +77,66 @@
         </div>
       </section>
 
-      <!-- 추천 이유: 다른 항목과 동일한 목록 형태 -->
+      <!-- 추천 이유 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
           이 수량을 추천하는 이유
         </span>
 
-        <div
-          v-if="reasons.length"
-          class="recommendation-analysis__rows"
+        <!-- 서버에서 전달한 추천 이유를 모두 표시 -->
+        <ol
+          v-if="organizedReasons.length"
+          class="recommendation-analysis__reason-list"
         >
-          <p
-            v-for="(reason, index) in reasons"
+          <li
+            v-for="(item, index) in organizedReasons"
             :key="index"
             class="recommendation-analysis__reason"
           >
-            {{ reason }}
-          </p>
-        </div>
+            <span>{{ item.text }}</span>
 
-        <p v-else class="recommendation-analysis__note">
+            <!-- 해당 이유의 날짜별 폐기·이월 기록 -->
+            <div
+              v-if="item.records.length"
+              class="recommendation-analysis__reason-records d-flex flex-column ga-2"
+            >
+              <span class="app-form-section-title">
+                참고한 날짜별 폐기·이월 기록
+              </span>
+
+              <p class="recommendation-analysis__note">
+                아래는 추천 이유에 표시된 날짜별 기록입니다.
+              </p>
+
+              <div
+                v-for="(record, recordIndex) in item.records"
+                :key="recordIndex"
+                class="recommendation-analysis__reason-record d-flex align-start justify-space-between ga-2"
+              >
+                <span class="recommendation-analysis__label">
+                  {{ record.dateLabel }}
+                </span>
+
+                <span class="recommendation-analysis__value">
+                  {{ record.result }}
+                </span>
+              </div>
+            </div>
+          </li>
+        </ol>
+
+        <!-- 추천 수량에 대한 최종 설명 -->
+        <p
+          v-if="organizedReasons.length && recommendationSummary"
+          class="recommendation-analysis__note"
+        >
+          {{ recommendationSummary }}
+        </p>
+
+        <p
+          v-if="!organizedReasons.length"
+          class="recommendation-analysis__note"
+        >
           추천 이유를 확인할 수 없습니다.
         </p>
       </section>
@@ -740,6 +792,7 @@ import { computed, ref, watch } from "vue";
 import AppDialogLayout from "../common/AppDialogLayout.vue";
 import AppDialogFooter from "../common/AppDialogFooter.vue";
 
+/* 다이얼로그 입력값 */
 const props = defineProps({
   modelValue: {
     type: Boolean,
@@ -763,14 +816,17 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(["update:modelValue", "retry"]);
+const emit = defineEmits([
+  "update:modelValue",
+  "retry",
+]);
 
 const dialogOpen = computed({
   get: () => props.modelValue,
   set: (value) => emit("update:modelValue", value),
 });
 
-/* 서버에서 전달받은 분석 결과 */
+/* 서버에서 전달받은 추천 결과 */
 const recommendation = computed(
   () => props.data?.recommendation ?? null
 );
@@ -820,10 +876,10 @@ const recentDaily = computed(
 );
 
 /*
- * 실제 추천 계산에 참고한 날짜별 판매 기록
+ * 추천 계산에 실제로 사용한 판매 기록
  *
- * 서버에서 전달한 날짜·요일·추정 판매량만 표시합니다.
- * 프론트엔드에서 추천량을 다시 계산하지 않습니다.
+ * 서버가 전달한 날짜와 추정 판매량을 그대로 표시합니다.
+ * 프론트엔드에서 추천 수량을 다시 계산하지 않습니다.
  */
 const referenceRecords = computed(() => {
   const records = history.value?.reference_records;
@@ -877,7 +933,7 @@ const selectedDailyRecord = computed(() => {
   return selected ?? rows[rows.length - 1];
 });
 
-/* 날짜별 그래프의 최대 추정 판매량 */
+/* 최근 추정 판매량 그래프 최대값 */
 const maxRecentSales = computed(() =>
   Math.max(
     1,
@@ -887,10 +943,7 @@ const maxRecentSales = computed(() =>
   )
 );
 
-/*
- * 해당 날짜에 판매 가능한 전체 수량
- * 생산량과 이월재고를 합친 서버 계산값을 사용합니다.
- */
+/* 선택한 날짜에 판매 가능한 전체 수량 */
 const dailyAvailable = computed(() =>
   Math.max(
     1,
@@ -898,7 +951,7 @@ const dailyAvailable = computed(() =>
   )
 );
 
-/* 선택한 날짜의 생산·판매·재고 상세 */
+/* 선택한 날짜의 생산·판매·재고 기록 */
 const dailyDetailRows = computed(() => {
   const day = selectedDailyRecord.value;
 
@@ -940,7 +993,11 @@ const dailyDetailRows = computed(() => {
   ];
 });
 
-/* 추천 이유 */
+/*
+ * 추천 이유 원문
+ *
+ * 서버에서 전달한 모든 이유를 유지합니다.
+ */
 const reasons = computed(
   () =>
     explanation.value?.notices?.reasons ??
@@ -948,19 +1005,222 @@ const reasons = computed(
     []
 );
 
+/*
+ * 추천 이유 화면 정리
+ *
+ * 1. 기존 추천 이유를 임의로 삭제하지 않습니다.
+ * 2. 날짜별 폐기·이월 기록만 묶어서 표시합니다.
+ * 3. 날짜별 기록은 오래된 날짜부터 정렬합니다.
+ * 4. 실제로 전달된 날짜별 기록 수를 표시합니다.
+ * 5. 날짜가 없는 일반적인 추천 이유도 유지합니다.
+ */
+const organizedReasons = computed(() => {
+  const source = reasons.value;
+
+  if (!Array.isArray(source)) {
+    return [];
+  }
+
+  const items = [];
+  let wasteReason = null;
+
+  /*
+   * 날짜별 기록 형태
+   *
+   * 예:
+   * 10월 26일(월): 폐기 3개, 이월예정 1개
+   */
+  const datePattern =
+    /^(\d{1,2})월\s*(\d{1,2})일\(([일월화수목금토])\)\s*:\s*(.+)$/;
+
+  /*
+   * 분석 종료일을 기준으로 날짜의 연도를 판단합니다.
+   *
+   * 분석 기간이 연도를 넘어가는 경우에도
+   * 최근 기록을 오래된 날짜부터 표시하기 위함입니다.
+   */
+  const periodEnd = details.value?.period?.to ?? "";
+
+  const endMatch =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(periodEnd);
+
+  function recordOrder(month, day) {
+    if (!endMatch) {
+      return month * 100 + day;
+    }
+
+    const endYear = Number(endMatch[1]);
+
+    const endMonthDay =
+      Number(endMatch[2]) * 100 +
+      Number(endMatch[3]);
+
+    const monthDay = month * 100 + day;
+
+    const year =
+      monthDay <= endMonthDay
+        ? endYear
+        : endYear - 1;
+
+    return year * 10000 + monthDay;
+  }
+
+  for (const value of source) {
+    if (typeof value !== "string") {
+      continue;
+    }
+
+    const text = value.trim();
+
+    if (!text) {
+      continue;
+    }
+
+    const match = datePattern.exec(text);
+
+    /*
+     * 날짜별 폐기·이월 기록
+     *
+     * 날짜와 수량을 분리하여
+     * 화면에서 좌우로 표시합니다.
+     */
+    if (
+      match &&
+      text.includes("폐기") &&
+      text.includes("이월")
+    ) {
+      const record = {
+        dateLabel:
+          `${match[1]}월 ${match[2]}일(${match[3]})`,
+
+        result: match[4].replace(
+          /,\s*/g,
+          " · "
+        ),
+
+        order: recordOrder(
+          Number(match[1]),
+          Number(match[2])
+        ),
+      };
+
+      /*
+       * 관련 폐기·이월 설명이 있으면
+       * 그 아래에 날짜별 기록을 묶습니다.
+       */
+      if (wasteReason) {
+        wasteReason.records.push(record);
+      } else {
+        /*
+         * 관련 설명이 없어도
+         * 날짜별 기록을 누락하지 않습니다.
+         */
+        const standalone = {
+          text: "날짜별 폐기·이월 기록입니다.",
+          records: [record],
+        };
+
+        items.push(standalone);
+        wasteReason = standalone;
+      }
+
+      continue;
+    }
+
+    /*
+     * 일반 추천 이유
+     *
+     * 원문을 삭제하거나
+     * 임의로 내용을 바꾸지 않습니다.
+     */
+    const item = {
+      text,
+      records: [],
+    };
+
+    items.push(item);
+
+    /*
+     * 최근 폐기·이월 현황을 설명하는 문장에
+     * 뒤따르는 날짜별 기록을 연결합니다.
+     */
+    if (
+      /최근\s*\d+일치 기록에서.*폐기량과 이월예정/.test(text)
+    ) {
+      wasteReason = item;
+    }
+  }
+
+  /*
+   * 날짜별 기록을 오래된 순서부터 표시합니다.
+   */
+  for (const item of items) {
+    item.records.sort(
+      (a, b) => a.order - b.order
+    );
+  }
+
+  return items;
+});
+
+/*
+ * 이번 추천 생산량에 대한 최종 설명
+ *
+ * 서버에서 전달한 값만 사용합니다.
+ *
+ * - 해당 날짜 예상 판매량
+ * - 이월재고
+ * - 추천 생산량
+ *
+ * 계산 결과를 프론트엔드에서 변경하지 않습니다.
+ */
+const recommendationSummary = computed(() => {
+  const demand =
+    calculation.value?.expected_demand_before_carryover;
+
+  const carryover =
+    calculation.value?.target_carryover_in;
+
+  const quantity =
+    recommendation.value?.center;
+
+  /*
+   * 필요한 수량이 없는 경우
+   * 임의의 숫자로 설명하지 않습니다.
+   */
+  if (
+    [demand, carryover, quantity].some(
+      (value) =>
+        value === null ||
+        value === undefined ||
+        !Number.isFinite(Number(value))
+    )
+  ) {
+    return "";
+  }
+
+  return (
+    `해당 날짜 예상 판매량 ${formatQuantity(demand)}와 ` +
+    `이월재고 ${formatQuantity(carryover)}를 고려해 ` +
+    `새로 생산할 수량 ${formatQuantity(quantity)}를 추천합니다.`
+  );
+});
+
 /* 확인 사항 */
 const warnings = computed(() => {
-  const values = explanation.value?.notices?.warnings;
+  const values =
+    explanation.value?.notices?.warnings;
 
   if (Array.isArray(values)) {
     return values;
   }
 
   const message = recommendation.value?.warning;
+
   return message ? [message] : [];
 });
 
-/* 월별·요일별 그래프 최대값 */
+/* 월별 그래프 최대값 */
 const maxMonthlySales = computed(() =>
   Math.max(
     1,
@@ -970,6 +1230,7 @@ const maxMonthlySales = computed(() =>
   )
 );
 
+/* 요일별 그래프 최대값 */
 const maxWeekdaySales = computed(() =>
   Math.max(
     1,
@@ -984,8 +1245,10 @@ const confidenceText = computed(() => {
   switch (recommendation.value?.confidence) {
     case "normal":
       return "보통 신뢰도";
+
     case "low":
       return "낮은 신뢰도";
+
     default:
       return "판단 자료 부족";
   }
@@ -1017,8 +1280,10 @@ const trendText = computed(() => {
 });
 
 /*
- * 수량 표시
- * 기록이 없는 값과 실제 0개를 구분합니다.
+ * 숫자 표시
+ *
+ * 기록이 없는 값과
+ * 실제 0개를 구분합니다.
  */
 function formatNumber(value) {
   if (
@@ -1067,7 +1332,7 @@ function formatPercent(value) {
   return `${(Number(value) * 100).toFixed(1)}%`;
 }
 
-/* 그래프에 사용할 막대 길이 계산 */
+/* 그래프 막대 길이 */
 function barPercent(value, maximum) {
   const number = Number(value);
 
@@ -1082,11 +1347,14 @@ function barPercent(value, maximum) {
 
   return Math.max(
     0,
-    Math.min(100, (number / maximum) * 100)
+    Math.min(
+      100,
+      (number / maximum) * 100
+    )
   );
 }
 
-/* 생산량과 이월재고를 합친 전체 수량 */
+/* 생산량과 이월재고를 합친 수량 */
 const availableTotal = computed(() => {
   if (!totals.value) {
     return null;
@@ -1098,7 +1366,7 @@ const availableTotal = computed(() => {
   );
 });
 
-/* 전체 수량 중 각 항목이 차지하는 비율 */
+/* 전체 수량 중 각 항목의 비율 */
 function inventoryRate(quantity) {
   const total = availableTotal.value;
 
@@ -1126,7 +1394,10 @@ function rateBar(value) {
 
   return Math.max(
     0,
-    Math.min(100, Number(value) * 100)
+    Math.min(
+      100,
+      Number(value) * 100
+    )
   );
 }
 
@@ -1134,7 +1405,9 @@ function rateBar(value) {
 const calculationRows = computed(() => [
   {
     label: "평소 예상 판매량",
-    value: formatQuantity(calculation.value?.base_demand),
+    value: formatQuantity(
+      calculation.value?.base_demand
+    ),
   },
   {
     label: "해당 날짜 예상 판매량",
@@ -1150,32 +1423,41 @@ const calculationRows = computed(() => [
   },
   {
     label: "추천 생산량",
-    value: formatQuantity(recommendation.value?.center),
+    value: formatQuantity(
+      recommendation.value?.center
+    ),
     highlight: true,
   },
 ]);
 
-/* 분석에 참고한 기록 */
+/* 참고한 기록 */
 const historyRows = computed(() => [
   {
     label: "참고한 기록",
-    value: `${formatCount(history.value?.valid_record_count)}일치`,
+    value:
+      `${formatCount(history.value?.valid_record_count)}일치`,
   },
   {
     label: "제외된 기록",
-    value: `${formatCount(history.value?.excluded_record_count)}일치`,
+    value:
+      `${formatCount(history.value?.excluded_record_count)}일치`,
   },
   {
     label: "같은 요일 기록",
-    value: `${formatCount(history.value?.same_weekday_count)}일치`,
+    value:
+      `${formatCount(history.value?.same_weekday_count)}일치`,
   },
   {
     label: "최근 3개월 비중",
-    value: formatPercent(history.value?.recent_weight),
+    value: formatPercent(
+      history.value?.recent_weight
+    ),
   },
   {
     label: "이전 9개월 비중",
-    value: formatPercent(history.value?.older_weight),
+    value: formatPercent(
+      history.value?.older_weight
+    ),
   },
 ]);
 
@@ -1183,19 +1465,25 @@ const historyRows = computed(() => [
 const periodRows = computed(() => [
   {
     label: "최근 3개월 기록",
-    value: `${formatCount(history.value?.recent_record_count)}일치`,
+    value:
+      `${formatCount(history.value?.recent_record_count)}일치`,
   },
   {
     label: "최근 3개월 평균 추정 판매량",
-    value: formatQuantity(history.value?.recent_average),
+    value: formatQuantity(
+      history.value?.recent_average
+    ),
   },
   {
     label: "이전 9개월 기록",
-    value: `${formatCount(history.value?.older_record_count)}일치`,
+    value:
+      `${formatCount(history.value?.older_record_count)}일치`,
   },
   {
     label: "이전 9개월 평균 추정 판매량",
-    value: formatQuantity(history.value?.older_average),
+    value: formatQuantity(
+      history.value?.older_average
+    ),
   },
 ]);
 
@@ -1203,27 +1491,39 @@ const periodRows = computed(() => [
 const totalRows = computed(() => [
   {
     label: "생산량",
-    value: formatQuantity(totals.value?.production),
+    value: formatQuantity(
+      totals.value?.production
+    ),
   },
   {
     label: "이월재고",
-    value: formatQuantity(totals.value?.carryover_in),
+    value: formatQuantity(
+      totals.value?.carryover_in
+    ),
   },
   {
     label: "로스량",
-    value: formatQuantity(totals.value?.loss),
+    value: formatQuantity(
+      totals.value?.loss
+    ),
   },
   {
     label: "폐기량",
-    value: formatQuantity(totals.value?.waste),
+    value: formatQuantity(
+      totals.value?.waste
+    ),
   },
   {
     label: "이월예정",
-    value: formatQuantity(totals.value?.carryover_out),
+    value: formatQuantity(
+      totals.value?.carryover_out
+    ),
   },
   {
     label: "추정 판매량",
-    value: formatQuantity(totals.value?.estimated_sales),
+    value: formatQuantity(
+      totals.value?.estimated_sales
+    ),
   },
 ]);
 
@@ -1255,15 +1555,18 @@ const inventoryRateRows = computed(() => [
 const inventoryRows = computed(() => [
   {
     label: "폐기·이월예정이 없었던 날",
-    value: `${formatCount(inventory.value?.zero_remaining_days)}일치`,
+    value:
+      `${formatCount(inventory.value?.zero_remaining_days)}일치`,
   },
   {
     label: "완판 가능성이 있었던 날",
-    value: `${formatCount(inventory.value?.possible_sellout_days)}일치`,
+    value:
+      `${formatCount(inventory.value?.possible_sellout_days)}일치`,
   },
   {
     label: "폐기·이월예정 합계가 1개였던 날",
-    value: `${formatCount(inventory.value?.one_remaining_days)}일치`,
+    value:
+      `${formatCount(inventory.value?.one_remaining_days)}일치`,
   },
 ]);
 
@@ -1282,7 +1585,7 @@ const adjustmentComparison = computed(
  * 날짜별 비교 기록
  *
  * 추천 생산량과 추정 판매량이 있는 날짜만 표시합니다.
- * 기록이 없는 값은 실제 0개와 구분합니다.
+ * 수량이 없는 기록은 실제 0개와 구분합니다.
  * 날짜를 오래된 순서부터 정렬합니다.
  */
 const comparisonRecords = computed(() => {
@@ -1315,10 +1618,12 @@ const comparisonRecords = computed(() => {
         hasQuantity(record.estimated_sales)
       );
     })
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort(
+      (a, b) => a.date.localeCompare(b.date)
+    );
 });
 
-/* 날짜 이동 상태 */
+/* 비교할 날짜 선택 */
 const selectedComparisonIndex = ref(0);
 
 watch(
@@ -1329,13 +1634,19 @@ watch(
 );
 
 const selectedComparisonRecord = computed(() =>
-  comparisonRecords.value[selectedComparisonIndex.value] ??
-  null
+  comparisonRecords.value[
+    selectedComparisonIndex.value
+  ] ?? null
 );
 
 /*
- * 날짜를 '10월 26일(월)' 형태로 표시합니다.
- * UTC로 요일을 계산해 시간대에 따른 날짜 변경을 방지합니다.
+ * 선택한 날짜를 읽기 쉬운 형태로 표시합니다.
+ *
+ * 예:
+ * 2026-10-26 → 10월 26일(월)
+ *
+ * UTC를 사용해 브라우저 시간대에 따른
+ * 날짜 변경을 방지합니다.
  */
 const selectedComparisonDateLabel = computed(() => {
   const date = selectedComparisonRecord.value?.date;
@@ -1347,7 +1658,8 @@ const selectedComparisonDateLabel = computed(() => {
     return "-";
   }
 
-  const [year, month, day] = date.split("-").map(Number);
+  const [year, month, day] =
+    date.split("-").map(Number);
 
   const parsed = new Date(
     Date.UTC(year, month - 1, day)
@@ -1361,18 +1673,21 @@ const selectedComparisonDateLabel = computed(() => {
     return "-";
   }
 
-  const weekdays = [
-    "일", "월", "화", "수", "목", "금", "토",
+  const weekdayNames = [
+    "일", "월", "화", "수",
+    "목", "금", "토",
   ];
 
-  const weekday = weekdays[parsed.getUTCDay()];
+  const weekday =
+    weekdayNames[parsed.getUTCDay()];
 
   return `${month}월 ${day}일(${weekday})`;
 });
 
-/* 이전·다음 날짜로 이동 */
+/* 이전·다음 날짜 이동 */
 function moveComparisonDate(direction) {
-  const next = selectedComparisonIndex.value + direction;
+  const next =
+    selectedComparisonIndex.value + direction;
 
   if (
     next < 0 ||
@@ -1391,7 +1706,7 @@ function moveComparisonDate(direction) {
  * 폐기량, 이월재고, 이월예정을 표시합니다.
  *
  * 기록이 없는 수량은 0개로 표시하지 않습니다.
- * 실제 0개로 기록된 경우에는 0개를 표시합니다.
+ * 실제 0개인 경우에만 0개를 표시합니다.
  */
 const comparisonChartRows = computed(() => {
   const record = selectedComparisonRecord.value;
@@ -1412,43 +1727,60 @@ const comparisonChartRows = computed(() => {
 
     const quantity = Number(value);
 
-    return quantity >= 0 ? quantity : null;
+    return quantity >= 0
+      ? quantity
+      : null;
   };
 
   const rows = [
     {
       label: "추천 생산량",
-      value: readQuantity(record.adjusted_quantity),
+      value: readQuantity(
+        record.adjusted_quantity
+      ),
       color: "primary",
     },
     {
       label: "실제 생산량",
-      value: readQuantity(record.actual_production),
+      value: readQuantity(
+        record.actual_production
+      ),
       color: "success",
     },
     {
       label: "추정 판매량",
-      value: readQuantity(record.estimated_sales),
+      value: readQuantity(
+        record.estimated_sales
+      ),
       color: "info",
     },
     {
       label: "폐기량",
-      value: readQuantity(record.actual_waste),
+      value: readQuantity(
+        record.actual_waste
+      ),
       color: "error",
     },
     {
       label: "이월재고",
-      value: readQuantity(record.carryover_in),
+      value: readQuantity(
+        record.carryover_in
+      ),
       color: "secondary",
     },
     {
       label: "이월예정",
-      value: readQuantity(record.actual_carryover),
+      value: readQuantity(
+        record.actual_carryover
+      ),
       color: "secondary",
     },
   ];
 
-  /* 기록된 수량만 그래프 최대값 계산에 사용 */
+  /*
+   * 실제로 기록된 수량만
+   * 그래프 최대값 계산에 사용합니다.
+   */
   const maxValue = Math.max(
     1,
     ...rows
@@ -1458,23 +1790,27 @@ const comparisonChartRows = computed(() => {
 
   return rows.map((row) => ({
     ...row,
+
     percent:
       row.value === null
         ? 0
         : Math.max(
             0,
-            Math.min(100, (row.value / maxValue) * 100)
+            Math.min(
+              100,
+              (row.value / maxValue) * 100
+            )
           ),
   }));
 });
 
 /*
- * 선택 날짜의 추천 생산량과 실제 결과 비교
+ * 추천 생산량과 실제 결과 비교
  *
- * 추천 생산량에 이월재고를 더한 수량을
- * 추정 판매량과 비교합니다.
+ * 추천 생산량 + 이월재고를
+ * 해당 날짜의 추정 판매량과 비교합니다.
  *
- * 기록이 없는 수량은 계산하지 않으며,
+ * 기록이 없는 수량은 계산하지 않으며
  * 판매 기회 손실은 가능성으로만 안내합니다.
  */
 const comparisonResultText = computed(() => {
@@ -1529,7 +1865,8 @@ const comparisonResultText = computed(() => {
     recommended !== null &&
     produced !== null
   ) {
-    const difference = produced - recommended;
+    const difference =
+      produced - recommended;
 
     if (difference > 0) {
       messages.push(
@@ -1547,8 +1884,9 @@ const comparisonResultText = computed(() => {
   }
 
   /*
-   * 추천대로 생산했을 경우 판매 가능한 수량
-   * = 추천 생산량 + 이월재고
+   * 추천대로 생산했을 경우 확보할 수량
+   *
+   * 추천 생산량 + 해당 날짜의 이월재고
    */
   if (
     recommended !== null &&
@@ -1608,11 +1946,12 @@ const comparisonResultText = computed(() => {
   return messages.join(" ");
 });
 
-/* 과거 추천 수량 정확도 */
+/* 추천 생산량 정확도 */
 const accuracyRows = computed(() => [
   {
     label: "비교한 영업일",
-    value: `${formatCount(accuracy.value?.tested_days)}일치`,
+    value:
+      `${formatCount(accuracy.value?.tested_days)}일치`,
   },
   {
     label: "평균 수량 차이",
@@ -1634,7 +1973,7 @@ const accuracyRows = computed(() => [
  * 카드형 섹션
  *
  * 글로벌 다이얼로그의 색상과 글꼴 정책을 사용합니다.
- * 글자 크기와 기존 기능은 변경하지 않습니다.
+ * 기존 글자 크기와 기능은 변경하지 않습니다.
  */
 .recommendation-analysis > section {
   min-width: 0;
@@ -1648,7 +1987,7 @@ const accuracyRows = computed(() => [
 
 /*
  * 카드 사이의 중복 구분선만 숨깁니다.
- * 카드 내부의 구분선은 그대로 유지합니다.
+ * 카드 내부 구분선은 유지합니다.
  */
 .recommendation-analysis > .v-divider {
   display: none;
@@ -1729,8 +2068,7 @@ const accuracyRows = computed(() => [
 /*
  * 추천 이유
  *
- * 다른 정보 목록과 동일한 간격을 사용합니다.
- * 글자 크기는 다이얼로그 기본 설정을 따릅니다.
+ * 기존 글자 크기와 색상을 유지합니다.
  */
 .recommendation-analysis__reason {
   margin: 0;
@@ -1738,6 +2076,32 @@ const accuracyRows = computed(() => [
   line-height: inherit;
   font-weight: 400;
   color: rgb(var(--v-theme-on-surface));
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 추천 이유 목록
+ *
+ * 번호를 사용해 각 추천 근거를 구분합니다.
+ * 기존 글자 크기는 변경하지 않습니다.
+ */
+.recommendation-analysis__reason-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  min-width: 0;
+  margin: 0;
+  padding-left: 20px;
+
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+/* 긴 추천 이유도 모바일 너비에 맞춰 표시 */
+.recommendation-analysis__reason-list > li {
+  min-width: 0;
+  padding-left: 2px;
   overflow-wrap: anywhere;
 }
 
@@ -1836,5 +2200,47 @@ const accuracyRows = computed(() => [
   height: 100%;
   border-radius: inherit;
   background: rgb(var(--v-theme-primary));
+}
+
+/*
+ * 분석 기간 날짜
+ *
+ * 기존 글자 크기를 사용합니다.
+ */
+.recommendation-analysis__date-range {
+  min-width: 0;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: inherit;
+  line-height: inherit;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * 추천 이유의 날짜별 상세 기록
+ *
+ * 관련 기록을 하나의 영역에 묶습니다.
+ * 별도의 강조선이나 아이콘은 사용하지 않습니다.
+ */
+.recommendation-analysis__reason-records {
+  min-width: 0;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+/*
+ * 날짜별 기록
+ *
+ * 날짜는 왼쪽, 폐기·이월 수량은 오른쪽에 표시합니다.
+ * 기존 d-flex 유틸리티로 반응형 배치를 처리합니다.
+ */
+.recommendation-analysis__reason-record {
+  min-width: 0;
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 400;
+  color: rgb(var(--v-theme-on-surface));
+  overflow-wrap: anywhere;
 }
 </style>
