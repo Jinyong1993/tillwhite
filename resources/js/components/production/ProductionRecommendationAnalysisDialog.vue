@@ -24,7 +24,7 @@
         <div class="recommendation-analysis__rows">
           <div class="recommendation-analysis__row">
             <span class="recommendation-analysis__label">
-              분석 기간
+              기간
             </span>
 
             <span class="recommendation-analysis__value">
@@ -107,6 +107,38 @@
       </section>
 
       <v-divider />
+
+      <!-- 실제 참고한 판매 기록 -->
+      <section
+        v-if="referenceRecords.length > 0"
+        class="d-flex flex-column ga-2"
+      >
+        <span class="app-form-section-title">
+          참고한 판매 기록
+        </span>
+
+        <div class="recommendation-analysis__rows">
+          <div
+            v-for="record in referenceRecords"
+            :key="record.date"
+            class="recommendation-analysis__row"
+          >
+            <span class="recommendation-analysis__label">
+              {{ record.label }}
+            </span>
+
+            <span class="recommendation-analysis__value">
+              {{ record.quantity }}
+            </span>
+          </div>
+        </div>
+
+        <p class="recommendation-analysis__note">
+          표시된 수량은 추정 판매량입니다.
+        </p>
+      </section>
+
+      <v-divider v-if="referenceRecords.length > 0" />
 
       <!-- 추천 생산량 상세 -->
       <section class="d-flex flex-column ga-3">
@@ -595,21 +627,14 @@
             같은 요일 {{ formatCount(trend.recent_trend.sample_count) }}일치 기록을 비교했습니다.
           </span>
         </div>
-
-        <p
-          v-if="trend?.recent_outlier"
-          class="recommendation-analysis__note"
-        >
-          평소와 차이가 큰 날이 있었습니다.
-        </p>
       </section>
 
       <v-divider />
 
-      <!-- 추천 생산량과 실제 결과 -->
+      <!-- 과거 기록을 기준으로 계산한 추천 수량의 정확도 -->
       <section class="d-flex flex-column ga-3">
         <span class="app-form-section-title">
-          추천 생산량과 실제 결과
+          추천 수량 정확도
         </span>
 
         <div class="recommendation-analysis__rows">
@@ -629,13 +654,14 @@
         </div>
 
         <p class="recommendation-analysis__note">
-          추천 생산량과 추정 판매량을 비교한 결과입니다.
+          지난 영업일의 기록으로 계산한 추천 수량과
+          추정 판매량의 차이입니다.
         </p>
 
         <v-divider />
 
         <span class="app-form-section-title">
-          날짜별 생산 결과
+          저장된 추천량과 마감 결과
         </span>
 
         <v-alert
@@ -663,7 +689,7 @@
             </v-btn>
 
             <span class="text-body-2 text-center">
-              {{ selectedComparisonRecord?.date ?? '-' }}
+              {{ selectedComparisonDateLabel }}
             </span>
 
             <v-btn
@@ -828,6 +854,45 @@ const calculation = computed(
 const history = computed(
   () => explanation.value?.history ?? null
 );
+
+/*
+ * 추천 생산량 계산에 사용한 실제 참고 기록입니다.
+ *
+ * 백엔드에서 전달한 날짜·요일·추정 판매량을
+ * 그대로 표시합니다.
+ *
+ * 프론트엔드에서 임의로 날짜를 선택하거나
+ * 추천량을 다시 계산하지 않습니다.
+ */
+const referenceRecords = computed(() => {
+  const records = history.value?.reference_records;
+
+  if (!Array.isArray(records)) {
+    return [];
+  }
+
+  return records
+    .filter((record) => {
+      return (
+        record &&
+        record.date_label &&
+        record.weekday_label &&
+        record.estimated_sales !== null &&
+        record.estimated_sales !== undefined
+      );
+    })
+    .map((record) => {
+      const quantity = Number(record.estimated_sales);
+
+      return {
+        date: record.date,
+        label: `${record.date_label}(${record.weekday_label})`,
+        quantity: Number.isFinite(quantity)
+          ? `${quantity.toLocaleString("ko-KR")}개`
+          : "-",
+      };
+    });
+});
 
 const inventory = computed(
   () => explanation.value?.inventory ?? null
@@ -1272,6 +1337,25 @@ const adjustmentComparison = computed(
   () => recommendationOutcomes.value?.adjustment_comparison ?? null
 );
 
+/*
+ * 날짜별 생산 결과 목록
+ *
+ * [목적]
+ * 실제 날짜와 추천 생산량을 확인할 수 있는
+ * 기록만 목록에 표시합니다.
+ *
+ * [개선]
+ * - 수량이 없는 데이터를 0개로 판단하지 않습니다.
+ * - 날짜가 없는 기록은 표시하지 않습니다.
+ * - 날짜순으로 정렬합니다.
+ * - 기존 날짜 이동 기능은 유지합니다.
+ *
+ * [주의]
+ * 실제 생산량, 폐기량, 이월예정이 없는 경우에도
+ * 기록 자체를 삭제하지 않습니다.
+ *
+ * 해당 항목은 화면에서 '자료 없음'으로 표시합니다.
+ */
 const comparisonRecords = computed(() => {
   const records = adjustmentComparison.value?.records;
 
@@ -1279,17 +1363,44 @@ const comparisonRecords = computed(() => {
     return [];
   }
 
+  /*
+   * 실제 숫자가 기록되어 있는지 확인합니다.
+   *
+   * null이나 빈 문자열은
+   * 실제 0개 기록과 구분합니다.
+   */
+  const hasQuantity = (value) => {
+    return (
+      value !== null
+      && value !== undefined
+      && value !== ""
+      && Number.isFinite(Number(value))
+      && Number(value) >= 0
+    );
+  };
+
   return [...records]
     .filter((record) => {
+      if (
+        !record
+        || typeof record.date !== "string"
+        || !/^\d{4}-\d{2}-\d{2}$/.test(record.date)
+      ) {
+        return false;
+      }
+
+      /*
+       * 날짜별 비교에 꼭 필요한
+       * 추천 생산량과 추정 판매량만 확인합니다.
+       */
       return (
-        record
-        && typeof record.date === "string"
-        && Number.isFinite(Number(record.original_quantity))
-        && Number.isFinite(Number(record.adjusted_quantity))
-        && Number.isFinite(Number(record.estimated_sales))
+        hasQuantity(record.adjusted_quantity)
+        && hasQuantity(record.estimated_sales)
       );
     })
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => {
+      return a.date.localeCompare(b.date);
+    });
 });
 
 const selectedComparisonIndex = ref(0);
@@ -1307,6 +1418,52 @@ const selectedComparisonRecord = computed(() => {
   ] ?? null;
 });
 
+/*
+ * 선택한 날짜를 읽기 쉬운 형태로 표시
+ *
+ * 예: 2026-10-26 → 10월 26일(월)
+ *
+ * 날짜 문자열을 직접 분리해
+ * 브라우저 시간대에 따른 날짜 변경을 방지합니다.
+ */
+const selectedComparisonDateLabel = computed(() => {
+  const date = selectedComparisonRecord.value?.date;
+
+  if (
+    typeof date !== "string"
+    || !/^\d{4}-\d{2}-\d{2}$/.test(date)
+  ) {
+    return "-";
+  }
+
+  const [year, month, day] = date
+    .split("-")
+    .map(Number);
+
+  const parsed = new Date(
+    Date.UTC(year, month - 1, day)
+  );
+
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== month - 1
+    || parsed.getUTCDate() !== day
+  ) {
+    return "-";
+  }
+
+  const weekdays = [
+    "일", "월", "화", "수",
+    "목", "금", "토",
+  ];
+
+  const weekday = weekdays[
+    parsed.getUTCDay()
+  ];
+
+  return `${month}월 ${day}일(${weekday})`;
+});
+
 function moveComparisonDate(direction) {
   const next = selectedComparisonIndex.value + direction;
 
@@ -1320,6 +1477,19 @@ function moveComparisonDate(direction) {
   selectedComparisonIndex.value = next;
 }
 
+/*
+ * 날짜별 생산 결과 그래프
+ *
+ * [목적]
+ * 추천 생산량, 실제 생산량, 추정 판매량,
+ * 폐기량, 이월예정을 비교합니다.
+ *
+ * [개선]
+ * - 기록이 없는 수량은 0개로 표시하지 않습니다.
+ * - 실제 0개로 기록된 경우에만 0개를 표시합니다.
+ * - 수량이 없는 항목은 막대를 표시하지 않습니다.
+ * - 기존 색상과 항목 순서를 유지합니다.
+ */
 const comparisonChartRows = computed(() => {
   const record = selectedComparisonRecord.value;
 
@@ -1327,51 +1497,129 @@ const comparisonChartRows = computed(() => {
     return [];
   }
 
+  /*
+   * 기록이 없는 값과 실제 0개를 구분합니다.
+   */
+  const readQuantity = (value) => {
+    if (
+      value === null
+      || value === undefined
+      || value === ""
+      || !Number.isFinite(Number(value))
+    ) {
+      return null;
+    }
+
+    const quantity = Number(value);
+
+    return quantity >= 0
+      ? quantity
+      : null;
+  };
+
+  /*
+   * 기존 그래프 항목과 색상을 유지합니다.
+   */
   const rows = [
     {
       label: "추천 생산량",
-      value: Number(record.adjusted_quantity) || 0,
+      value: readQuantity(
+        record.adjusted_quantity
+      ),
       color: "primary",
     },
     {
       label: "실제 생산량",
-      value: Number(record.actual_production) || 0,
+      value: readQuantity(
+        record.actual_production
+      ),
       color: "success",
     },
     {
       label: "추정 판매량",
-      value: Number(record.estimated_sales) || 0,
+      value: readQuantity(
+        record.estimated_sales
+      ),
       color: "info",
     },
     {
       label: "폐기량",
-      value: Number(record.actual_waste) || 0,
+      value: readQuantity(
+        record.actual_waste
+      ),
       color: "error",
+    },
+    /*
+    * 해당 날짜의 이월재고
+    *
+    * 이미 확보된 수량이므로
+    * 실제 생산량과 구분해 표시합니다.
+    *
+    * 기존 그래프 계산과 디자인은 유지합니다.
+    */
+    {
+      label: "이월재고",
+      value: readQuantity(
+        record.carryover_in
+      ),
+      color: "secondary",
     },
     {
       label: "이월예정",
-      value: Number(record.actual_carryover) || 0,
+      value: readQuantity(
+        record.actual_carryover
+      ),
       color: "secondary",
     },
   ];
 
+  /*
+   * 실제로 기록된 수량만 사용해
+   * 그래프 최대값을 결정합니다.
+   */
   const maxValue = Math.max(
     1,
-    ...rows.map((row) => row.value)
+    ...rows
+      .filter((row) => row.value !== null)
+      .map((row) => row.value)
   );
 
+  /*
+   * 수량이 없는 항목은 막대 길이를 0으로 처리합니다.
+   *
+   * 화면의 수량 표시는 null을 유지하므로
+   * formatQuantity()에서 '자료 없음'으로 표시됩니다.
+   */
   return rows.map((row) => ({
     ...row,
-    percent: Math.max(
-      0,
-      Math.min(
-        100,
-        (row.value / maxValue) * 100
-      )
-    ),
+
+    percent: row.value === null
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            100,
+            (row.value / maxValue) * 100
+          )
+        ),
   }));
 });
 
+/*
+ * 선택한 날짜의 추천 생산량과 실제 결과 비교
+ *
+ * [목적]
+ * 추천 생산량에 이월재고를 더한 수량과
+ * 해당 날짜의 추정 판매량을 비교합니다.
+ *
+ * [표시 원칙]
+ * - 기록이 없는 수량은 0개로 처리하지 않습니다.
+ * - 이월재고를 중복 계산하지 않습니다.
+ * - 판매 기회 손실은 가능성으로만 안내합니다.
+ * - 실제 폐기량과 이월예정도 함께 표시합니다.
+ *
+ * 기존 날짜 이동과 그래프 기능은 유지합니다.
+ */
 const comparisonResultText = computed(() => {
   const record = selectedComparisonRecord.value;
 
@@ -1379,29 +1627,145 @@ const comparisonResultText = computed(() => {
     return "";
   }
 
-  const waste = Math.max(
-    0,
-    Number(record.actual_waste) || 0
+  /*
+   * 실제로 기록된 숫자만 사용합니다.
+   */
+  const readQuantity = (value) => {
+    if (
+      value === null
+      || value === undefined
+      || value === ""
+      || !Number.isFinite(Number(value))
+      || Number(value) < 0
+    ) {
+      return null;
+    }
+
+    return Number(value);
+  };
+
+  const recommended = readQuantity(
+    record.adjusted_quantity
   );
 
-  const carryover = Math.max(
-    0,
-    Number(record.actual_carryover) || 0
+  const carryoverIn = readQuantity(
+    record.carryover_in
   );
 
-  if (waste === 0 && carryover === 0) {
-    return "폐기량과 이월예정이 모두 0개였습니다.";
+  const produced = readQuantity(
+    record.actual_production
+  );
+
+  const estimatedSales = readQuantity(
+    record.estimated_sales
+  );
+
+  const waste = readQuantity(
+    record.actual_waste
+  );
+
+  const carryoverOut = readQuantity(
+    record.actual_carryover
+  );
+
+  const messages = [];
+
+  /*
+   * 추천 생산량과 실제 생산량 비교
+   */
+  if (
+    recommended !== null
+    && produced !== null
+  ) {
+    const difference = produced - recommended;
+
+    if (difference > 0) {
+      messages.push(
+        `추천보다 ${formatNumber(difference)}개 더 생산했습니다.`
+      );
+    } else if (difference < 0) {
+      messages.push(
+        `추천보다 ${formatNumber(Math.abs(difference))}개 적게 생산했습니다.`
+      );
+    } else {
+      messages.push(
+        "추천 생산량과 실제 생산량이 같았습니다."
+      );
+    }
   }
 
-  if (waste > 0 && carryover > 0) {
-    return `폐기 ${waste}개, 이월예정 ${carryover}개입니다.`;
+  /*
+   * 추천대로 생산했을 경우 확보 가능한 수량
+   *
+   * 추천 생산량 + 해당 날짜의 이월재고
+   */
+  if (
+    recommended !== null
+    && carryoverIn !== null
+    && estimatedSales !== null
+  ) {
+    const recommendedAvailable =
+      recommended + carryoverIn;
+
+    const difference =
+      estimatedSales - recommendedAvailable;
+
+    /*
+     * 추천 수량만으로는
+     * 추정 판매량을 충족하지 못했을 가능성
+     */
+    if (difference > 0) {
+      messages.push(
+        `추천대로 생산했다면 `
+        + `${formatNumber(difference)}개가 부족했을 수 있습니다.`
+      );
+    }
+
+    /*
+     * 추정 판매량을 충족할 수 있었던 경우
+     */
+    else {
+      messages.push(
+        "추천 수량으로 추정 판매량을 충족할 수 있었습니다."
+      );
+    }
   }
 
-  if (waste > 0) {
-    return `폐기 ${waste}개입니다.`;
+  /*
+   * 실제 폐기량과 이월예정
+   */
+  if (
+    waste !== null
+    && carryoverOut !== null
+  ) {
+    messages.push(
+      `폐기 ${formatNumber(waste)}개, `
+      + `이월예정 ${formatNumber(carryoverOut)}개였습니다.`
+    );
+
+    if (
+      waste === 0
+      && carryoverOut === 0
+    ) {
+      messages.push(
+        "제품이 남지 않아 더 판매할 기회가 있었을 수 있습니다."
+      );
+    }
+  } else if (waste !== null) {
+    messages.push(
+      `폐기 ${formatNumber(waste)}개였습니다.`
+    );
+  } else if (carryoverOut !== null) {
+    messages.push(
+      `이월예정 ${formatNumber(carryoverOut)}개였습니다.`
+    );
   }
 
-  return `이월예정 ${carryover}개입니다.`;
+  if (!messages.length) {
+    return "해당 날짜의 생산 결과를 확인할 수 없습니다.";
+  }
+
+  return messages.join(" ");
 });
 
 /* 추천 생산량과 실제 결과 */
